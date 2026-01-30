@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Fetch CFR titles 1-50 from the eCFR API for the latest issue date."""
 
-import json
 import sys
 import time
 from collections import defaultdict
@@ -9,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
+import yaml
 from lxml import etree
 
 BASE_URL = "https://www.ecfr.gov/api/versioner/v1"
@@ -26,8 +26,8 @@ TYPE_TO_LEVEL = {
 }
 
 
-def xml_to_json(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
-    """Convert XML content to JSON and write to file.
+def xml_to_yaml(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
+    """Convert XML content to YAML and write to file.
 
     Returns tuple of (bytes_written, word_counts).
     word_counts is a dict mapping hierarchy keys to word counts.
@@ -35,8 +35,8 @@ def xml_to_json(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
     root = etree.fromstring(xml_content)
     word_counts = defaultdict(int)
 
-    # Two-pass approach: first build JSON, then count words with ancestry
-    # Pass 1: Build JSON structure
+    # Two-pass approach: first build structure, then count words with ancestry
+    # Pass 1: Build data structure
     stack = [(root, {})]
     root_result = stack[0][1]
 
@@ -68,7 +68,7 @@ def xml_to_json(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
     data = {root.tag: root_result}
 
     with open(output_file, "w") as f:
-        json.dump(data, f, indent=2)
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     # Pass 2: Count words by walking tree with parent pointers
     for elem in root.iter():
@@ -138,8 +138,8 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> tuple[int,
             response = requests.get(url, timeout=300)
             response.raise_for_status()
 
-            output_file = output_dir / f"title-{title_num}.json"
-            size, word_counts = xml_to_json(response.content, output_file)
+            output_file = output_dir / f"title-{title_num}.yaml"
+            size, word_counts = xml_to_yaml(response.content, output_file)
             return (title_num, True, f"{size:,} bytes", word_counts)
 
         except requests.exceptions.HTTPError as e:
