@@ -71,7 +71,11 @@ class ECFRReader:
         return children.get("DIV1")
 
     def _extract_text(self, node: dict) -> str:
-        """Extract all text content from a node recursively."""
+        """Extract all text content from a node recursively.
+
+        Handles both 'text' (content before/inside element) and 'tail'
+        (content after a child element) fields.
+        """
         if not isinstance(node, dict):
             return ""
 
@@ -86,6 +90,10 @@ class ECFRReader:
                     texts.append(self._extract_text(item))
             elif isinstance(value, dict):
                 texts.append(self._extract_text(value))
+
+        # Capture tail text (text after child elements)
+        if "tail" in node:
+            texts.append(node["tail"])
 
         return " ".join(t for t in texts if t)
 
