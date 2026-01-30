@@ -31,6 +31,12 @@ Key constants:
 - `MAX_RETRIES = 7`: Retry count with exponential backoff
 - `RETRY_DELAY = 3`: Base delay in seconds (doubles each retry)
 
+## Dependencies
+
+- `requests` - HTTP client for API calls
+- `lxml` - XML parsing
+- `pyyaml` - YAML output formatting
+
 ## eCFR API
 
 Base URL: `https://www.ecfr.gov/api/versioner/v1`
