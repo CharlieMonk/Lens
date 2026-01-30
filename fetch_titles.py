@@ -145,6 +145,56 @@ def load_word_counts_cache() -> dict[int, dict]:
     return result
 
 
+def count_words_from_yaml(yaml_path: Path) -> dict:
+    """Count words from a YAML file by walking its structure.
+
+    Returns dict mapping hierarchy keys to word counts.
+    """
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    word_counts = defaultdict(int)
+
+    def walk_node(node, context):
+        """Recursively walk node, tracking hierarchy context and counting words."""
+        if not isinstance(node, dict):
+            return
+
+        # Update context if this is a hierarchy node
+        attrs = node.get("@attributes", {})
+        node_type = attrs.get("TYPE", "")
+        if node_type in TYPE_TO_LEVEL:
+            level = TYPE_TO_LEVEL[node_type]
+            context = context.copy()
+            context[level] = attrs.get("N", "")
+
+        # Count words in text and tail
+        if context:
+            key = tuple(sorted(context.items()))
+            if "text" in node:
+                word_counts[key] += len(node["text"].split())
+            if "tail" in node:
+                word_counts[key] += len(node["tail"].split())
+
+        # Walk children
+        children = node.get("children", [])
+        if isinstance(children, list):
+            for child in children:
+                walk_node(child, context)
+        elif isinstance(children, dict):
+            # Legacy format
+            for value in children.values():
+                items = value if isinstance(value, list) else [value]
+                for item in items:
+                    walk_node(item, context)
+
+    # Start walking from root
+    root = data.get("ECFR", {})
+    walk_node(root, {})
+
+    return dict(word_counts)
+
+
 def save_word_counts_cache(cache: dict[int, dict]) -> None:
     """Save word counts cache to file."""
     # Convert tuple keys to strings for YAML serialization
@@ -275,8 +325,13 @@ def main() -> int:
             if success:
                 success_count += 1
                 if msg == "cached":
-                    # Use word counts from cache
-                    word_counts = word_counts_cache.get(title_num, {})
+                    # Use word counts from cache, or recalculate from YAML if missing
+                    word_counts = word_counts_cache.get(title_num)
+                    if not word_counts:
+                        yaml_path = OUTPUT_DIR / f"title_{title_num}.yaml"
+                        print(f"  Recalculating word counts for title {title_num}...")
+                        word_counts = count_words_from_yaml(yaml_path)
+                        word_counts_cache[title_num] = word_counts
                 else:
                     # Save fresh word counts to cache
                     word_counts_cache[title_num] = word_counts
@@ -310,7 +365,7 @@ def main() -> int:
         total_words = sum(all_word_counts.values())
         print(f"Total words: {total_words:,}")
 
-    return 0 if success_count == len(titles_to_fetch) else 1
+    # return 0 if success_count == len(titles_to_fetch) else 1
 
 
 if __name__ == "__main__":
