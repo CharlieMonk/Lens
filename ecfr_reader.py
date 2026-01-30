@@ -67,14 +67,23 @@ class ECFRReader:
         """Get the DIV1 (title) node from loaded data."""
         data = self.load_title(title)
         ecfr = data.get("ECFR", {})
-        children = ecfr.get("children", {})
-        return children.get("DIV1")
+        children = ecfr.get("children", [])
+
+        if isinstance(children, list):
+            # New format: list of dicts with @tag key
+            for child in children:
+                if isinstance(child, dict) and child.get("@tag") == "DIV1":
+                    return child
+            return None
+        elif isinstance(children, dict):
+            # Legacy format: dict keyed by tag name
+            return children.get("DIV1")
 
     def _extract_text(self, node: dict) -> str:
         """Extract all text content from a node recursively.
 
-        Handles both 'text' (content before/inside element) and 'tail'
-        (content after a child element) fields.
+        Handles 'text' (content before/inside element), 'tail' (content after
+        a child element), and preserves document order of children.
         """
         if not isinstance(node, dict):
             return ""
@@ -83,15 +92,21 @@ class ECFRReader:
         if "text" in node:
             texts.append(node["text"])
 
-        children = node.get("children", {})
-        for key, value in children.items():
-            if isinstance(value, list):
-                for item in value:
-                    texts.append(self._extract_text(item))
-            elif isinstance(value, dict):
-                texts.append(self._extract_text(value))
+        # Children is now a list (preserves document order)
+        children = node.get("children", [])
+        if isinstance(children, list):
+            for child in children:
+                texts.append(self._extract_text(child))
+        elif isinstance(children, dict):
+            # Legacy format: dict keyed by tag name
+            for key, value in children.items():
+                if isinstance(value, list):
+                    for item in value:
+                        texts.append(self._extract_text(item))
+                elif isinstance(value, dict):
+                    texts.append(self._extract_text(value))
 
-        # Capture tail text (text after child elements)
+        # Capture tail text (text after this element)
         if "tail" in node:
             texts.append(node["tail"])
 
@@ -112,14 +127,14 @@ class ECFRReader:
 
         yield path, node
 
-        children = node.get("children", {})
-        for key, value in children.items():
-            level = DIV_TO_LEVEL.get(key)
-            items = value if isinstance(value, list) else [value]
-
-            for item in items:
+        children = node.get("children", [])
+        if isinstance(children, list):
+            # New format: list of dicts with @tag key
+            for item in children:
                 if not isinstance(item, dict):
                     continue
+                tag = item.get("@tag", "")
+                level = DIV_TO_LEVEL.get(tag)
 
                 new_path = path.copy()
                 if level:
@@ -128,6 +143,23 @@ class ECFRReader:
                     new_path.append((level, identifier))
 
                 yield from self._walk_tree(item, new_path)
+        elif isinstance(children, dict):
+            # Legacy format: dict keyed by tag name
+            for key, value in children.items():
+                level = DIV_TO_LEVEL.get(key)
+                items = value if isinstance(value, list) else [value]
+
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+
+                    new_path = path.copy()
+                    if level:
+                        attrs = item.get("@attributes", {})
+                        identifier = attrs.get("N", "")
+                        new_path.append((level, identifier))
+
+                    yield from self._walk_tree(item, new_path)
 
     def _build_index(self, title: int) -> dict[str, dict]:
         """Build section lookup index for a title."""
@@ -282,15 +314,25 @@ class ECFRReader:
                 result["type"] = TYPE_TO_LEVEL[node_type]
                 result["identifier"] = attrs.get("N", "")
 
-            children = node.get("children", {})
+            children = node.get("children", [])
             child_list = []
 
-            for key, value in children.items():
-                if key.startswith("DIV") and key in DIV_TO_LEVEL:
-                    items = value if isinstance(value, list) else [value]
-                    for item in items:
-                        if isinstance(item, dict):
-                            child_list.append(build_structure(item))
+            if isinstance(children, list):
+                # New format: list of dicts with @tag key
+                for item in children:
+                    if not isinstance(item, dict):
+                        continue
+                    tag = item.get("@tag", "")
+                    if tag.startswith("DIV") and tag in DIV_TO_LEVEL:
+                        child_list.append(build_structure(item))
+            elif isinstance(children, dict):
+                # Legacy format: dict keyed by tag name
+                for key, value in children.items():
+                    if key.startswith("DIV") and key in DIV_TO_LEVEL:
+                        items = value if isinstance(value, list) else [value]
+                        for item in items:
+                            if isinstance(item, dict):
+                                child_list.append(build_structure(item))
 
             if child_list:
                 result["children"] = child_list
@@ -367,9 +409,17 @@ class ECFRReader:
         if not node:
             return None
 
-        children = node.get("children", {})
-        head = children.get("HEAD", {})
-        return head.get("text")
+        children = node.get("children", [])
+        if isinstance(children, list):
+            # New format: list of dicts with @tag key
+            for child in children:
+                if isinstance(child, dict) and child.get("@tag") == "HEAD":
+                    return child.get("text")
+            return None
+        elif isinstance(children, dict):
+            # Legacy format
+            head = children.get("HEAD", {})
+            return head.get("text")
 
     def get_section_text(self, title: int, section: str) -> str | None:
         """Get the full text content of a section."""

@@ -53,24 +53,20 @@ def xml_to_yaml(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
 
         children = list(elem)
         if children:
-            child_dict = {}
-            result["children"] = child_dict
+            # Use a list to preserve document order of children
+            child_list = []
+            result["children"] = child_list
 
             # Capture text before first child element
             if elem.text and elem.text.strip():
                 result["text"] = elem.text.strip()
 
-            for child in reversed(children):
-                child_result = {}
+            for child in children:
+                child_result = {"@tag": child.tag}
                 # Capture tail text (text after this child element)
                 if child.tail and child.tail.strip():
                     child_result["tail"] = child.tail.strip()
-                if child.tag in child_dict:
-                    if not isinstance(child_dict[child.tag], list):
-                        child_dict[child.tag] = [child_dict[child.tag]]
-                    child_dict[child.tag].insert(0, child_result)
-                else:
-                    child_dict[child.tag] = child_result
+                child_list.append(child_result)
                 stack.append((child, child_result))
         else:
             text = (elem.text or "").strip()
