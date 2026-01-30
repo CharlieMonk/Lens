@@ -80,8 +80,14 @@ def xml_to_yaml(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
 
     # Pass 2: Count words by walking tree with parent pointers
     for elem in root.iter():
-        text = (elem.text or "").strip()
-        if not text:
+        # Count both elem.text and elem.tail
+        texts_to_count = []
+        if elem.text and elem.text.strip():
+            texts_to_count.append(elem.text.strip())
+        if elem.tail and elem.tail.strip():
+            texts_to_count.append(elem.tail.strip())
+
+        if not texts_to_count:
             continue
 
         # Walk up to find hierarchy context
@@ -97,7 +103,8 @@ def xml_to_yaml(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
 
         if context:
             key = tuple(sorted(context.items()))
-            word_counts[key] += len(text.split())
+            for text in texts_to_count:
+                word_counts[key] += len(text.split())
 
     return output_file.stat().st_size, dict(word_counts)
 
