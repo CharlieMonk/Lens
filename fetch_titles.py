@@ -1,14 +1,35 @@
 #!/usr/bin/env python3
-"""Fetch CFR titles 1-50 from the eCFR API for the current date."""
+"""Fetch CFR titles 1-50 from the eCFR API for the latest issue date."""
 
-import os
 import sys
-from datetime import date
 from pathlib import Path
 
 import requests
 
-BASE_URL = "https://www.ecfr.gov/api/versioner/v1/full"
+BASE_URL = "https://www.ecfr.gov/api/versioner/v1"
+
+
+def get_latest_issue_date() -> str:
+    """Fetch the latest issue date from the titles endpoint.
+
+    Returns:
+        The latest issue date in YYYY-MM-DD format.
+
+    Raises:
+        RuntimeError: If unable to fetch or parse the titles metadata.
+    """
+    url = f"{BASE_URL}/titles.json"
+
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        latest_issue_date = data["meta"]["latest_issue_date"]
+        return latest_issue_date
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to fetch titles metadata: {e}")
+    except (KeyError, TypeError) as e:
+        raise RuntimeError(f"Failed to parse latest_issue_date: {e}")
 
 
 def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> bool:
@@ -22,7 +43,7 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    url = f"{BASE_URL}/{fetch_date}/title-{title_num}.xml"
+    url = f"{BASE_URL}/full/{fetch_date}/title-{title_num}.xml"
 
     try:
         response = requests.get(url, timeout=300)
@@ -42,11 +63,16 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> bool:
 
 
 def main() -> int:
-    """Fetch all CFR titles 1-50 for the current date."""
-    fetch_date = date.today().strftime("%Y-%m-%d")
+    """Fetch all CFR titles 1-50 for the latest issue date."""
+    try:
+        fetch_date = get_latest_issue_date()
+    except RuntimeError as e:
+        print(f"Error: {e}")
+        return 1
+
     output_dir = Path("xml_output") / fetch_date
 
-    print(f"Fetching CFR titles 1-50 for {fetch_date}")
+    print(f"Fetching CFR titles 1-50 for {fetch_date} (latest issue date)")
     print(f"Output directory: {output_dir}")
     print("-" * 50)
 
