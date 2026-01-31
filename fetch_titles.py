@@ -78,6 +78,25 @@ class ECFRDatabase:
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS word_counts (
+                title INTEGER NOT NULL,
+                subtitle TEXT NOT NULL DEFAULT '',
+                chapter TEXT NOT NULL DEFAULT '',
+                subchapter TEXT NOT NULL DEFAULT '',
+                part TEXT NOT NULL DEFAULT '',
+                subpart TEXT NOT NULL DEFAULT '',
+                section TEXT NOT NULL DEFAULT '',
+                word_count INTEGER NOT NULL,
+                PRIMARY KEY (title, subtitle, chapter, subchapter, part, subpart, section)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_word_counts_title
+            ON word_counts(title)
+        """)
+
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_cfr_title_chapter
             ON cfr_references(title, chapter)
         """)
@@ -279,6 +298,39 @@ class ECFRDatabase:
                     INSERT OR REPLACE INTO agency_word_counts (agency_slug, title, chapter, word_count)
                     VALUES (?, ?, ?, ?)
                 """, (agency_info["agency_slug"], title_num, chapter, word_count))
+
+        conn.commit()
+        conn.close()
+
+    def save_word_counts(self, word_counts: dict) -> None:
+        """Save granular word counts to the database.
+
+        Args:
+            word_counts: Dict with tuple keys like (("title", "40"), ("chapter", "I"), ...)
+                         and word count values.
+        """
+        if not word_counts:
+            return
+
+        conn = self._connect()
+        cursor = conn.cursor()
+
+        for key, count in word_counts.items():
+            ctx = dict(key)
+            cursor.execute("""
+                INSERT OR REPLACE INTO word_counts
+                (title, subtitle, chapter, subchapter, part, subpart, section, word_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                int(ctx.get("title", 0)),
+                ctx.get("subtitle") or "",
+                ctx.get("chapter") or "",
+                ctx.get("subchapter") or "",
+                ctx.get("part") or "",
+                ctx.get("subpart") or "",
+                ctx.get("section") or "",
+                count,
+            ))
 
         conn.commit()
         conn.close()
@@ -546,8 +598,13 @@ class MarkdownConverter:
     def __init__(self, agency_lookup: dict = None):
         self.agency_lookup = agency_lookup or {}
 
-    def convert(self, xml_content: bytes, output_path: Path) -> tuple[int, dict, dict]:
+    def convert(self, xml_content: bytes, output_path: Path, title_num: int = None) -> tuple[int, dict, dict]:
         """Convert XML content to Markdown and write to file.
+
+        Args:
+            xml_content: Raw XML bytes.
+            output_path: Path to write Markdown output.
+            title_num: CFR title number (used for word count tracking).
 
         Returns:
             Tuple of (file_size, word_counts, chapter_word_counts).
@@ -556,6 +613,7 @@ class MarkdownConverter:
         word_counts = defaultdict(int)
         chapter_word_counts = defaultdict(int)
         lines = []
+        cfr_title = str(title_num) if title_num else None
 
         def get_text(elem):
             """Get all text content from an element."""
@@ -576,7 +634,11 @@ class MarkdownConverter:
 
             new_context = context.copy()
             if elem_type in self.TYPE_TO_LEVEL:
-                new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
+                # Use passed-in title_num for TITLE type, XML N attr for others
+                if elem_type == "TITLE" and cfr_title:
+                    new_context["title"] = cfr_title
+                else:
+                    new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
 
             if tag == "HEAD":
                 text = get_text(elem).strip()
@@ -664,14 +726,20 @@ class MarkdownConverter:
 
         return output_path.stat().st_size, dict(word_counts), dict(chapter_word_counts)
 
-    def convert_chunks(self, xml_chunks: list[bytes], output_path: Path) -> tuple[int, dict, dict]:
+    def convert_chunks(self, xml_chunks: list[bytes], output_path: Path, title_num: int = None) -> tuple[int, dict, dict]:
         """Convert multiple XML chunks to a single Markdown file.
+
+        Args:
+            xml_chunks: List of raw XML bytes (one per volume).
+            output_path: Path to write Markdown output.
+            title_num: CFR title number (used for word count tracking).
 
         Returns:
             Tuple of (file_size, word_counts, chapter_word_counts).
         """
         all_word_counts = defaultdict(int)
         all_chapter_counts = defaultdict(int)
+        cfr_title = str(title_num) if title_num else None
 
         with open(output_path, "w") as f:
             for xml_content in xml_chunks:
@@ -697,7 +765,11 @@ class MarkdownConverter:
 
                     new_context = context.copy()
                     if elem_type in self.TYPE_TO_LEVEL:
-                        new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
+                        # Use passed-in title_num for TITLE type, XML N attr for others
+                        if elem_type == "TITLE" and cfr_title:
+                            new_context["title"] = cfr_title
+                        else:
+                            new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
 
                     if tag == "HEAD":
                         text = get_text(elem).strip()
@@ -862,7 +934,8 @@ class ECFRFetcher:
                 for t in tasks:
                     t.cancel()
                 try:
-                    size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
+                    size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file, title_num)
+                    self.db.save_word_counts(word_counts)
                     if agency_lookup and chapter_word_counts:
                         self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
                     return (True, f"{size:,} bytes ({source})", word_counts)
@@ -989,7 +1062,7 @@ class ECFRFetcher:
                 return (year, title_num, False, f"no data for {year}", 0)
 
             try:
-                size, _, _ = converter.convert_chunks(xml_chunks, output_file)
+                size, _, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
                 return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} vols)", size)
             except Exception as e:
                 return (year, title_num, False, str(e), 0)
