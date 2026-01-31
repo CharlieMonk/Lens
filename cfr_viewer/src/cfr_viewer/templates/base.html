@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CFR Viewer{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
+</head>
+<body>
+    <nav class="container">
+        <ul>
+            <li><strong><a href="{{ url_for('browse.index') }}">CFR Viewer</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="{{ url_for('browse.index') }}">Browse</a></li>
+            <li><a href="{{ url_for('rankings.index') }}">Rankings</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="container">
+        <small>Data from <a href="https://ecfr.gov">ecfr.gov</a></small>
+    </footer>
+</body>
+</html>

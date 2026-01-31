@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}&sect; {{ section.section }} - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
+        <li><a href="{{ url_for('browse.title', title_num=title_num, year=year) }}">Title {{ title_num }}</a></li>
+        <li>&sect; {{ section.section }}</li>
+    </ul>
+</nav>
+
+{% if section %}
+<hgroup>
+    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading }}{% endif %}</h1>
+    <p>Title {{ title_num }}: {{ title_name }}</p>
+</hgroup>
+
+{% include "components/year_selector.html" %}
+
+<div class="grid">
+    <article>
+        <header>
+            <strong>Statistics</strong>
+        </header>
+        <dl>
+            <dt>Word Count</dt>
+            <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
+            {% if section.part %}
+            <dt>Part</dt>
+            <dd>{{ section.part }}</dd>
+            {% endif %}
+            {% if section.chapter %}
+            <dt>Chapter</dt>
+            <dd>{{ section.chapter }}</dd>
+            {% endif %}
+        </dl>
+    </article>
+
+    <article>
+        <header>
+            <strong>Actions</strong>
+        </header>
+        <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="secondary">
+            Compare Years
+        </a>
+    </article>
+</div>
+
+{% if similar_count > 0 %}
+<article>
+    <header>
+        <strong>Similar Sections</strong>
+        <small>({{ similar_count }} found)</small>
+    </header>
+    <div
+        hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
+        hx-trigger="revealed"
+        hx-swap="innerHTML"
+    >
+        <button aria-busy="true" class="outline">Loading similar sections...</button>
+    </div>
+</article>
+{% endif %}
+
+<article>
+    <header>
+        <strong>Section Text</strong>
+    </header>
+    <div class="section-text">
+        {{ section.text | safe }}
+    </div>
+</article>
+
+{% else %}
+<p>Section not found.</p>
+{% endif %}
+{% endblock %}

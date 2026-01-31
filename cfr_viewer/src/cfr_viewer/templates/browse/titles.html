@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}All Titles - CFR Viewer{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Code of Federal Regulations</h1>
+    <p>All 50 CFR Titles</p>
+</hgroup>
+
+{% include "components/year_selector.html" %}
+
+<table>
+    <thead>
+        <tr>
+            <th scope="col">Title</th>
+            <th scope="col">Name</th>
+            <th scope="col" class="numeric">Word Count</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for title in titles %}
+        <tr>
+            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
+            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
+            <td class="numeric">{{ "{:,}".format(title.word_count) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No titles found for this year.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -15,6 +15,9 @@ dependencies = [
   "pypdf>=4.2.0",
   "tenacity>=8.2",
   "python-dateutil>=2.9",
+  "flask>=3.0",
+  "aiohttp>=3.9.0",
+  "scikit-learn>=1.3.0",
 ]
 
 [project.optional-dependencies]
@@ -25,15 +28,22 @@ dev = [
   "pytest-playwright>=0.4.0",
 ]
 
+[project.scripts]
+cfr-viewer = "cfr_viewer:main"
+
 [tool.pytest.ini_options]
-testpaths = ["relevance/tests", "tests"]
+testpaths = ["relevance/tests", "tests", "cfr_viewer/tests"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "relevance/src"}
+py-modules = []
 
 [tool.setuptools.packages.find]
-where = ["relevance/src"]
+where = ["."]
+include = ["ecfr*"]
+
+[tool.setuptools.package-data]
+cfr_viewer = ["templates/**/*", "static/**/*"]

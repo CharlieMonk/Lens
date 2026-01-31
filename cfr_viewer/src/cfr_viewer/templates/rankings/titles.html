@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Titles by Word Count - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('rankings.index') }}">Rankings</a></li>
+        <li>Titles</li>
+    </ul>
+</nav>
+
+<h1>Titles by Word Count</h1>
+
+{% include "components/year_selector.html" %}
+
+<table>
+    <thead>
+        <tr>
+            <th scope="col">Rank</th>
+            <th scope="col">Title</th>
+            <th scope="col">Name</th>
+            <th scope="col" class="numeric">Word Count</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for title in titles %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
+            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
+            <td class="numeric">{{ "{:,}".format(title.word_count) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4">No titles found for this year.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,136 @@
+/* Red theme overrides for Pico CSS */
+:root {
+    --pico-primary: #c62828;
+    --pico-primary-hover: #b71c1c;
+    --pico-primary-focus: rgba(198, 40, 40, 0.25);
+    --pico-primary-inverse: #fff;
+}
+
+/* Ensure links use the red theme */
+a {
+    --pico-color: var(--pico-primary);
+}
+
+a:hover {
+    --pico-color: var(--pico-primary-hover);
+}
+
+/* Navigation styling */
+nav {
+    padding: 1rem 0;
+}
+
+nav strong a {
+    color: var(--pico-primary);
+    text-decoration: none;
+}
+
+/* Numeric columns right-align */
+.numeric {
+    text-align: right;
+}
+
+/* Year selector styling */
+.year-selector {
+    display: inline-block;
+    margin-bottom: 1rem;
+}
+
+.year-selector label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.year-selector select {
+    margin: 0;
+    width: auto;
+}
+
+/* Section text container */
+.section-text {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 1rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+}
+
+/* Diff container styling */
+.diff-container {
+    overflow-x: auto;
+}
+
+.diff-container table {
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.diff-container .diff_add {
+    background-color: #c8e6c9;
+}
+
+.diff-container .diff_sub {
+    background-color: #ffcdd2;
+}
+
+.diff-container .diff_chg {
+    background-color: #fff9c4;
+}
+
+/* Breadcrumb styling */
+nav[aria-label="breadcrumb"] ul {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+    gap: 0.5rem;
+}
+
+nav[aria-label="breadcrumb"] li:not(:last-child)::after {
+    content: ">";
+    margin-left: 0.5rem;
+    color: var(--pico-muted-color);
+}
+
+nav[aria-label="breadcrumb"] li:last-child {
+    color: var(--pico-muted-color);
+}
+
+/* Details/summary for structure */
+details {
+    margin-bottom: 0.5rem;
+}
+
+details summary {
+    cursor: pointer;
+    padding: 0.5rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+}
+
+details summary:hover {
+    background: var(--pico-card-sectionning-background-color);
+}
+
+details[open] summary {
+    margin-bottom: 0.5rem;
+}
+
+details ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+details li {
+    padding: 0.25rem 0;
+}
+
+/* Footer styling */
+footer {
+    margin-top: 2rem;
+    padding: 1rem 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+    text-align: center;
+}

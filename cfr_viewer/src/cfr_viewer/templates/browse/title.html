@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Title {{ title_num }} - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
+        <li>Title {{ title_num }}</li>
+    </ul>
+</nav>
+
+<hgroup>
+    <h1>Title {{ title_num }}: {{ title_name }}</h1>
+    <p>{{ "{:,}".format(word_count) }} words</p>
+</hgroup>
+
+{% include "components/year_selector.html" %}
+
+{% if structure and structure.children %}
+<article>
+    <h2>Structure</h2>
+    {% for part in structure.children %}
+    <details>
+        <summary>Part {{ part.identifier }}</summary>
+        <ul>
+            {% for section in part.children %}
+            <li>
+                <a href="{{ url_for('browse.section', title_num=title_num, section=section.identifier, year=year) }}">
+                    &sect; {{ section.identifier }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endfor %}
+</article>
+{% else %}
+<p>No structure data available for this title.</p>
+{% endif %}
+{% endblock %}

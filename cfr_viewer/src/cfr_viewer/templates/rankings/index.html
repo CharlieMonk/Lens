@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Rankings - CFR Viewer{% endblock %}
+
+{% block content %}
+<h1>Rankings</h1>
+
+<div class="grid">
+    <article>
+        <header>
+            <strong>By Agency</strong>
+        </header>
+        <p>View agencies ranked by total word count in the CFR.</p>
+        <a href="{{ url_for('rankings.agencies') }}" role="button">View Agency Rankings</a>
+    </article>
+
+    <article>
+        <header>
+            <strong>By Title</strong>
+        </header>
+        <p>View CFR titles ranked by total word count.</p>
+        <a href="{{ url_for('rankings.titles') }}" role="button">View Title Rankings</a>
+    </article>
+</div>
+{% endblock %}
