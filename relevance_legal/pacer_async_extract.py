@@ -173,29 +173,38 @@ class CitationIndexer:
         self.db_path = db_path
         self._patterns = [
             re.compile(
-                r"29\s+C\.?\s*F\.?\s*R\.?\s*"
-                r"(?:§|Sec\.|Section|Part|Pt\.)?\s*"
-                r"\d{1,4}(?:\.\d+)*[a-zA-Z]?"
-                r"(?:\s*[-–]\s*\d{1,4}(?:\.\d+)*[a-zA-Z]?)?"
-                r"(?:\s*\([a-zA-Z0-9]+\))*",
+                r"(?P<title>\d{1,2})\s+C\.?\s*F\.?\s*R\.?\s*"
+                r"(?P<kind>§|Sec\.|Section|Part|Pt\.)?\s*"
+                r"(?P<num>\d{1,4}(?:\.\d+)*[a-zA-Z]?)"
+                r"(?P<rest>(?:\s*[-–]\s*\d{1,4}(?:\.\d+)*[a-zA-Z]?)?"
+                r"(?:\s*\([a-zA-Z0-9]+\))*)",
                 re.IGNORECASE,
             ),
             re.compile(
-                r"29\s+CFR\s*§?\s*\d{1,4}(?:\.\d+)*[a-zA-Z]?"
-                r"(?:\s*\([a-zA-Z0-9]+\))*",
+                r"(?P<title>\d{1,2})\s+CFR\s*§?\s*"
+                r"(?P<num>\d{1,4}(?:\.\d+)*[a-zA-Z]?)"
+                r"(?P<rest>(?:\s*[-–]\s*\d{1,4}(?:\.\d+)*[a-zA-Z]?)?"
+                r"(?:\s*\([a-zA-Z0-9]+\))*)",
                 re.IGNORECASE,
             ),
         ]
 
     @staticmethod
-    def _normalize_citation(text: str) -> str:
-        text = text.strip()
-        text = re.sub(r"\s+", " ", text)
-        text = re.sub(r"C\.?\s*F\.?\s*R\.?", "CFR", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*§\s*", " § ", text)
-        text = re.sub(r"\s+\(", "(", text)
-        text = re.sub(r"\)\s+", ") ", text)
-        return text.strip()
+    def _normalize_citation(match: re.Match) -> str:
+        title = match.group("title") if "title" in match.groupdict() else "29"
+        kind = (match.group("kind") or "").lower()
+        num = match.group("num")
+        rest = match.group("rest") or ""
+
+        rest = re.sub(r"\s+", " ", rest)
+        rest = rest.replace("–", "-")
+        rest = re.sub(r"\s*-\s*", "-", rest)
+        rest = re.sub(r"\s+\(", "(", rest)
+        rest = re.sub(r"\)\s+", ") ", rest).strip()
+
+        if kind in {"part", "pt."}:
+            return f"{title} CFR part {num}{(' ' + rest) if rest else ''}".strip()
+        return f"{title} CFR {num}{(' ' + rest) if rest else ''}".strip()
 
     def _extract_citations(self, text: str) -> List[str]:
         citations: List[str] = []
@@ -206,7 +215,7 @@ class CitationIndexer:
                 if span in seen_spans:
                     continue
                 seen_spans.add(span)
-                citations.append(self._normalize_citation(match.group(0)))
+                citations.append(self._normalize_citation(match))
         return citations
 
     def _init_db(self) -> None:
