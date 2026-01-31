@@ -8,18 +8,18 @@ import typer
 from rich import print
 from rich.table import Table
 
-from relevance.adapters.registry import AdapterRegistry
-from relevance.application.aggregation import AggregationService
-from relevance.application.bootstrap import add_source, ensure_agency
-from relevance.application.citation_extractor import CitationExtractor
-from relevance.application.ingestion import IngestionService
-from relevance.application.query import QueryService
-from relevance.infrastructure.config import AppSettings
-from relevance.infrastructure.db import Database, DatabaseConfig
-from relevance.infrastructure.fixture_fetcher import FixtureFetcher, FixtureRegistry
-from relevance.infrastructure.http_fetcher import HttpFetcher, HttpFetcherConfig
-from relevance.infrastructure.migrations import MigrationRunner
-from relevance.infrastructure.repositories import (
+from relevance.adapters_registry import AdapterRegistry
+from relevance.application_aggregation import AggregationService
+from relevance.application_bootstrap import add_source, ensure_agency
+from relevance.application_citation_extractor import CitationExtractor
+from relevance.application_ingestion import IngestionService
+from relevance.application_query import QueryService
+from relevance.infrastructure_config import AppSettings
+from relevance.infrastructure_db import Database, DatabaseConfig
+from relevance.infrastructure_fixture_fetcher import FixtureFetcher, FixtureRegistry
+from relevance.infrastructure_http_fetcher import HttpFetcher, HttpFetcherConfig
+from relevance.infrastructure_migrations import MigrationRunner
+from relevance.infrastructure_repositories import (
     AgencyRepository,
     CitationRepository,
     DocumentCitationRepository,
@@ -278,7 +278,7 @@ def _agency_id(repo: AgencyRepository, name: str | None) -> int:
 
 
 def _source_type(value: str):
-    from relevance.domain.models import SourceType
+    from relevance.domain_models import SourceType
 
     try:
         return SourceType(value)

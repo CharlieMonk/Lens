@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from relevance.application.fetcher import Fetcher
+from relevance.application_fetcher import Fetcher
 
 
 @dataclass(frozen=True)

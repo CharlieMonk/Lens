@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from relevance.domain.models import CitationType
+from relevance.domain_models import CitationType
 
 
 @dataclass(frozen=True)

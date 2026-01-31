@@ -29,7 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-relevance = "relevance.cli.main:app"
+relevance = "relevance.cli_main:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

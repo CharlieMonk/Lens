@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from relevance.domain import models
-from relevance.infrastructure.repositories import AgencyRepository, SourceRepository
+import relevance.domain_models as models
+from relevance.infrastructure_repositories import AgencyRepository, SourceRepository
 
 
 def ensure_agency(repo: AgencyRepository, name: str, aliases: list[str]) -> int:

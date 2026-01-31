@@ -1,5 +1,5 @@
-from relevance.application.citation_extractor import CitationExtractor
-from relevance.domain.models import CitationType
+from relevance.application_citation_extractor import CitationExtractor
+from relevance.domain_models import CitationType
 
 
 def test_citation_extractor_section_and_part():

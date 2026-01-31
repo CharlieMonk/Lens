@@ -6,8 +6,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from relevance.domain import models
-from relevance.infrastructure.orm import (
+import relevance.domain_models as models
+from relevance.infrastructure_orm import (
     AgencyModel,
     AggregateCfrCountModel,
     CitationModel,

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
-from relevance.application.fetcher import Fetcher
+from relevance.application_fetcher import Fetcher
 
 
 @dataclass(frozen=True)

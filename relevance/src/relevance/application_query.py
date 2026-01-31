@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from relevance.infrastructure.orm import (
+from relevance.infrastructure_orm import (
     AgencyModel,
     AggregateCfrCountModel,
     CitationModel,

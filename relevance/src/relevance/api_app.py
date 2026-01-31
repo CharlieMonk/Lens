@@ -4,10 +4,10 @@ from datetime import datetime
 
 from fastapi import FastAPI, Query
 
-from relevance.application.query import QueryService
-from relevance.infrastructure.config import AppSettings
-from relevance.interface.wiring import build_app
-from relevance.infrastructure.repositories import AgencyRepository
+from relevance.application_query import QueryService
+from relevance.infrastructure_config import AppSettings
+from relevance.interface_wiring import build_app
+from relevance.infrastructure_repositories import AgencyRepository
 
 app = FastAPI(title="CFR Relevance API")
 

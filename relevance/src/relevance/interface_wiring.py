@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from relevance.adapters.registry import AdapterRegistry
-from relevance.application.aggregation import AggregationService
-from relevance.application.citation_extractor import CitationExtractor
-from relevance.application.ingestion import IngestionService
-from relevance.infrastructure.config import AppSettings
-from relevance.infrastructure.db import Database, DatabaseConfig
-from relevance.infrastructure.logging import configure_logging
-from relevance.infrastructure.migrations import MigrationRunner
+from relevance.adapters_registry import AdapterRegistry
+from relevance.application_aggregation import AggregationService
+from relevance.application_citation_extractor import CitationExtractor
+from relevance.application_ingestion import IngestionService
+from relevance.infrastructure_config import AppSettings
+from relevance.infrastructure_db import Database, DatabaseConfig
+from relevance.infrastructure_logging import configure_logging
+from relevance.infrastructure_migrations import MigrationRunner
 
 
 def build_app(settings: AppSettings | None = None):

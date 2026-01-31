@@ -11,12 +11,7 @@ Production-grade Python system for identifying which CFR sections are most commo
 - Pluggable adapters to add agencies without touching core logic
 
 ## Project layout
-- `src/relevance/domain` domain models
-- `src/relevance/application` services (ingestion, extraction, aggregation)
-- `src/relevance/infrastructure` persistence, fetchers, migrations
-- `src/relevance/adapters` agency adapters
-- `src/relevance/cli` CLI
-- `src/relevance/api` FastAPI app
+- `src/relevance/` flat modules (domain, services, adapters, persistence, CLI, API)
 - `tests/fixtures` offline HTML fixtures
 
 ## Setup (local .venv)
@@ -74,7 +69,7 @@ relevance build-starter-db --out data/starter.sqlite --fixtures tests/fixtures -
 ## API
 Run:
 ```bash
-uvicorn relevance.api.app:app --reload
+uvicorn relevance.api_app:app --reload
 ```
 
 Endpoints:

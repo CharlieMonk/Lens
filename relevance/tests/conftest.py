@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from relevance.infrastructure.orm import Base
+from relevance.infrastructure_orm import Base
 
 
 @pytest.fixture()

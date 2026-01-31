@@ -1,7 +1,7 @@
-from relevance.adapters.dol import DolEnforcementAdapter
-from relevance.adapters.epa import EpaEnforcementAdapter
-from relevance.adapters.sec import SecEnforcementAdapter
-from relevance.infrastructure.fixture_fetcher import FixtureFetcher, FixtureRegistry
+from relevance.adapters_dol import DolEnforcementAdapter
+from relevance.adapters_epa import EpaEnforcementAdapter
+from relevance.adapters_sec import SecEnforcementAdapter
+from relevance.infrastructure_fixture_fetcher import FixtureFetcher, FixtureRegistry
 
 
 def test_sec_adapter_parses_fixtures(fixtures_path):

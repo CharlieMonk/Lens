@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from relevance.infrastructure.orm import CitationModel, DocumentCitationModel, DocumentModel
-from relevance.infrastructure.repositories import AggregateRepository
+from relevance.infrastructure_orm import CitationModel, DocumentCitationModel, DocumentModel
+from relevance.infrastructure_repositories import AggregateRepository
 
 
 class AggregationService:

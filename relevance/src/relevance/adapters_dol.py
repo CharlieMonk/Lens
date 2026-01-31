@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from relevance.adapters.base import AgencyAdapter, ParsedDocument
-from relevance.application.dates import parse_date
-from relevance.application.fetcher import Fetcher
+from relevance.adapters_base import AgencyAdapter, ParsedDocument
+from relevance.application_dates import parse_date
+from relevance.application_fetcher import Fetcher
 
 
 class DolEnforcementAdapter(AgencyAdapter):

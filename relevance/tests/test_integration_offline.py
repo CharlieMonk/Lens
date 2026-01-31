@@ -1,18 +1,18 @@
-from relevance.adapters.registry import AdapterRegistry
-from relevance.application.aggregation import AggregationService
-from relevance.application.bootstrap import add_source, ensure_agency
-from relevance.application.citation_extractor import CitationExtractor
-from relevance.application.ingestion import IngestionService
-from relevance.application.query import QueryService
-from relevance.infrastructure.fixture_fetcher import FixtureFetcher, FixtureRegistry
-from relevance.infrastructure.repositories import (
+from relevance.adapters_registry import AdapterRegistry
+from relevance.application_aggregation import AggregationService
+from relevance.application_bootstrap import add_source, ensure_agency
+from relevance.application_citation_extractor import CitationExtractor
+from relevance.application_ingestion import IngestionService
+from relevance.application_query import QueryService
+from relevance.infrastructure_fixture_fetcher import FixtureFetcher, FixtureRegistry
+from relevance.infrastructure_repositories import (
     AgencyRepository,
     CitationRepository,
     DocumentCitationRepository,
     DocumentRepository,
     SourceRepository,
 )
-from relevance.domain.models import SourceType
+from relevance.domain_models import SourceType
 
 
 def test_offline_ingestion_and_aggregation(session, fixtures_path):

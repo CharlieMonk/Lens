@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from relevance.adapters.base import AgencyAdapter
-from relevance.adapters.dol import DolEnforcementAdapter
-from relevance.adapters.epa import EpaEnforcementAdapter
-from relevance.adapters.sec import SecEnforcementAdapter
+from relevance.adapters_base import AgencyAdapter
+from relevance.adapters_dol import DolEnforcementAdapter
+from relevance.adapters_epa import EpaEnforcementAdapter
+from relevance.adapters_sec import SecEnforcementAdapter
 
 
 class AdapterRegistry:

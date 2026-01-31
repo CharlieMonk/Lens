@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
-from relevance.infrastructure.orm import Base, SchemaMigrationModel
+from relevance.infrastructure_orm import Base, SchemaMigrationModel
 
 
 LATEST_VERSION = "0001_initial"

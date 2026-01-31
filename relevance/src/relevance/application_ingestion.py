@@ -4,11 +4,11 @@ import hashlib
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from relevance.adapters.registry import AdapterRegistry
-from relevance.application.citation_extractor import CitationExtractor
-from relevance.application.fetcher import Fetcher
-from relevance.domain import models
-from relevance.infrastructure.repositories import (
+from relevance.adapters_registry import AdapterRegistry
+from relevance.application_citation_extractor import CitationExtractor
+from relevance.application_fetcher import Fetcher
+import relevance.domain_models as models
+from relevance.infrastructure_repositories import (
     CitationRepository,
     DocumentCitationRepository,
     DocumentRepository,

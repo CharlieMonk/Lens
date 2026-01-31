@@ -9,7 +9,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from relevance.application.fetcher import Fetcher
+from relevance.application_fetcher import Fetcher
 
 logger = logging.getLogger(__name__)
 

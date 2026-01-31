@@ -2,7 +2,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from relevance.cli.main import app
+from relevance.cli_main import app
 
 
 def test_ingest_requires_agency_when_not_all(tmp_path):
