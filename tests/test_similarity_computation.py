@@ -7,69 +7,71 @@ from pathlib import Path
 
 import pytest
 
-from fetch_titles import ECFRDatabase, ECFRFetcher
+from ecfr import ECFRDatabase, ECFRFetcher
+
+
+@pytest.fixture
+def temp_db():
+    """Create a temporary database for testing."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test_ecfr.db"
+        yield ECFRDatabase(db_path)
+
+
+@pytest.fixture
+def sample_sections():
+    """Sample sections with enough text for TF-IDF to find similarities."""
+    return [
+        {
+            "title": 1,
+            "chapter": "I",
+            "part": "1",
+            "section": "1.1",
+            "heading": "Definitions",
+            "text": "This section defines terms used throughout this chapter. "
+                    "Regulations apply to all persons subject to federal law.",
+        },
+        {
+            "title": 1,
+            "chapter": "I",
+            "part": "1",
+            "section": "1.2",
+            "heading": "Scope",
+            "text": "This section describes the scope of regulations. "
+                    "Regulations apply to all persons subject to federal requirements.",
+        },
+        {
+            "title": 1,
+            "chapter": "I",
+            "part": "2",
+            "section": "2.1",
+            "heading": "Purpose",
+            "text": "The purpose of these regulations is to establish standards. "
+                    "Federal law requires compliance with all applicable rules.",
+        },
+        {
+            "title": 1,
+            "chapter": "II",
+            "part": "10",
+            "section": "10.1",
+            "heading": "General provisions",
+            "text": "General provisions for administrative procedures. "
+                    "All agencies must follow these guidelines for rulemaking.",
+        },
+        {
+            "title": 1,
+            "chapter": "II",
+            "part": "10",
+            "section": "10.2",
+            "heading": "Procedures",
+            "text": "Administrative procedures for notice and comment rulemaking. "
+                    "Agencies must provide public notice before adopting rules.",
+        },
+    ]
 
 
 class TestSimilarityComputation:
     """Test that similarities are computed when data is added."""
-
-    @pytest.fixture
-    def temp_db(self):
-        """Create a temporary database for testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test_ecfr.db"
-            yield ECFRDatabase(db_path)
-
-    @pytest.fixture
-    def sample_sections(self):
-        """Sample sections with enough text for TF-IDF to find similarities."""
-        return [
-            {
-                "title": 1,
-                "chapter": "I",
-                "part": "1",
-                "section": "1.1",
-                "heading": "Definitions",
-                "text": "This section defines terms used throughout this chapter. "
-                        "Regulations apply to all persons subject to federal law.",
-            },
-            {
-                "title": 1,
-                "chapter": "I",
-                "part": "1",
-                "section": "1.2",
-                "heading": "Scope",
-                "text": "This section describes the scope of regulations. "
-                        "Regulations apply to all persons subject to federal requirements.",
-            },
-            {
-                "title": 1,
-                "chapter": "I",
-                "part": "2",
-                "section": "2.1",
-                "heading": "Purpose",
-                "text": "The purpose of these regulations is to establish standards. "
-                        "Federal law requires compliance with all applicable rules.",
-            },
-            {
-                "title": 1,
-                "chapter": "II",
-                "part": "10",
-                "section": "10.1",
-                "heading": "General provisions",
-                "text": "General provisions for administrative procedures. "
-                        "All agencies must follow these guidelines for rulemaking.",
-            },
-            {
-                "title": 1,
-                "chapter": "II",
-                "part": "10",
-                "section": "10.2",
-                "heading": "Procedures",
-                "text": "Administrative procedures for notice and comment rulemaking. "
-                        "Agencies must provide public notice before adopting rules.",
-            },
-        ]
 
     def test_save_sections_stores_data(self, temp_db, sample_sections):
         """Verify sections are saved to the database."""
@@ -171,6 +173,64 @@ class TestSimilarityComputation:
         conn.close()
 
         assert 2020 in years
+
+
+class TestECFRReaderSimilarity:
+    """Test ECFRReader similarity methods."""
+
+    @pytest.fixture
+    def reader_with_data(self, sample_sections):
+        """Create a reader with test data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test_ecfr.db"
+            db = ECFRDatabase(db_path)
+            db.save_sections(sample_sections, year=0)
+            db.compute_similarities(title=1, year=0)
+
+            from ecfr_reader import ECFRReader
+
+            reader = ECFRReader(db_path=str(db_path))
+            yield reader
+
+    def test_get_similar_sections(self, reader_with_data):
+        """Test finding similar sections for a given section."""
+        similar = reader_with_data.get_similar_sections(title=1, section="1.1", limit=5)
+        assert isinstance(similar, list)
+        for item in similar:
+            assert "title" in item
+            assert "section" in item
+            assert "similarity" in item
+            assert 0 < item["similarity"] <= 1
+
+    def test_get_most_similar_pairs(self, reader_with_data):
+        """Test getting most similar section pairs."""
+        pairs = reader_with_data.get_most_similar_pairs(limit=10, min_similarity=0.1)
+        assert isinstance(pairs, list)
+        for pair in pairs:
+            assert "title1" in pair
+            assert "section1" in pair
+            assert "title2" in pair
+            assert "section2" in pair
+            assert "similarity" in pair
+
+    def test_find_duplicate_regulations(self, reader_with_data):
+        """Test finding duplicate regulations."""
+        dupes = reader_with_data.find_duplicate_regulations(min_similarity=0.1, limit=10)
+        assert isinstance(dupes, list)
+        for dupe in dupes:
+            assert "title1" in dupe
+            assert "text1" in dupe
+            assert "title2" in dupe
+            assert "text2" in dupe
+
+    def test_similarity_stats(self, reader_with_data):
+        """Test similarity statistics."""
+        stats = reader_with_data.similarity_stats()
+        assert "total_pairs" in stats
+        assert "titles_with_similarities" in stats
+        assert "distribution" in stats
+        assert "avg_similarity" in stats
+        assert stats["total_pairs"] > 0
 
 
 if __name__ == "__main__":

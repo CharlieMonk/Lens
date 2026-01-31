@@ -319,3 +319,201 @@ class ECFRReader:
             "text": row[9],
             "word_count": row[10],
         }
+
+    def get_similar_sections(
+        self,
+        title: int,
+        section: str,
+        year: int = 0,
+        limit: int = 10,
+        min_similarity: float = 0.1,
+    ) -> list[dict]:
+        """Find sections similar to a given section based on TF-IDF cosine similarity.
+
+        Args:
+            title: CFR title number
+            section: Section number (e.g., "1.1")
+            year: Year for historical data (0 = current)
+            limit: Maximum number of similar sections to return
+            min_similarity: Minimum similarity score (0-1) to include
+
+        Returns:
+            List of dicts with similar_title, similar_section, similarity, and heading.
+        """
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT ss.similar_title, ss.similar_section, ss.similarity, s.heading
+            FROM section_similarities ss
+            LEFT JOIN sections s
+                ON ss.year = s.year
+                AND ss.similar_title = s.title
+                AND ss.similar_section = s.section
+            WHERE ss.year = ? AND ss.title = ? AND ss.section = ?
+                AND ss.similarity >= ?
+            ORDER BY ss.similarity DESC
+            LIMIT ?
+        ''', (year, title, section, min_similarity, limit))
+
+        return [
+            {
+                "title": row[0],
+                "section": row[1],
+                "similarity": row[2],
+                "heading": row[3],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def get_most_similar_pairs(
+        self,
+        year: int = 0,
+        limit: int = 20,
+        min_similarity: float = 0.5,
+        title: int = None,
+    ) -> list[dict]:
+        """Get the most similar section pairs across all titles.
+
+        Args:
+            year: Year for historical data (0 = current)
+            limit: Maximum number of pairs to return
+            min_similarity: Minimum similarity score (0-1) to include
+            title: Optional title number to filter by
+
+        Returns:
+            List of dicts with section pair info and similarity scores.
+        """
+        cursor = self.db.cursor()
+
+        query = '''
+            SELECT ss.title, ss.section, s1.heading,
+                   ss.similar_title, ss.similar_section, s2.heading,
+                   ss.similarity
+            FROM section_similarities ss
+            LEFT JOIN sections s1
+                ON ss.year = s1.year AND ss.title = s1.title AND ss.section = s1.section
+            LEFT JOIN sections s2
+                ON ss.year = s2.year AND ss.similar_title = s2.title AND ss.similar_section = s2.section
+            WHERE ss.year = ? AND ss.similarity >= ?
+                AND ss.section < ss.similar_section
+        '''
+        params = [year, min_similarity]
+
+        if title:
+            query += " AND ss.title = ?"
+            params.append(title)
+
+        query += " ORDER BY ss.similarity DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+
+        return [
+            {
+                "title1": row[0],
+                "section1": row[1],
+                "heading1": row[2],
+                "title2": row[3],
+                "section2": row[4],
+                "heading2": row[5],
+                "similarity": row[6],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def find_duplicate_regulations(
+        self,
+        year: int = 0,
+        min_similarity: float = 0.95,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Find potential duplicate regulations (sections with very high similarity).
+
+        Args:
+            year: Year for historical data (0 = current)
+            min_similarity: Minimum similarity threshold (default 0.95 for near-duplicates)
+            limit: Maximum number of pairs to return
+
+        Returns:
+            List of dicts with duplicate pair info including full text.
+        """
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT ss.title, ss.section, s1.heading, s1.text,
+                   ss.similar_title, ss.similar_section, s2.heading, s2.text,
+                   ss.similarity
+            FROM section_similarities ss
+            LEFT JOIN sections s1
+                ON ss.year = s1.year AND ss.title = s1.title AND ss.section = s1.section
+            LEFT JOIN sections s2
+                ON ss.year = s2.year AND ss.similar_title = s2.title AND ss.similar_section = s2.section
+            WHERE ss.year = ? AND ss.similarity >= ?
+                AND ss.section < ss.similar_section
+            ORDER BY ss.similarity DESC
+            LIMIT ?
+        ''', (year, min_similarity, limit))
+
+        return [
+            {
+                "title1": row[0],
+                "section1": row[1],
+                "heading1": row[2],
+                "text1": row[3],
+                "title2": row[4],
+                "section2": row[5],
+                "heading2": row[6],
+                "text2": row[7],
+                "similarity": row[8],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def similarity_stats(self, year: int = 0) -> dict:
+        """Get statistics about section similarities in the database.
+
+        Args:
+            year: Year for historical data (0 = current)
+
+        Returns:
+            Dict with counts and distribution info.
+        """
+        cursor = self.db.cursor()
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM section_similarities WHERE year = ?",
+            (year,)
+        )
+        total_pairs = cursor.fetchone()[0]
+
+        cursor.execute(
+            "SELECT COUNT(DISTINCT title) FROM section_similarities WHERE year = ?",
+            (year,)
+        )
+        titles_with_similarities = cursor.fetchone()[0]
+
+        cursor.execute('''
+            SELECT
+                COUNT(CASE WHEN similarity >= 0.9 THEN 1 END) as very_high,
+                COUNT(CASE WHEN similarity >= 0.7 AND similarity < 0.9 THEN 1 END) as high,
+                COUNT(CASE WHEN similarity >= 0.5 AND similarity < 0.7 THEN 1 END) as medium,
+                COUNT(CASE WHEN similarity >= 0.3 AND similarity < 0.5 THEN 1 END) as low,
+                COUNT(CASE WHEN similarity < 0.3 THEN 1 END) as very_low,
+                AVG(similarity) as avg_similarity,
+                MAX(similarity) as max_similarity
+            FROM section_similarities
+            WHERE year = ?
+        ''', (year,))
+        row = cursor.fetchone()
+
+        return {
+            "total_pairs": total_pairs,
+            "titles_with_similarities": titles_with_similarities,
+            "distribution": {
+                "very_high_0.9+": row[0],
+                "high_0.7-0.9": row[1],
+                "medium_0.5-0.7": row[2],
+                "low_0.3-0.5": row[3],
+                "very_low_<0.3": row[4],
+            },
+            "avg_similarity": row[5],
+            "max_similarity": row[6],
+        }
