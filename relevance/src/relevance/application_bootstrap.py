@@ -7,6 +7,7 @@ from relevance.infrastructure_repositories import AgencyRepository, SourceReposi
 def ensure_agency(repo: AgencyRepository, name: str, aliases: list[str]) -> int:
     existing = repo.get_by_name(name)
     if existing:
+        repo.update(existing, aliases)
         return existing.id
     agency = models.Agency(id=None, name=name, aliases=aliases)
     return repo.add(agency).id
@@ -26,4 +27,7 @@ def add_source(
         base_url=base_url,
         config_json=config_json,
     )
+    existing = source_repo.get_by_base_url(base_url)
+    if existing:
+        return source_repo.update(existing, source).id
     return source_repo.add(source).id
