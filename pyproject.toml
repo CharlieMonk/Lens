@@ -1,0 +1,39 @@
+[project]
+name = "efcr"
+version = "0.1.0"
+description = "eCFR tooling with enforcement relevance analysis"
+requires-python = ">=3.10"
+readme = "relevance/README.md"
+dependencies = [
+  "requests>=2.28.0",
+  "lxml>=4.9.0",
+  "pyyaml>=6.0",
+  "playwright>=1.40.0",
+  "SQLAlchemy>=2.0",
+  "httpx>=0.26",
+  "beautifulsoup4>=4.12",
+  "pypdf>=4.2.0",
+  "tenacity>=8.2",
+  "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=4.1",
+  "pytest-playwright>=0.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["relevance/tests", "tests"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "relevance/src"}
+
+[tool.setuptools.packages.find]
+where = ["relevance/src"]
