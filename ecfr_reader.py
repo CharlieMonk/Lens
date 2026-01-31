@@ -3,7 +3,10 @@
 
 import re
 from pathlib import Path
-from typing import Generator
+
+
+# Hierarchy levels in order (used to clear lower levels when higher level changes)
+HIERARCHY_LEVELS = ['title', 'subtitle', 'chapter', 'subchapter', 'part', 'subpart', 'section']
 
 
 class ECFRReader:
@@ -39,26 +42,28 @@ class ECFRReader:
         if not path.exists():
             raise FileNotFoundError(f"Title {title} not found at {path}")
 
-        sections = self._parse_markdown(path, title)
+        sections = self._parse_markdown(path)
         self._cache[title] = sections
         return sections
 
-    def _parse_markdown(self, path: Path, title_num: int) -> list[dict]:
+    def _parse_markdown(self, path: Path) -> list[dict]:
         """Parse Markdown file into section list with hierarchy info."""
         sections = []
         context = {}
         current_section = None
         current_text = []
 
-        # Patterns
+        # Patterns for hierarchy elements
         heading_pattern = re.compile(r'^(#{1,6})\s+(.+)$')
-        title_pattern = re.compile(r'Title\s+(\d+)', re.IGNORECASE)
-        subtitle_pattern = re.compile(r'Subtitle\s+([A-Z])', re.IGNORECASE)
-        chapter_pattern = re.compile(r'Chapter\s+([IVXLCDM]+)', re.IGNORECASE)
-        subchapter_pattern = re.compile(r'Subchapter\s+([A-Z])', re.IGNORECASE)
-        part_pattern = re.compile(r'Part\s+(\d+)', re.IGNORECASE)
-        subpart_pattern = re.compile(r'Subpart\s+([A-Z])', re.IGNORECASE)
         section_pattern = re.compile(r'§\s*(\d+\.\d+[a-z]?(?:-\d+)?)')
+        hierarchy_patterns = {
+            'title': re.compile(r'Title\s+(\d+)', re.IGNORECASE),
+            'subtitle': re.compile(r'Subtitle\s+([A-Z])', re.IGNORECASE),
+            'chapter': re.compile(r'Chapter\s+([IVXLCDM]+)', re.IGNORECASE),
+            'subchapter': re.compile(r'Subchapter\s+([A-Z])', re.IGNORECASE),
+            'part': re.compile(r'Part\s+(\d+)', re.IGNORECASE),
+            'subpart': re.compile(r'Subpart\s+([A-Z])', re.IGNORECASE),
+        }
 
         def save_section():
             nonlocal current_section, current_text
@@ -67,6 +72,12 @@ class ECFRReader:
                 sections.append(current_section)
             current_section = None
             current_text = []
+
+        def clear_lower_levels(level: str):
+            """Clear hierarchy levels below the given level."""
+            idx = HIERARCHY_LEVELS.index(level)
+            for k in HIERARCHY_LEVELS[idx + 1:]:
+                context.pop(k, None)
 
         with open(path, 'r') as f:
             for line in f:
@@ -91,33 +102,14 @@ class ECFRReader:
                         continue
 
                     # Update hierarchy context
-                    if m := title_pattern.search(heading_text):
-                        save_section()
-                        context = {'title': m.group(1)}
-                    elif m := subtitle_pattern.search(heading_text):
-                        save_section()
-                        context['subtitle'] = m.group(1)
-                        for k in ['chapter', 'subchapter', 'part', 'subpart', 'section']:
-                            context.pop(k, None)
-                    elif m := chapter_pattern.search(heading_text):
-                        save_section()
-                        context['chapter'] = m.group(1)
-                        for k in ['subchapter', 'part', 'subpart', 'section']:
-                            context.pop(k, None)
-                    elif m := subchapter_pattern.search(heading_text):
-                        save_section()
-                        context['subchapter'] = m.group(1)
-                        for k in ['part', 'subpart', 'section']:
-                            context.pop(k, None)
-                    elif m := part_pattern.search(heading_text):
-                        save_section()
-                        context['part'] = m.group(1)
-                        for k in ['subpart', 'section']:
-                            context.pop(k, None)
-                    elif m := subpart_pattern.search(heading_text):
-                        save_section()
-                        context['subpart'] = m.group(1)
-                        context.pop('section', None)
+                    for level, pattern in hierarchy_patterns.items():
+                        if m := pattern.search(heading_text):
+                            save_section()
+                            if level == 'title':
+                                context.clear()
+                            context[level] = m.group(1)
+                            clear_lower_levels(level)
+                            break
                     continue
 
                 # Accumulate section text

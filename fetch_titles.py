@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fetch CFR titles 1-50 from the eCFR API for the latest issue date."""
 
+import asyncio
 import re
 import sqlite3
 import time
@@ -9,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
+import aiohttp
 import requests
 from lxml import etree
 
@@ -320,7 +322,7 @@ class ECFRClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-    def _request_with_retry(self, url: str, timeout: int = 30) -> requests.Response:
+    def _request_with_retry(self, url: str, timeout: int = 30, retry_on_timeout: bool = True) -> requests.Response:
         """Make a request with exponential backoff retry logic."""
         for attempt in range(self.max_retries):
             try:
@@ -329,6 +331,14 @@ class ECFRClient:
                 return response
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 429 and attempt < self.max_retries - 1:
+                    delay = self.retry_delay * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                raise
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                if not retry_on_timeout:
+                    raise
+                if attempt < self.max_retries - 1:
                     delay = self.retry_delay * (2 ** attempt)
                     time.sleep(delay)
                     continue
@@ -353,11 +363,122 @@ class ECFRClient:
         response = self._request_with_retry(url)
         return response.json().get("agencies", [])
 
-    def fetch_title_xml(self, title_num: int, date: str) -> bytes:
-        """Fetch full XML for a title on a specific date."""
+    def fetch_title_xml(self, title_num: int, date: str, timeout: int = 60) -> bytes:
+        """Fetch full XML for a title on a specific date. Fails fast on timeout."""
         url = f"{self.BASE_URL}/versioner/v1/full/{date}/title-{title_num}.xml"
+        response = self._request_with_retry(url, timeout=timeout, retry_on_timeout=False)
+        return response.content
+
+    def fetch_title_xml_bulk(self, title_num: int, timeout: int = 120) -> bytes:
+        """Fetch full XML for a title from govinfo bulk endpoint (current data only)."""
+        url = f"https://www.govinfo.gov/bulkdata/ECFR/title-{title_num}/ECFR-title{title_num}.xml"
+        response = self._request_with_retry(url, timeout=timeout)
+        return response.content
+
+    async def fetch_cfr_annual_async(self, title_num: int, year: int) -> list[bytes]:
+        """Fetch CFR annual edition volumes from govinfo bulk (fast historical data).
+
+        Returns list of XML content for all volumes of the title.
+        """
+        base = f"https://www.govinfo.gov/bulkdata/CFR/{year}/title-{title_num}"
+
+        async def fetch_vol(session, vol):
+            url = f"{base}/CFR-{year}-title{title_num}-vol{vol}.xml"
+            try:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        return await resp.read()
+                    return None
+            except:
+                return None
+
+        # Fetch volumes 1-50 (most titles have fewer, extras will 404)
+        connector = aiohttp.TCPConnector(limit=30)
+        timeout = aiohttp.ClientTimeout(total=120)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            tasks = [fetch_vol(session, v) for v in range(1, 51)]
+            results = await asyncio.gather(*tasks)
+
+        # Filter out None (404s)
+        return [r for r in results if r is not None]
+
+    def fetch_title_structure(self, title_num: int, date: str) -> dict:
+        """Fetch the structure/TOC for a title on a specific date."""
+        url = f"{self.BASE_URL}/versioner/v1/structure/{date}/title-{title_num}.json"
+        response = self._request_with_retry(url, timeout=120)
+        return response.json()
+
+    def fetch_title_xml_chunk(self, title_num: int, date: str, chunk_type: str, chunk_id: str) -> bytes:
+        """Fetch partial XML for a title (by chapter or subchapter)."""
+        url = f"{self.BASE_URL}/versioner/v1/full/{date}/title-{title_num}.xml?{chunk_type}={chunk_id}"
         response = self._request_with_retry(url, timeout=300)
         return response.content
+
+    def get_title_chunks(self, title_num: int, date: str) -> list[tuple[str, str]]:
+        """Get list of chunks (parts) to fetch for a title.
+
+        Returns list of ('part', part_id) tuples.
+        """
+        structure = self.fetch_title_structure(title_num, date)
+        chunks = []
+
+        def find_parts(node):
+            if node.get('type') == 'part':
+                chunks.append(('part', node.get('identifier')))
+            for child in node.get('children', []):
+                find_parts(child)
+
+        find_parts(structure)
+        return chunks
+
+    async def fetch_chunks_async(self, title_num: int, date: str, chunks: list[tuple[str, str]],
+                                   max_concurrent: int = 2, delay: float = 0.2) -> list[bytes]:
+        """Fetch multiple chunks with rate limiting to avoid 429 errors.
+
+        The eCFR API is heavily rate-limited. With max_concurrent=2 and delay=0.2,
+        we achieve ~0.4 req/s which avoids rate limiting but is slow for large titles.
+
+        Returns list of XML content bytes in the same order as chunks.
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+        completed_count = [0]
+        total = len(chunks)
+
+        async def fetch_one(session, idx, chunk_type, chunk_id):
+            url = f"{self.BASE_URL}/versioner/v1/full/{date}/title-{title_num}.xml?{chunk_type}={chunk_id}"
+            async with semaphore:
+                await asyncio.sleep(delay)  # Rate limiting delay
+                for attempt in range(5):
+                    try:
+                        async with session.get(url) as response:
+                            if response.status == 429:
+                                wait_time = 5 * (2 ** attempt)
+                                await asyncio.sleep(wait_time)
+                                continue
+                            response.raise_for_status()
+                            content = await response.read()
+                            completed_count[0] += 1
+                            if completed_count[0] % 50 == 0:
+                                print(f"    {completed_count[0]}/{total} parts...", flush=True)
+                            return idx, content
+                    except aiohttp.ClientError:
+                        if attempt == 4:
+                            raise
+                        await asyncio.sleep(2)
+            raise aiohttp.ClientError(f"Failed after 5 attempts: {url}")
+
+        connector = aiohttp.TCPConnector(limit=max_concurrent)
+        timeout = aiohttp.ClientTimeout(total=1800)  # 30 min timeout for large titles
+
+        results = [None] * len(chunks)
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            tasks = [fetch_one(session, i, ct, cid) for i, (ct, cid) in enumerate(chunks)]
+            completed = await asyncio.gather(*tasks, return_exceptions=False)
+            for idx, content in completed:
+                results[idx] = content
+
+        return results
 
 
 class MarkdownConverter:
@@ -504,6 +625,105 @@ class MarkdownConverter:
 
         return output_path.stat().st_size, dict(word_counts), dict(chapter_word_counts)
 
+    def convert_chunks(self, xml_chunks: list[bytes], output_path: Path) -> tuple[int, dict, dict]:
+        """Convert multiple XML chunks to a single Markdown file.
+
+        Returns:
+            Tuple of (file_size, word_counts, chapter_word_counts).
+        """
+        all_word_counts = defaultdict(int)
+        all_chapter_counts = defaultdict(int)
+
+        with open(output_path, "w") as f:
+            for xml_content in xml_chunks:
+                root = etree.fromstring(xml_content)
+                lines = []
+                word_counts = defaultdict(int)
+                chapter_word_counts = defaultdict(int)
+
+                def get_text(elem):
+                    texts = []
+                    if elem.text:
+                        texts.append(elem.text)
+                    for child in elem:
+                        texts.append(get_text(child))
+                        if child.tail:
+                            texts.append(child.tail)
+                    return ''.join(texts)
+
+                def process_element(elem, context):
+                    tag = elem.tag
+                    elem_type = elem.attrib.get("TYPE", "")
+                    elem_n = elem.attrib.get("N", "")
+
+                    new_context = context.copy()
+                    if elem_type in self.TYPE_TO_LEVEL:
+                        new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
+
+                    if tag == "HEAD":
+                        text = get_text(elem).strip()
+                        if text:
+                            parent = elem.getparent()
+                            parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
+                            heading_level = self.TYPE_TO_HEADING.get(parent_type, 5)
+                            lines.append(f"\n{'#' * heading_level} {text}\n")
+                        return
+
+                    if tag == "P":
+                        text = get_text(elem).strip()
+                        if text:
+                            wc = len(text.split())
+                            if new_context:
+                                key = tuple(sorted(new_context.items()))
+                                word_counts[key] += wc
+                                chapter = new_context.get("chapter") or new_context.get("subtitle")
+                                if chapter:
+                                    chapter_word_counts[chapter] += wc
+                            lines.append(f"\n{text}\n")
+                        return
+
+                    if tag == "CITA":
+                        text = get_text(elem).strip()
+                        if text:
+                            lines.append(f"\n*{text}*\n")
+                        return
+
+                    if tag in ("AUTH", "SOURCE"):
+                        label = "Authority" if tag == "AUTH" else "Source"
+                        lines.append(f"\n**{label}:**\n")
+                        for child in elem:
+                            process_element(child, new_context)
+                        return
+
+                    if tag in ("FP", "NOTE", "EXTRACT", "GPOTABLE"):
+                        text = get_text(elem).strip()
+                        if text:
+                            wc = len(text.split())
+                            if new_context:
+                                key = tuple(sorted(new_context.items()))
+                                word_counts[key] += wc
+                                chapter = new_context.get("chapter") or new_context.get("subtitle")
+                                if chapter:
+                                    chapter_word_counts[chapter] += wc
+                            lines.append(f"\n{text}\n")
+                        return
+
+                    for child in elem:
+                        process_element(child, new_context)
+
+                process_element(root, {})
+
+                content = ''.join(lines)
+                content = re.sub(r'\n{3,}', '\n\n', content)
+                f.write(content)
+
+                for k, v in word_counts.items():
+                    all_word_counts[k] += v
+                for k, v in chapter_word_counts.items():
+                    all_chapter_counts[k] += v
+
+        return output_path.stat().st_size, dict(all_word_counts), dict(all_chapter_counts)
+
 
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
@@ -560,20 +780,44 @@ class ECFRFetcher:
         self.db.save_agencies(agencies)
         return self.db.build_agency_lookup()
 
-    def fetch_title(self, title_num: int, date: str, agency_lookup: dict) -> tuple[bool, str, dict]:
+    def fetch_title(self, title_num: int, date: str, agency_lookup: dict,
+                    output_subdir: Path = None, use_bulk: bool = False) -> tuple[bool, str, dict]:
         """Fetch a single CFR title and save to disk.
+
+        Args:
+            title_num: CFR title number.
+            date: Date string (YYYY-MM-DD).
+            agency_lookup: Dict mapping (title, chapter) to agency info.
+            output_subdir: Optional subdirectory for output (for historical dates).
+            use_bulk: If True, use govinfo bulk endpoint (current data only, faster).
 
         Returns:
             Tuple of (success, message, word_counts).
         """
-        output_file = self.output_dir / f"title_{title_num}.md"
+        output_dir = output_subdir or self.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / f"title_{title_num}.md"
 
         if self._is_file_fresh(output_file):
             return (True, "cached", {})
 
+        converter = MarkdownConverter(agency_lookup)
+
+        # Try bulk endpoint first if requested (faster for current data)
+        if use_bulk:
+            try:
+                xml_content = self.client.fetch_title_xml_bulk(title_num)
+                size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
+
+                if agency_lookup and chapter_word_counts:
+                    self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
+
+                return (True, f"{size:,} bytes (bulk)", word_counts)
+            except requests.exceptions.RequestException:
+                pass  # Fall through to regular API
+
         try:
             xml_content = self.client.fetch_title_xml(title_num, date)
-            converter = MarkdownConverter(agency_lookup)
             size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
 
             if agency_lookup and chapter_word_counts:
@@ -582,9 +826,38 @@ class ECFRFetcher:
             return (True, f"{size:,} bytes", word_counts)
 
         except requests.exceptions.HTTPError as e:
-            return (False, f"HTTP {e.response.status_code}", {})
+            if e.response.status_code != 504:
+                return (False, f"HTTP {e.response.status_code}", {})
+            # 504 timeout - try chunked fetching
+        except requests.exceptions.Timeout:
+            pass  # Timeout - try chunked fetching
         except requests.exceptions.RequestException as e:
             return (False, str(e), {})
+
+        # Fall back to chunked fetching (by part) using async for speed
+        try:
+            chunks = self.client.get_title_chunks(title_num, date)
+            if not chunks:
+                return (False, "No chunks found", {})
+
+            print(f"  Title {title_num}: fetching {len(chunks)} parts async...", flush=True)
+
+            # Use async fetching for better performance
+            xml_chunks = asyncio.run(self.client.fetch_chunks_async(title_num, date, chunks))
+
+            size, word_counts, chapter_word_counts = converter.convert_chunks(xml_chunks, output_file)
+
+            if agency_lookup and chapter_word_counts:
+                self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
+
+            return (True, f"{size:,} bytes ({len(chunks)} parts)", word_counts)
+
+        except aiohttp.ClientError as e:
+            return (False, f"Async error: {e}", {})
+        except requests.exceptions.HTTPError as e:
+            return (False, f"HTTP {e.response.status_code} (chunked)", {})
+        except requests.exceptions.RequestException as e:
+            return (False, f"{e} (chunked)", {})
 
     def fetch_all(self, clear_cache: bool = False) -> int:
         """Fetch all CFR titles 1-50 for the latest issue date in parallel.
@@ -628,7 +901,7 @@ class ECFRFetcher:
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {
-                executor.submit(self.fetch_title, num, date, agency_lookup): num
+                executor.submit(self.fetch_title, num, date, agency_lookup, None, True): num
                 for num, date in titles_to_fetch
             }
 
@@ -665,12 +938,78 @@ class ECFRFetcher:
 
         return 0 if success_count == len(titles_to_fetch) else 1
 
+    def fetch_historical(self, historical_years: list[int], title_nums: list[int] = None) -> int:
+        """Fetch titles for historical years using fast CFR annual bulk download.
+
+        Args:
+            historical_years: List of years (e.g., [2020, 2015]).
+            title_nums: Optional list of title numbers to fetch (default: 1-50).
+
+        Returns:
+            Exit code (0 for success, 1 for any failure).
+        """
+        if title_nums is None:
+            title_nums = list(range(1, 51))
+
+        all_success = True
+        converter = MarkdownConverter()
+
+        for year in historical_years:
+            output_subdir = self.output_dir / str(year)
+            output_subdir.mkdir(parents=True, exist_ok=True)
+            print(f"\n{'='*50}")
+            print(f"Fetching CFR {year} edition")
+            print(f"Output: {output_subdir}")
+            print("-" * 50)
+
+            success_count = 0
+            for title_num in title_nums:
+                output_file = output_subdir / f"title_{title_num}.md"
+
+                if self._is_file_fresh(output_file):
+                    print(f"+ Title {title_num}: cached")
+                    success_count += 1
+                    continue
+
+                try:
+                    # Use fast CFR annual bulk download
+                    xml_chunks = asyncio.run(self.client.fetch_cfr_annual_async(title_num, year))
+                    if not xml_chunks:
+                        print(f"x Title {title_num}: no data for {year}")
+                        continue
+
+                    size, _, _ = converter.convert_chunks(xml_chunks, output_file)
+                    print(f"+ Title {title_num}: {size:,} bytes ({len(xml_chunks)} vols)")
+                    success_count += 1
+
+                except Exception as e:
+                    print(f"x Title {title_num}: {e}")
+
+            print(f"Complete: {success_count}/{len(title_nums)} titles")
+            if success_count < len(title_nums):
+                all_success = False
+
+        return 0 if all_success else 1
+
 
 if __name__ == "__main__":
+    import sys
     time0 = time.time()
 
     fetcher = ECFRFetcher()
+
+    # Check for --historical flag
+    if "--historical" in sys.argv:
+        historical_years = [2024, 2020, 2015]  # CFR annual editions
+        # Check for --title flag to fetch specific title(s)
+        title_nums = None
+        if "--title" in sys.argv:
+            idx = sys.argv.index("--title")
+            if idx + 1 < len(sys.argv):
+                title_nums = [int(sys.argv[idx + 1])]
+        exit_code = fetcher.fetch_historical(historical_years, title_nums)
+
     exit_code = fetcher.fetch_all()
 
-    print(f"{time.time() - time0:.1f}s")
+    print(f"\n{time.time() - time0:.1f}s")
     exit(exit_code)
