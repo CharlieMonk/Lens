@@ -2,6 +2,7 @@
 """Interface for querying downloaded Markdown CFR data."""
 
 import re
+import sqlite3
 from pathlib import Path
 
 
@@ -14,6 +15,7 @@ class ECFRReader:
 
     def __init__(self, data_dir: str = "data_cache"):
         self.data_dir = Path(data_dir)
+        self.db_path = self.data_dir / "ecfr.db"
         self._cache: dict[int, list[dict]] = {}
         self._section_index: dict[int, dict[str, dict]] = {}
 
@@ -266,7 +268,7 @@ class ECFRReader:
         part: str = None,
         subpart: str = None,
     ) -> dict:
-        """Calculate word counts for sections.
+        """Get word counts for sections from the database.
 
         Args:
             title: CFR title number
@@ -278,32 +280,35 @@ class ECFRReader:
         Returns:
             Dict with 'sections' (section -> count) and 'total'.
         """
-        sections = self.load_title(title)
+        if not self.db_path.exists():
+            return {"sections": {}, "total": 0}
 
-        # Build filter criteria
-        filters = {}
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Build query with filters
+        query = "SELECT section, word_count FROM word_counts WHERE title = ?"
+        params = [title]
+
         if chapter:
-            filters['chapter'] = chapter
+            query += " AND chapter = ?"
+            params.append(chapter)
         if subchapter:
-            filters['subchapter'] = subchapter
+            query += " AND subchapter = ?"
+            params.append(subchapter)
         if part:
-            filters['part'] = part
+            query += " AND part = ?"
+            params.append(part)
         if subpart:
-            filters['subpart'] = subpart
+            query += " AND subpart = ?"
+            params.append(subpart)
 
-        section_counts = {}
-        total = 0
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
 
-        for s in sections:
-            # Check filters
-            path_dict = dict(s['path'])
-            if filters:
-                if not all(path_dict.get(k) == v for k, v in filters.items()):
-                    continue
-
-            word_count = len(s['text'].split())
-            section_counts[s['section']] = word_count
-            total += word_count
+        section_counts = {row[0]: row[1] for row in rows if row[0]}
+        total = sum(row[1] for row in rows)
 
         return {"sections": section_counts, "total": total}
 
