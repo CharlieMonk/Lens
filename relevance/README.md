@@ -14,7 +14,7 @@ Production-grade Python system for identifying which CFR sections are most commo
 - `src/relevance/` flat modules (domain, services, adapters, persistence, CLI, API)
 - `tests/fixtures` offline HTML fixtures
 
-## Setup (local .venv)
+## Setup (parent project .venv)
 ```bash
 python -m venv .venv
 source .venv/bin/activate
