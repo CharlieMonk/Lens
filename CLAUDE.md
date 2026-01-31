@@ -20,29 +20,34 @@ python fetch_titles.py
 
 ## Architecture
 
-The project consists of a single script (`fetch_titles.py`) that:
-1. Fetches titles metadata from `/api/versioner/v1/titles.json` to get latest issue dates
-2. Downloads full XML for each title using `/api/versioner/v1/full/{date}/title-{n}.xml`
-3. Converts XML to Markdown and counts words by hierarchy level (title/chapter/subchapter/part/subpart)
-4. Outputs Markdown files and a `word_counts.csv` to `data_cache/`
+The project uses `fetch_titles.py` with four OOP classes:
 
-Key constants:
-- `MAX_WORKERS = 5`: Parallel fetch threads
-- `MAX_RETRIES = 7`: Retry count with exponential backoff
-- `RETRY_DELAY = 3`: Base delay in seconds (doubles each retry)
+- **ECFRDatabase**: SQLite operations for titles, agencies, and word counts. Stores metadata in `data_cache/ecfr.db`.
+- **ECFRClient**: API requests with exponential backoff retry logic (max 7 retries, 3s base delay).
+- **MarkdownConverter**: Converts eCFR XML to Markdown, tracking word counts by hierarchy level.
+- **ECFRFetcher**: Main orchestrator that coordinates fetching and processing with parallel workers.
+
+**Data flow:**
+1. Fetch titles metadata from `/api/versioner/v1/titles.json`
+2. Fetch agencies metadata from `/api/admin/v1/agencies.json`
+3. Download full XML for each title using `/api/versioner/v1/full/{date}/title-{n}.xml`
+4. Convert XML to Markdown and count words by hierarchy (title/chapter/subchapter/part/subpart)
+5. Output Markdown files and `word_counts.csv` to `data_cache/`
+
+**Caching:** Files are considered fresh if modified today. Database and markdown files are cached to avoid re-fetching.
 
 ## Dependencies
 
 - `requests` - HTTP client for API calls
 - `lxml` - XML parsing
-- `pyyaml` - YAML output formatting
 
 ## eCFR API
 
-Base URL: `https://www.ecfr.gov/api/versioner/v1`
+Base URL: `https://www.ecfr.gov/api`
 
 Endpoints used:
-- `titles.json` - metadata including `latest_issue_date` for each title
-- `full/{date}/title-{n}.xml` - full XML for a title on a specific date
+- `versioner/v1/titles.json` - metadata including `latest_issue_date` for each title
+- `versioner/v1/full/{date}/title-{n}.xml` - full XML for a title on a specific date
+- `admin/v1/agencies.json` - agency metadata with CFR references
 
 See `docs/api-review-versioner-full-xml.md` for API documentation analysis.
