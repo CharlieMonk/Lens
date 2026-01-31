@@ -21,10 +21,19 @@ class ECFRReader:
             self._db = sqlite3.connect(self.db_path)
         return self._db
 
-    def list_titles(self) -> list[int]:
+    def list_years(self) -> list[int]:
+        """List available years from database (0 = current)."""
+        cursor = self.db.cursor()
+        cursor.execute("SELECT DISTINCT year FROM sections ORDER BY year")
+        return [row[0] for row in cursor.fetchall()]
+
+    def list_titles(self, year: int = 0) -> list[int]:
         """List available title numbers from database."""
         cursor = self.db.cursor()
-        cursor.execute("SELECT DISTINCT title FROM sections ORDER BY title")
+        cursor.execute(
+            "SELECT DISTINCT title FROM sections WHERE year = ? ORDER BY title",
+            (year,)
+        )
         return [row[0] for row in cursor.fetchall()]
 
     def navigate(
@@ -36,6 +45,7 @@ class ECFRReader:
         part: str = None,
         subpart: str = None,
         section: str = None,
+        year: int = 0,
     ) -> dict | None:
         """Navigate to a specific location in the CFR hierarchy.
 
@@ -47,16 +57,17 @@ class ECFRReader:
             part: Part number (Arabic numerals)
             subpart: Subpart letter (A, B, C...)
             section: Section number (e.g., "1.1", "21.15")
+            year: Year for historical data (0 = current)
 
         Returns:
             The matching section dict or None if not found.
         """
         cursor = self.db.cursor()
 
-        query = """SELECT title, subtitle, chapter, subchapter, part, subpart,
+        query = """SELECT year, title, subtitle, chapter, subchapter, part, subpart,
                           section, heading, text, word_count
-                   FROM sections WHERE title = ?"""
-        params = [title]
+                   FROM sections WHERE year = ? AND title = ?"""
+        params = [year, title]
 
         if section:
             query += " AND section = ?"
@@ -86,12 +97,13 @@ class ECFRReader:
 
         return self._row_to_dict(row)
 
-    def search(self, query: str, title: int = None) -> list[dict]:
+    def search(self, query: str, title: int = None, year: int = 0) -> list[dict]:
         """Full-text search across sections.
 
         Args:
             query: Search string (case-insensitive)
             title: Optional title number to limit search
+            year: Year for historical data (0 = current)
 
         Returns:
             List of matching results with title, section, heading, and snippet.
@@ -100,13 +112,13 @@ class ECFRReader:
 
         if title:
             cursor.execute(
-                "SELECT title, section, heading, text FROM sections WHERE title = ? AND text LIKE ?",
-                (title, f"%{query}%")
+                "SELECT title, section, heading, text FROM sections WHERE year = ? AND title = ? AND text LIKE ?",
+                (year, title, f"%{query}%")
             )
         else:
             cursor.execute(
-                "SELECT title, section, heading, text FROM sections WHERE text LIKE ?",
-                (f"%{query}%",)
+                "SELECT title, section, heading, text FROM sections WHERE year = ? AND text LIKE ?",
+                (year, f"%{query}%")
             )
 
         results = []
@@ -132,8 +144,12 @@ class ECFRReader:
 
         return results
 
-    def get_structure(self, title: int) -> dict:
+    def get_structure(self, title: int, year: int = 0) -> dict:
         """Return hierarchy tree for a title.
+
+        Args:
+            title: CFR title number
+            year: Year for historical data (0 = current)
 
         Returns:
             Dict with type, identifier, and children representing the title structure.
@@ -141,8 +157,8 @@ class ECFRReader:
         cursor = self.db.cursor()
         cursor.execute('''
             SELECT DISTINCT part, section FROM sections
-            WHERE title = ? ORDER BY part, section
-        ''', (title,))
+            WHERE year = ? AND title = ? ORDER BY part, section
+        ''', (year, title))
         rows = cursor.fetchall()
 
         if not rows:
@@ -167,6 +183,7 @@ class ECFRReader:
         subchapter: str = None,
         part: str = None,
         subpart: str = None,
+        year: int = 0,
     ) -> dict:
         """Get word counts for sections.
 
@@ -176,12 +193,13 @@ class ECFRReader:
             subchapter: Optional subchapter filter
             part: Optional part filter
             subpart: Optional subpart filter
+            year: Year for historical data (0 = current)
 
         Returns:
             Dict with 'sections' (section -> count) and 'total'.
         """
-        query = "SELECT section, word_count FROM sections WHERE title = ?"
-        params = [title]
+        query = "SELECT section, word_count FROM sections WHERE year = ? AND title = ?"
+        params = [year, title]
 
         if chapter:
             query += " AND chapter = ?"
@@ -205,42 +223,47 @@ class ECFRReader:
 
         return {"sections": section_counts, "total": total}
 
-    def get_total_words(self, title: int) -> int:
+    def get_total_words(self, title: int, year: int = 0) -> int:
         """Get total word count for a title."""
-        return self.get_word_counts(title)["total"]
+        return self.get_word_counts(title, year=year)["total"]
 
-    def get_section_heading(self, title: int, section: str) -> str | None:
+    def get_section_heading(self, title: int, section: str, year: int = 0) -> str | None:
         """Get the heading text for a section."""
         cursor = self.db.cursor()
         cursor.execute(
-            "SELECT heading FROM sections WHERE title = ? AND section = ?",
-            (title, section)
+            "SELECT heading FROM sections WHERE year = ? AND title = ? AND section = ?",
+            (year, title, section)
         )
         row = cursor.fetchone()
         return row[0] if row else None
 
-    def get_section_text(self, title: int, section: str) -> str | None:
+    def get_section_text(self, title: int, section: str, year: int = 0) -> str | None:
         """Get the full text content of a section."""
         cursor = self.db.cursor()
         cursor.execute(
-            "SELECT text FROM sections WHERE title = ? AND section = ?",
-            (title, section)
+            "SELECT text FROM sections WHERE year = ? AND title = ? AND section = ?",
+            (year, title, section)
         )
         row = cursor.fetchone()
         return row[0] if row else None
 
-    def get_section(self, title: int, section: str) -> dict | None:
+    def get_section(self, title: int, section: str, year: int = 0) -> dict | None:
         """Get full section data.
 
-        Returns dict with keys: title, subtitle, chapter, subchapter,
+        Args:
+            title: CFR title number
+            section: Section number
+            year: Year for historical data (0 = current)
+
+        Returns dict with keys: year, title, subtitle, chapter, subchapter,
         part, subpart, section, heading, text, word_count.
         """
         cursor = self.db.cursor()
         cursor.execute('''
-            SELECT title, subtitle, chapter, subchapter, part, subpart,
+            SELECT year, title, subtitle, chapter, subchapter, part, subpart,
                    section, heading, text, word_count
-            FROM sections WHERE title = ? AND section = ?
-        ''', (title, section))
+            FROM sections WHERE year = ? AND title = ? AND section = ?
+        ''', (year, title, section))
         row = cursor.fetchone()
         return self._row_to_dict(row) if row else None
 
@@ -249,6 +272,7 @@ class ECFRReader:
         title: int,
         chapter: str = None,
         part: str = None,
+        year: int = 0,
     ) -> list[dict]:
         """Get all sections for a title.
 
@@ -256,14 +280,15 @@ class ECFRReader:
             title: CFR title number
             chapter: Optional chapter filter
             part: Optional part filter
+            year: Year for historical data (0 = current)
 
         Returns:
             List of section dicts with all fields.
         """
-        query = """SELECT title, subtitle, chapter, subchapter, part, subpart,
+        query = """SELECT year, title, subtitle, chapter, subchapter, part, subpart,
                           section, heading, text, word_count
-                   FROM sections WHERE title = ?"""
-        params = [title]
+                   FROM sections WHERE year = ? AND title = ?"""
+        params = [year, title]
 
         if chapter:
             query += " AND chapter = ?"
@@ -282,14 +307,15 @@ class ECFRReader:
     def _row_to_dict(self, row: tuple) -> dict:
         """Convert a database row to a section dict."""
         return {
-            "title": row[0],
-            "subtitle": row[1],
-            "chapter": row[2],
-            "subchapter": row[3],
-            "part": row[4],
-            "subpart": row[5],
-            "section": row[6],
-            "heading": row[7],
-            "text": row[8],
-            "word_count": row[9],
+            "year": row[0],
+            "title": row[1],
+            "subtitle": row[2],
+            "chapter": row[3],
+            "subchapter": row[4],
+            "part": row[5],
+            "subpart": row[6],
+            "section": row[7],
+            "heading": row[8],
+            "text": row[9],
+            "word_count": row[10],
         }
