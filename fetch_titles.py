@@ -780,9 +780,6 @@ class ECFRFetcher:
         for f in self.output_dir.glob("*.md"):
             f.unlink()
         self.db.clear()
-        csv_file = self.output_dir / "word_counts.csv"
-        if csv_file.exists():
-            csv_file.unlink()
 
     def _is_file_fresh(self, path: Path) -> bool:
         """Check if a file was modified today."""
@@ -937,21 +934,6 @@ class ECFRFetcher:
         print(f"Complete: {success_count}/{len(titles_to_fetch)} titles downloaded")
 
         if all_word_counts:
-            csv_file = self.output_dir / "word_counts.csv"
-            with open(csv_file, "w") as f:
-                f.write("title,chapter,subchapter,part,subpart,word_count\n")
-                for key, count in sorted(all_word_counts.items()):
-                    ctx = dict(key)
-                    row = [
-                        ctx.get("title", ""),
-                        ctx.get("chapter", ""),
-                        ctx.get("subchapter", ""),
-                        ctx.get("part", ""),
-                        ctx.get("subpart", ""),
-                        str(count),
-                    ]
-                    f.write(",".join(row) + "\n")
-
             total_words = sum(all_word_counts.values())
             print(f"Total words: {total_words:,}")
 

@@ -32,7 +32,7 @@ The project uses `fetch_titles.py` with four OOP classes:
 2. Fetch agencies metadata from `/api/admin/v1/agencies.json`
 3. Download full XML for each title using `/api/versioner/v1/full/{date}/title-{n}.xml`
 4. Convert XML to Markdown and count words by hierarchy (title/chapter/subchapter/part/subpart)
-5. Output Markdown files and `word_counts.csv` to `data_cache/`
+5. Output Markdown files to `data_cache/`, store word counts in SQLite database
 
 **Caching:** Files are considered fresh if modified today. Database and markdown files are cached to avoid re-fetching.
 
