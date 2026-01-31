@@ -295,11 +295,16 @@ def save_word_counts_cache(cache: dict[int, dict]) -> None:
         yaml.dump(serializable, f)
 
 
-def get_titles_metadata() -> dict[int, str]:
+def get_titles_metadata() -> dict[int, dict]:
     """Fetch metadata for all titles, using cache if available and fresh.
 
     Returns:
-        Dict mapping title number to latest_issue_date.
+        Dict mapping title number to full metadata dict containing:
+        - name: Title name (e.g., "General Provisions")
+        - latest_amended_on: Date of last amendment
+        - latest_issue_date: Date of latest issue
+        - up_to_date_as_of: Date data is current as of
+        - reserved: Whether title is reserved
 
     Raises:
         RuntimeError: If unable to fetch or parse the titles metadata.
@@ -315,9 +320,14 @@ def get_titles_metadata() -> dict[int, str]:
         response.raise_for_status()
         data = response.json()
         metadata = {
-            t["number"]: t["latest_issue_date"]
+            t["number"]: {
+                "name": t.get("name"),
+                "latest_amended_on": t.get("latest_amended_on"),
+                "latest_issue_date": t.get("latest_issue_date"),
+                "up_to_date_as_of": t.get("up_to_date_as_of"),
+                "reserved": t.get("reserved", False),
+            }
             for t in data["titles"]
-            if t.get("latest_issue_date")
         }
         METADATA_CACHE.parent.mkdir(parents=True, exist_ok=True)
         with open(METADATA_CACHE, "w") as f:
@@ -391,7 +401,11 @@ def main() -> int:
     # Load word counts cache
     word_counts_cache = load_word_counts_cache()
 
-    titles_to_fetch = [(num, date) for num, date in titles_metadata.items() if 1 <= num <= 50]
+    titles_to_fetch = [
+        (num, meta["latest_issue_date"])
+        for num, meta in titles_metadata.items()
+        if 1 <= num <= 50 and meta.get("latest_issue_date")
+    ]
     print(f"Processing {len(titles_to_fetch)} titles...")
     print(f"Output directory: {OUTPUT_DIR}")
     print("-" * 50)
