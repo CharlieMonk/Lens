@@ -2,6 +2,7 @@
 """Fetch CFR titles 1-50 from the eCFR API for the latest issue date."""
 
 import re
+import sqlite3
 import sys
 import time
 from collections import defaultdict
@@ -21,6 +22,7 @@ CLEAR_CACHE = False
 OUTPUT_DIR = Path("md_output")
 METADATA_CACHE = OUTPUT_DIR / "titles_metadata.yaml"
 WORD_COUNTS_CACHE = OUTPUT_DIR / "word_counts_cache.yaml"
+AGENCIES_DB = OUTPUT_DIR / "agencies.db"
 
 # Maps DIV TYPE attributes to hierarchy levels and markdown heading depth
 TYPE_TO_LEVEL = {
@@ -45,7 +47,186 @@ TYPE_TO_HEADING = {
 }
 
 
-def xml_to_markdown(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
+def init_agencies_db() -> None:
+    """Initialize the agencies SQLite database schema."""
+    AGENCIES_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(AGENCIES_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS agencies (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            short_name TEXT,
+            display_name TEXT,
+            sortable_name TEXT,
+            parent_slug TEXT,
+            FOREIGN KEY (parent_slug) REFERENCES agencies(slug)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cfr_references (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency_slug TEXT NOT NULL,
+            title INTEGER NOT NULL,
+            chapter TEXT,
+            subtitle TEXT,
+            subchapter TEXT,
+            FOREIGN KEY (agency_slug) REFERENCES agencies(slug)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cfr_title_chapter
+        ON cfr_references(title, chapter)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cfr_agency
+        ON cfr_references(agency_slug)
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def get_agencies_metadata() -> sqlite3.Connection:
+    """Fetch agency metadata from the eCFR API, storing in SQLite database.
+
+    Returns:
+        SQLite connection to the agencies database.
+
+    Raises:
+        RuntimeError: If unable to fetch or parse the agencies metadata.
+    """
+    if is_cache_valid(AGENCIES_DB):
+        return sqlite3.connect(AGENCIES_DB)
+
+    url = "https://www.ecfr.gov/api/admin/v1/agencies.json"
+
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to fetch agencies metadata: {e}")
+    except (KeyError, TypeError) as e:
+        raise RuntimeError(f"Failed to parse agencies metadata: {e}")
+
+    # Initialize database
+    if AGENCIES_DB.exists():
+        AGENCIES_DB.unlink()
+    init_agencies_db()
+
+    conn = sqlite3.connect(AGENCIES_DB)
+    cursor = conn.cursor()
+
+    # Insert agencies and their CFR references
+    for agency in data.get("agencies", []):
+        slug = agency["slug"]
+        cursor.execute("""
+            INSERT INTO agencies (slug, name, short_name, display_name, sortable_name, parent_slug)
+            VALUES (?, ?, ?, ?, ?, NULL)
+        """, (
+            slug,
+            agency.get("name"),
+            agency.get("short_name"),
+            agency.get("display_name"),
+            agency.get("sortable_name"),
+        ))
+
+        # Insert CFR references for parent agency
+        for ref in agency.get("cfr_references", []):
+            cursor.execute("""
+                INSERT INTO cfr_references (agency_slug, title, chapter, subtitle, subchapter)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                slug,
+                ref.get("title"),
+                ref.get("chapter"),
+                ref.get("subtitle"),
+                ref.get("subchapter"),
+            ))
+
+        # Insert child agencies
+        for child in agency.get("children", []):
+            child_slug = child["slug"]
+            cursor.execute("""
+                INSERT INTO agencies (slug, name, short_name, display_name, sortable_name, parent_slug)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                child_slug,
+                child.get("name"),
+                child.get("short_name"),
+                child.get("display_name"),
+                child.get("sortable_name"),
+                slug,  # parent_slug
+            ))
+
+            # Insert CFR references for child agency
+            for ref in child.get("cfr_references", []):
+                cursor.execute("""
+                    INSERT INTO cfr_references (agency_slug, title, chapter, subtitle, subchapter)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    child_slug,
+                    ref.get("title"),
+                    ref.get("chapter"),
+                    ref.get("subtitle"),
+                    ref.get("subchapter"),
+                ))
+
+    conn.commit()
+    return conn
+
+
+def build_agency_lookup(conn: sqlite3.Connection) -> dict:
+    """Build a lookup table mapping CFR references to agency info from SQLite database.
+
+    Args:
+        conn: SQLite connection to the agencies database.
+
+    Returns:
+        Dict mapping (title, chapter/subtitle/subchapter) tuples to agency info:
+        - agency_slug: Slug of the agency
+        - agency_name: Name of the agency
+        - parent_slug: Slug of parent agency (if child agency)
+        - parent_name: Name of parent agency (if child agency)
+    """
+    lookup = {}
+    cursor = conn.cursor()
+
+    # Query all CFR references with agency info and parent info
+    cursor.execute("""
+        SELECT
+            r.title,
+            COALESCE(r.chapter, r.subtitle, r.subchapter) as chapter,
+            a.slug as agency_slug,
+            a.name as agency_name,
+            a.parent_slug,
+            p.name as parent_name
+        FROM cfr_references r
+        JOIN agencies a ON r.agency_slug = a.slug
+        LEFT JOIN agencies p ON a.parent_slug = p.slug
+        WHERE COALESCE(r.chapter, r.subtitle, r.subchapter) IS NOT NULL
+    """)
+
+    for row in cursor.fetchall():
+        title, chapter, agency_slug, agency_name, parent_slug, parent_name = row
+        if title and chapter:
+            key = (title, chapter)
+            lookup[key] = {
+                "agency_slug": agency_slug,
+                "agency_name": agency_name,
+                "parent_slug": parent_slug,
+                "parent_name": parent_name,
+            }
+
+    return lookup
+
+
+def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict = None) -> tuple[int, dict]:
     """Convert XML content to Markdown and write to file.
 
     Returns tuple of (bytes_written, word_counts).
@@ -85,8 +266,28 @@ def xml_to_markdown(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
                 # Determine heading level from parent's TYPE
                 parent = elem.getparent()
                 parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
+                parent_n = parent.attrib.get("N", "") if parent is not None else ""
                 heading_level = TYPE_TO_HEADING.get(parent_type, 5)
                 lines.append(f"\n{'#' * heading_level} {text}\n")
+
+                # Add agency metadata for chapters, subtitles, and subchapters
+                if agency_lookup and parent_type in ("CHAPTER", "SUBTITLE", "SUBCHAP"):
+                    title_num = new_context.get("title")
+                    if title_num:
+                        try:
+                            title_int = int(title_num)
+                            key = (title_int, parent_n)
+                            agency_info = agency_lookup.get(key)
+                            if agency_info:
+                                lines.append("\n<!-- Agency Metadata\n")
+                                if agency_info["parent_slug"]:
+                                    lines.append(f"parent_agency: {agency_info['parent_slug']}\n")
+                                    lines.append(f"child_agency: {agency_info['agency_slug']}\n")
+                                else:
+                                    lines.append(f"agency: {agency_info['agency_slug']}\n")
+                                lines.append("-->\n")
+                        except (ValueError, TypeError):
+                            pass
             return
 
         # Handle paragraph elements
@@ -175,6 +376,10 @@ def clear_cache() -> None:
         return
     for f in OUTPUT_DIR.glob("*.md"):
         f.unlink()
+    # Delete cache files
+    for cache_file in [METADATA_CACHE, WORD_COUNTS_CACHE, AGENCIES_DB]:
+        if cache_file.exists():
+            cache_file.unlink()
     csv_file = OUTPUT_DIR / "word_counts.csv"
     if csv_file.exists():
         csv_file.unlink()
@@ -339,13 +544,14 @@ def get_titles_metadata() -> dict[int, dict]:
         raise RuntimeError(f"Failed to parse titles metadata: {e}")
 
 
-def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> tuple[int, bool, str, dict]:
+def fetch_title(title_num: int, fetch_date: str, output_dir: Path, agency_lookup: dict = None) -> tuple[int, bool, str, dict]:
     """Fetch a single CFR title and save to disk with retry logic.
 
     Args:
         title_num: The CFR title number (1-50)
         fetch_date: Date in YYYY-MM-DD format
         output_dir: Directory to save XML files
+        agency_lookup: Optional dict mapping (title, chapter) to agency info
 
     Returns:
         Tuple of (title_num, success, message, word_counts)
@@ -363,7 +569,7 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> tuple[int,
             response = requests.get(url, timeout=300)
             response.raise_for_status()
 
-            size, word_counts = xml_to_markdown(response.content, output_file)
+            size, word_counts = xml_to_markdown(response.content, output_file, agency_lookup)
             return (title_num, True, f"{size:,} bytes", word_counts)
 
         except requests.exceptions.HTTPError as e:
@@ -396,6 +602,18 @@ def main() -> int:
         print(f"Error: {e}")
         return 1
 
+    # Load agencies metadata and build lookup
+    agencies_cached = is_cache_valid(AGENCIES_DB)
+    print(f"Loading agencies metadata {'(cached)' if agencies_cached else '(fetching)'}...")
+    try:
+        agencies_conn = get_agencies_metadata()
+        agency_lookup = build_agency_lookup(agencies_conn)
+        agencies_conn.close()
+        print(f"  {len(agency_lookup)} chapter/agency mappings loaded")
+    except RuntimeError as e:
+        print(f"Warning: Could not load agencies metadata: {e}")
+        agency_lookup = {}
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load word counts cache
@@ -415,7 +633,7 @@ def main() -> int:
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
-            executor.submit(fetch_title, num, date, OUTPUT_DIR): num
+            executor.submit(fetch_title, num, date, OUTPUT_DIR, agency_lookup): num
             for num, date in titles_to_fetch
         }
 
