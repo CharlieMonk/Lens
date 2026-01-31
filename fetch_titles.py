@@ -1138,7 +1138,7 @@ class ECFRFetcher:
         return asyncio.run(self.fetch_current_async(clear_cache))
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
-        """Async fetch titles for historical years using govinfo CFR annual bulk data.
+        """Async fetch titles for historical years using eCFR API.
 
         Args:
             historical_years: List of years (e.g., [2020, 2015]).
@@ -1153,40 +1153,47 @@ class ECFRFetcher:
 
         converter = MarkdownConverter()
 
-        async def fetch_year_title(session, year, title_num):
-            """Fetch volumes for a title/year in parallel."""
-            output_subdir = self.output_dir / str(year)
-            output_subdir.mkdir(parents=True, exist_ok=True)
-            output_file = output_subdir / f"title_{title_num}.md"
+        async def fetch_year_title(session, year, title_num, semaphore):
+            """Fetch a single title for a specific year from eCFR with retry logic."""
+            async with semaphore:  # Limit concurrent requests
+                output_subdir = self.output_dir / str(year)
+                output_subdir.mkdir(parents=True, exist_ok=True)
+                output_file = output_subdir / f"title_{title_num}.md"
 
-            if self._is_file_fresh(output_file):
-                return (year, title_num, True, "cached", 0, [])
+                if self._is_file_fresh(output_file):
+                    return (year, title_num, True, "cached", 0, [])
 
-            base = f"https://www.govinfo.gov/bulkdata/CFR/{year}/title-{title_num}"
+                # Use January 1 of the year for historical snapshot
+                date = f"{year}-01-01"
+                url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml"
 
-            async def fetch_vol(vol):
-                url = f"{base}/CFR-{year}-title{title_num}-vol{vol}.xml"
-                try:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            return vol, await resp.read()
-                except:
-                    pass
-                return vol, None
+                # Retry with exponential backoff
+                max_retries = 5
+                for attempt in range(max_retries):
+                    try:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=180)) as resp:
+                            if resp.status == 200:
+                                xml_content = await resp.read()
+                                size, sections, _ = converter.convert(xml_content, output_file, title_num)
+                                return (year, title_num, True, f"{size:,} bytes", size, sections)
+                            elif resp.status == 429:
+                                # Rate limited - wait and retry
+                                wait_time = (2 ** attempt) * 2  # 2, 4, 8, 16, 32 seconds
+                                await asyncio.sleep(wait_time)
+                                continue
+                            elif resp.status == 404:
+                                return (year, title_num, False, "not available", 0, [])
+                            else:
+                                return (year, title_num, False, f"HTTP {resp.status}", 0, [])
+                    except asyncio.TimeoutError:
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        return (year, title_num, False, "timeout", 0, [])
+                    except Exception as e:
+                        return (year, title_num, False, str(e), 0, [])
 
-            # Fetch all volumes in parallel
-            results = await asyncio.gather(*[fetch_vol(v) for v in range(1, 51)])
-            # Sort by volume number and filter successful ones
-            xml_chunks = [data for vol, data in sorted(results) if data is not None]
-
-            if not xml_chunks:
-                return (year, title_num, False, f"no data for {year}", 0, [])
-
-            try:
-                size, sections, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
-                return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} vols)", size, sections)
-            except Exception as e:
-                return (year, title_num, False, str(e), 0, [])
+                return (year, title_num, False, "max retries exceeded", 0, [])
 
         # Filter out years already in the database
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
@@ -1199,8 +1206,9 @@ class ECFRFetcher:
             print(f"Skipping years already in database: {sorted(skipped)}")
 
         all_success = True
-        connector = aiohttp.TCPConnector(limit=50)
-        timeout = aiohttp.ClientTimeout(total=300)
+        connector = aiohttp.TCPConnector(limit=5)
+        timeout = aiohttp.ClientTimeout(total=600)
+        semaphore = asyncio.Semaphore(3)  # Only 3 concurrent requests to avoid rate limiting
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             for year in years_to_fetch:
@@ -1211,8 +1219,8 @@ class ECFRFetcher:
                 print(f"Output: {output_subdir}")
                 print("-" * 50)
 
-                # Fetch all titles for this year in parallel
-                tasks = [fetch_year_title(session, year, t) for t in title_nums]
+                # Fetch all titles for this year with limited concurrency
+                tasks = [fetch_year_title(session, year, t, semaphore) for t in title_nums]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 success_count = 0
@@ -1239,7 +1247,7 @@ class ECFRFetcher:
         return asyncio.run(self.fetch_historical_async(historical_years, title_nums))
 
     async def fetch_all_async(self, historical_years: list[int] = None) -> int:
-        """Async fetch current and historical data in parallel.
+        """Async fetch current data first, then historical data sequentially.
 
         Args:
             historical_years: List of years for historical data (default: HISTORICAL_YEARS).
@@ -1250,11 +1258,9 @@ class ECFRFetcher:
         if historical_years is None:
             historical_years = HISTORICAL_YEARS
 
-        # Run both fetches in parallel
-        current_result, historical_result = await asyncio.gather(
-            self.fetch_current_async(),
-            self.fetch_historical_async(historical_years)
-        )
+        # Run sequentially to avoid memory pressure from parallel large fetches
+        current_result = await self.fetch_current_async()
+        historical_result = await self.fetch_historical_async(historical_years)
 
         return 0 if current_result == 0 and historical_result == 0 else 1
 
