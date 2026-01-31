@@ -16,8 +16,16 @@ class ECFRReader:
     def __init__(self, data_dir: str = "data_cache"):
         self.data_dir = Path(data_dir)
         self.db_path = self.data_dir / "ecfr.db"
+        self._db: sqlite3.Connection | None = None
         self._cache: dict[int, list[dict]] = {}
         self._section_index: dict[int, dict[str, dict]] = {}
+
+    @property
+    def db(self) -> sqlite3.Connection | None:
+        """Lazy-loaded database connection."""
+        if self._db is None and self.db_path.exists():
+            self._db = sqlite3.connect(self.db_path)
+        return self._db
 
     def list_titles(self) -> list[int]:
         """List available title numbers."""
@@ -280,11 +288,8 @@ class ECFRReader:
         Returns:
             Dict with 'sections' (section -> count) and 'total'.
         """
-        if not self.db_path.exists():
+        if not self.db:
             return {"sections": {}, "total": 0}
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
 
         # Build query with filters
         query = "SELECT section, word_count FROM word_counts WHERE title = ?"
@@ -303,9 +308,9 @@ class ECFRReader:
             query += " AND subpart = ?"
             params.append(subpart)
 
+        cursor = self.db.cursor()
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
 
         section_counts = {row[0]: row[1] for row in rows if row[0]}
         total = sum(row[1] for row in rows)
