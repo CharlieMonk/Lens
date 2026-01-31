@@ -16,7 +16,7 @@ from .database import ECFRDatabase
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
-    def __init__(self, output_dir: Path = Path("data_cache"), max_workers: int = 5):
+    def __init__(self, output_dir: Path = Path("ecfr/ecfr_data"), max_workers: int = 5):
         self.output_dir = output_dir
         self.max_workers = max_workers
         self.db = ECFRDatabase(output_dir / "ecfr.db")

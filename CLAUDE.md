@@ -36,7 +36,7 @@ pytest test_ecfr_verification.py    # Playwright verification tests
 
 Four classes handle data fetching:
 
-- **ECFRDatabase**: SQLite persistence for titles, agencies, sections, word counts, and TF-IDF similarities. Stores in `data_cache/ecfr.db`.
+- **ECFRDatabase**: SQLite persistence for titles, agencies, sections, word counts, and TF-IDF similarities. Stores in `ecfr/ecfr_data/ecfr.db`.
 - **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
 - **MarkdownConverter**: Converts eCFR/govinfo XML to Markdown. Tracks word counts and extracts section data (title/chapter/part/section/text).
 - **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
@@ -91,7 +91,7 @@ Govinfo bulk (faster for historical):
 
 ## Database Schema
 
-Main tables in `data_cache/ecfr.db`:
+Main tables in `ecfr/ecfr_data/ecfr.db`:
 - `titles` - CFR title metadata
 - `agencies` - Agency names and relationships
 - `cfr_references` - Maps agencies to CFR chapters

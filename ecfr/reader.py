@@ -13,7 +13,7 @@ class ECFRReader:
     who only need to query data, not write it.
     """
 
-    def __init__(self, db_path: str = "data_cache/ecfr.db"):
+    def __init__(self, db_path: str = "ecfr/ecfr_data/ecfr.db"):
         self._db = ECFRDatabase(Path(db_path))
 
     # Delegate all read methods to the database
