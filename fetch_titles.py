@@ -78,6 +78,17 @@ def init_agencies_db() -> None:
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS agency_word_counts (
+            agency_slug TEXT NOT NULL,
+            title INTEGER NOT NULL,
+            chapter TEXT NOT NULL,
+            word_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (agency_slug, title, chapter),
+            FOREIGN KEY (agency_slug) REFERENCES agencies(slug)
+        )
+    """)
+
+    cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_cfr_title_chapter
         ON cfr_references(title, chapter)
     """)
@@ -85,6 +96,11 @@ def init_agencies_db() -> None:
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_cfr_agency
         ON cfr_references(agency_slug)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_word_counts_agency
+        ON agency_word_counts(agency_slug)
     """)
 
     conn.commit()
@@ -188,13 +204,14 @@ def build_agency_lookup(conn: sqlite3.Connection) -> dict:
         conn: SQLite connection to the agencies database.
 
     Returns:
-        Dict mapping (title, chapter/subtitle/subchapter) tuples to agency info:
+        Dict mapping (title, chapter/subtitle/subchapter) tuples to list of agency info dicts.
+        Each dict contains:
         - agency_slug: Slug of the agency
         - agency_name: Name of the agency
         - parent_slug: Slug of parent agency (if child agency)
         - parent_name: Name of parent agency (if child agency)
     """
-    lookup = {}
+    lookup = defaultdict(list)
     cursor = conn.cursor()
 
     # Query all CFR references with agency info and parent info
@@ -216,24 +233,100 @@ def build_agency_lookup(conn: sqlite3.Connection) -> dict:
         title, chapter, agency_slug, agency_name, parent_slug, parent_name = row
         if title and chapter:
             key = (title, chapter)
-            lookup[key] = {
+            lookup[key].append({
                 "agency_slug": agency_slug,
                 "agency_name": agency_name,
                 "parent_slug": parent_slug,
                 "parent_name": parent_name,
-            }
+            })
 
-    return lookup
+    return dict(lookup)
 
 
-def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict = None) -> tuple[int, dict]:
+def update_agency_word_counts(title_num: int, chapter_word_counts: dict, agency_lookup: dict) -> None:
+    """Update agency word counts in the database for a given title.
+
+    Args:
+        title_num: The CFR title number
+        chapter_word_counts: Dict mapping chapter identifier to word count
+        agency_lookup: Dict mapping (title, chapter) to list of agency info dicts
+    """
+    if not chapter_word_counts:
+        return
+
+    conn = sqlite3.connect(AGENCIES_DB)
+    cursor = conn.cursor()
+
+    # Ensure table exists (may be missing from older cached database)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS agency_word_counts (
+            agency_slug TEXT NOT NULL,
+            title INTEGER NOT NULL,
+            chapter TEXT NOT NULL,
+            word_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (agency_slug, title, chapter),
+            FOREIGN KEY (agency_slug) REFERENCES agencies(slug)
+        )
+    """)
+
+    for chapter, word_count in chapter_word_counts.items():
+        key = (title_num, chapter)
+        agency_list = agency_lookup.get(key, [])
+        for agency_info in agency_list:
+            cursor.execute("""
+                INSERT OR REPLACE INTO agency_word_counts (agency_slug, title, chapter, word_count)
+                VALUES (?, ?, ?, ?)
+            """, (agency_info["agency_slug"], title_num, chapter, word_count))
+
+    conn.commit()
+    conn.close()
+
+
+def get_agency_total_word_counts() -> dict[str, int]:
+    """Get total word counts for all agencies, including parent aggregates.
+
+    Returns:
+        Dict mapping agency slug to total word count (including children for parent agencies).
+    """
+    conn = sqlite3.connect(AGENCIES_DB)
+    cursor = conn.cursor()
+
+    # Get direct word counts for each agency
+    cursor.execute("""
+        SELECT agency_slug, SUM(word_count) as total
+        FROM agency_word_counts
+        GROUP BY agency_slug
+    """)
+    direct_counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # Get parent-child relationships
+    cursor.execute("""
+        SELECT slug, parent_slug FROM agencies WHERE parent_slug IS NOT NULL
+    """)
+    child_to_parent = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # Aggregate child counts into parent counts
+    totals = dict(direct_counts)
+    for child_slug, parent_slug in child_to_parent.items():
+        if child_slug in direct_counts:
+            if parent_slug not in totals:
+                totals[parent_slug] = 0
+            totals[parent_slug] += direct_counts[child_slug]
+
+    conn.close()
+    return totals
+
+
+def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict = None) -> tuple[int, dict, dict]:
     """Convert XML content to Markdown and write to file.
 
-    Returns tuple of (bytes_written, word_counts).
+    Returns tuple of (bytes_written, word_counts, chapter_word_counts).
     word_counts is a dict mapping hierarchy keys to word counts.
+    chapter_word_counts is a dict mapping chapter identifiers to word counts.
     """
     root = etree.fromstring(xml_content)
     word_counts = defaultdict(int)
+    chapter_word_counts = defaultdict(int)
     lines = []
 
     def get_text(elem):
@@ -277,14 +370,15 @@ def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict =
                         try:
                             title_int = int(title_num)
                             key = (title_int, parent_n)
-                            agency_info = agency_lookup.get(key)
-                            if agency_info:
+                            agency_list = agency_lookup.get(key, [])
+                            if agency_list:
                                 lines.append("\n<!-- Agency Metadata\n")
-                                if agency_info["parent_slug"]:
-                                    lines.append(f"parent_agency: {agency_info['parent_slug']}\n")
-                                    lines.append(f"child_agency: {agency_info['agency_slug']}\n")
-                                else:
-                                    lines.append(f"agency: {agency_info['agency_slug']}\n")
+                                for agency_info in agency_list:
+                                    if agency_info["parent_slug"]:
+                                        lines.append(f"parent_agency: {agency_info['parent_slug']}\n")
+                                        lines.append(f"child_agency: {agency_info['agency_slug']}\n")
+                                    else:
+                                        lines.append(f"agency: {agency_info['agency_slug']}\n")
                                 lines.append("-->\n")
                         except (ValueError, TypeError):
                             pass
@@ -295,9 +389,14 @@ def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict =
             text = get_text(elem).strip()
             if text:
                 # Count words
+                wc = len(text.split())
                 if new_context:
                     key = tuple(sorted(new_context.items()))
-                    word_counts[key] += len(text.split())
+                    word_counts[key] += wc
+                    # Track chapter-level word counts
+                    chapter = new_context.get("chapter") or new_context.get("subtitle")
+                    if chapter:
+                        chapter_word_counts[chapter] += wc
                 lines.append(f"\n{text}\n")
             return
 
@@ -326,9 +425,14 @@ def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict =
         if tag in ("FP", "NOTE", "EXTRACT", "GPOTABLE"):
             text = get_text(elem).strip()
             if text:
+                wc = len(text.split())
                 if new_context:
                     key = tuple(sorted(new_context.items()))
-                    word_counts[key] += len(text.split())
+                    word_counts[key] += wc
+                    # Track chapter-level word counts
+                    chapter = new_context.get("chapter") or new_context.get("subtitle")
+                    if chapter:
+                        chapter_word_counts[chapter] += wc
                 lines.append(f"\n{text}\n")
             return
 
@@ -359,7 +463,7 @@ def xml_to_markdown(xml_content: bytes, output_file: Path, agency_lookup: dict =
     with open(output_file, "w") as f:
         f.write(content)
 
-    return output_file.stat().st_size, dict(word_counts)
+    return output_file.stat().st_size, dict(word_counts), dict(chapter_word_counts)
 
 
 def is_cache_valid(cache_path: Path) -> bool:
@@ -569,7 +673,10 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path, agency_lookup
             response = requests.get(url, timeout=300)
             response.raise_for_status()
 
-            size, word_counts = xml_to_markdown(response.content, output_file, agency_lookup)
+            size, word_counts, chapter_word_counts = xml_to_markdown(response.content, output_file, agency_lookup)
+            # Update agency word counts in database
+            if agency_lookup and chapter_word_counts:
+                update_agency_word_counts(title_num, chapter_word_counts, agency_lookup)
             return (title_num, True, f"{size:,} bytes", word_counts)
 
         except requests.exceptions.HTTPError as e:
