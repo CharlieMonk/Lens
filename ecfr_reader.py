@@ -236,35 +236,29 @@ class ECFRReader:
         return results
 
     def get_structure(self, title: int) -> dict:
-        """Return hierarchy tree for a title."""
-        sections = self.load_title(title)
-        if not sections:
+        """Return hierarchy tree for a title from the database."""
+        if not self.db:
             return {}
 
-        # Build nested structure from flat sections
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT DISTINCT part, section FROM word_counts
+            WHERE title = ? ORDER BY part, section
+        ''', (title,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return {}
+
         result = {"type": "title", "identifier": str(title), "children": []}
+        parts = {}
 
-        # Group sections by hierarchy
-        for s in sections:
-            path_dict = dict(s['path'])
-            # Just collect parts and their sections for now
-            part_id = path_dict.get('part', '')
-            if part_id:
-                # Find or create part entry
-                part_entry = None
-                for child in result.get('children', []):
-                    if child.get('type') == 'part' and child.get('identifier') == part_id:
-                        part_entry = child
-                        break
-                if not part_entry:
-                    part_entry = {"type": "part", "identifier": part_id, "children": []}
-                    result['children'].append(part_entry)
-
-                # Add section
-                part_entry['children'].append({
-                    "type": "section",
-                    "identifier": s['section']
-                })
+        for part, section in rows:
+            if part and part not in parts:
+                parts[part] = {"type": "part", "identifier": part, "children": []}
+                result["children"].append(parts[part])
+            if part and section:
+                parts[part]["children"].append({"type": "section", "identifier": section})
 
         return result
 
