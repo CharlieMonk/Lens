@@ -951,6 +951,149 @@ class MarkdownConverter:
 
         return output_path.stat().st_size, all_sections, dict(all_chapter_counts)
 
+    def convert_govinfo(self, xml_content: bytes, output_path: Path, title_num: int = None) -> tuple[int, list, dict]:
+        """Convert govinfo CFR XML to Markdown and extract sections.
+
+        Args:
+            xml_content: Raw XML bytes from govinfo bulk data.
+            output_path: Path to write Markdown output.
+            title_num: CFR title number.
+
+        Returns:
+            Tuple of (file_size, sections, chapter_word_counts).
+        """
+        root = etree.fromstring(xml_content)
+        sections = []
+        chapter_word_counts = defaultdict(int)
+        lines = []
+        cfr_title = str(title_num) if title_num else None
+
+        # Track current hierarchy context
+        context = {"title": cfr_title or ""}
+
+        def get_text(elem):
+            texts = []
+            if elem.text:
+                texts.append(elem.text)
+            for child in elem:
+                texts.append(get_text(child))
+                if child.tail:
+                    texts.append(child.tail)
+            return ''.join(texts)
+
+        # Process all elements
+        for elem in root.iter():
+            tag = elem.tag
+
+            # Track hierarchy
+            if tag == "CHAPTER":
+                hd = elem.find(".//HD")
+                if hd is not None and hd.text:
+                    # Extract chapter number from heading like "CHAPTER I—..."
+                    import re
+                    match = re.search(r'CHAPTER\s+([IVXLCDM]+)', hd.text)
+                    if match:
+                        context["chapter"] = match.group(1)
+                        lines.append(f"\n## {hd.text.strip()}\n")
+
+            elif tag == "SUBCHAP":
+                hd = elem.find(".//HD")
+                if hd is not None and hd.text:
+                    context["subchapter"] = hd.text.strip()
+                    lines.append(f"\n### {hd.text.strip()}\n")
+
+            elif tag == "PART":
+                hd = elem.find(".//HD")
+                if hd is not None and hd.text:
+                    # Extract part number
+                    import re
+                    match = re.search(r'PART\s+(\d+)', hd.text)
+                    if match:
+                        context["part"] = match.group(1)
+                    lines.append(f"\n### {hd.text.strip()}\n")
+
+            elif tag == "SUBPART":
+                hd = elem.find(".//HD")
+                if hd is not None and hd.text:
+                    context["subpart"] = hd.text.strip()
+                    lines.append(f"\n#### {hd.text.strip()}\n")
+
+            elif tag == "SECTION":
+                sectno_elem = elem.find("SECTNO")
+                subject_elem = elem.find("SUBJECT")
+
+                if sectno_elem is not None and sectno_elem.text:
+                    section_num = sectno_elem.text.lstrip("§ ").strip()
+                    heading = subject_elem.text.strip() if subject_elem is not None and subject_elem.text else ""
+
+                    # Collect section text from P elements
+                    text_parts = []
+                    for p in elem.findall(".//P"):
+                        p_text = get_text(p).strip()
+                        if p_text:
+                            text_parts.append(p_text)
+                            lines.append(f"\n{p_text}\n")
+
+                    full_text = "\n".join(text_parts)
+                    word_count = len(full_text.split())
+
+                    # Track word count by chapter
+                    chapter = context.get("chapter", "")
+                    if chapter:
+                        chapter_word_counts[chapter] += word_count
+
+                    sections.append({
+                        "title": context.get("title", ""),
+                        "subtitle": context.get("subtitle", ""),
+                        "chapter": chapter,
+                        "subchapter": context.get("subchapter", ""),
+                        "part": context.get("part", ""),
+                        "subpart": context.get("subpart", ""),
+                        "section": section_num,
+                        "heading": heading,
+                        "text": full_text,
+                        "word_count": word_count,
+                    })
+
+                    lines.append(f"\n#### § {section_num} {heading}\n")
+
+        content = ''.join(lines)
+        content = re.sub(r'\n{3,}', '\n\n', content)
+
+        with open(output_path, "w") as f:
+            f.write(content)
+
+        return output_path.stat().st_size, sections, dict(chapter_word_counts)
+
+    def convert_govinfo_volumes(self, xml_volumes: list[bytes], output_path: Path, title_num: int = None) -> tuple[int, list, dict]:
+        """Convert multiple govinfo volume XMLs to a single Markdown file.
+
+        Args:
+            xml_volumes: List of raw XML bytes (one per volume).
+            output_path: Path to write Markdown output.
+            title_num: CFR title number.
+
+        Returns:
+            Tuple of (file_size, sections, chapter_word_counts).
+        """
+        all_sections = []
+        all_chapter_counts = defaultdict(int)
+
+        with open(output_path, "w") as f:
+            for xml_content in xml_volumes:
+                _, sections, chapter_counts = self.convert_govinfo(xml_content, Path("/dev/null"), title_num)
+                all_sections.extend(sections)
+                for k, v in chapter_counts.items():
+                    all_chapter_counts[k] += v
+
+        # Write all sections to file
+        with open(output_path, "w") as f:
+            for s in all_sections:
+                f.write(f"\n#### § {s['section']} {s['heading']}\n")
+                f.write(f"\n{s['text']}\n")
+
+        return output_path.stat().st_size, all_sections, dict(all_chapter_counts)
+
 
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
@@ -1138,7 +1281,10 @@ class ECFRFetcher:
         return asyncio.run(self.fetch_current_async(clear_cache))
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
-        """Async fetch titles for historical years using eCFR API.
+        """Async fetch titles for historical years using govinfo bulk data.
+
+        Uses govinfo.gov bulk data repository which is fast and reliable.
+        Falls back to eCFR API if govinfo doesn't have the data.
 
         Args:
             historical_years: List of years (e.g., [2020, 2015]).
@@ -1153,93 +1299,41 @@ class ECFRFetcher:
 
         converter = MarkdownConverter()
 
-        async def fetch_part_with_retry(session, date, title_num, part_id):
-            """Fetch a single part of a title with retry logic."""
-            url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml?part={part_id}"
-            for attempt in range(5):
+        async def fetch_govinfo_volumes(session, year, title_num):
+            """Fetch all volumes for a title from govinfo bulk data."""
+            volumes = []
+            # Try volumes 1-20 (most titles have fewer than 20 volumes)
+            for vol in range(1, 21):
+                url = f"https://www.govinfo.gov/bulkdata/CFR/{year}/title-{title_num}/CFR-{year}-title{title_num}-vol{vol}.xml"
                 try:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                         if resp.status == 200:
-                            return await resp.read()
-                        elif resp.status == 429:
-                            await asyncio.sleep((2 ** attempt) * 5)
-                            continue
+                            volumes.append(await resp.read())
                         elif resp.status == 404:
-                            return None
-                except asyncio.TimeoutError:
-                    await asyncio.sleep(2)
-                    continue
+                            break  # No more volumes
                 except Exception:
-                    return None
-            return None
+                    break
+            return volumes
 
-        async def fetch_by_parts(session, date, title_num):
-            """Fetch a title by fetching each part separately using structure endpoint."""
-            # Get actual parts from structure endpoint
-            try:
-                chunks = self.client.get_title_chunks(title_num, date)
-                if not chunks:
-                    return []
-                print(f"    Fetching {len(chunks)} parts for Title {title_num}...")
-            except Exception as e:
-                print(f"    Could not get structure: {e}")
-                return []
+        async def fetch_year_title(session, year, title_num):
+            """Fetch a single title for a specific year from govinfo."""
+            output_subdir = self.output_dir / str(year)
+            output_subdir.mkdir(parents=True, exist_ok=True)
+            output_file = output_subdir / f"title_{title_num}.md"
 
-            xml_chunks = []
-            for i, (chunk_type, chunk_id) in enumerate(chunks):
-                chunk = await fetch_part_with_retry(session, date, title_num, chunk_id)
-                if chunk:
-                    xml_chunks.append(chunk)
-                # Rate limiting delay
-                await asyncio.sleep(0.5)
-                if (i + 1) % 20 == 0:
-                    print(f"    {i + 1}/{len(chunks)} parts...")
-            return xml_chunks
+            if self._is_file_fresh(output_file):
+                return (year, title_num, True, "cached", 0, [])
 
-        async def fetch_year_title(session, year, title_num, semaphore):
-            """Fetch a single title for a specific year from eCFR with retry logic."""
-            async with semaphore:  # Limit concurrent requests
-                output_subdir = self.output_dir / str(year)
-                output_subdir.mkdir(parents=True, exist_ok=True)
-                output_file = output_subdir / f"title_{title_num}.md"
+            # Try govinfo bulk data first (fast)
+            volumes = await fetch_govinfo_volumes(session, year, title_num)
+            if volumes:
+                try:
+                    size, sections, _ = converter.convert_govinfo_volumes(volumes, output_file, title_num)
+                    return (year, title_num, True, f"{size:,} bytes ({len(volumes)} vols)", size, sections)
+                except Exception as e:
+                    return (year, title_num, False, f"convert error: {e}", 0, [])
 
-                if self._is_file_fresh(output_file):
-                    return (year, title_num, True, "cached", 0, [])
-
-                date = f"{year}-01-01"
-                url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml"
-
-                # Try full fetch first with retries
-                for attempt in range(3):
-                    try:
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-                            if resp.status == 200:
-                                xml_content = await resp.read()
-                                size, sections, _ = converter.convert(xml_content, output_file, title_num)
-                                return (year, title_num, True, f"{size:,} bytes", size, sections)
-                            elif resp.status == 429:
-                                await asyncio.sleep((2 ** attempt) * 5)
-                                continue
-                            elif resp.status in (502, 503, 504):
-                                # Server timeout - try fetching by parts
-                                break
-                            elif resp.status == 404:
-                                return (year, title_num, False, "not available", 0, [])
-                    except asyncio.TimeoutError:
-                        break  # Try by parts
-                    except Exception as e:
-                        return (year, title_num, False, str(e), 0, [])
-
-                # Fallback: fetch by parts for large titles
-                xml_chunks = await fetch_by_parts(session, date, title_num)
-                if xml_chunks:
-                    try:
-                        size, sections, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
-                        return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} parts)", size, sections)
-                    except Exception as e:
-                        return (year, title_num, False, f"convert error: {e}", 0, [])
-
-                return (year, title_num, False, "failed", 0, [])
+            return (year, title_num, False, "not available", 0, [])
 
         # Filter out years already in the database
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
@@ -1252,24 +1346,23 @@ class ECFRFetcher:
             print(f"Skipping years already in database: {sorted(skipped)}")
 
         all_success = True
-        connector = aiohttp.TCPConnector(limit=2)
-        timeout = aiohttp.ClientTimeout(total=600)
-        semaphore = asyncio.Semaphore(1)  # Process one title at a time to minimize memory
+        connector = aiohttp.TCPConnector(limit=10)  # govinfo can handle more concurrent requests
+        session_timeout = aiohttp.ClientTimeout(total=60)
 
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        async with aiohttp.ClientSession(connector=connector, timeout=session_timeout) as session:
             for year in years_to_fetch:
                 output_subdir = self.output_dir / str(year)
                 output_subdir.mkdir(parents=True, exist_ok=True)
                 print(f"\n{'='*50}")
-                print(f"Fetching CFR {year} edition")
+                print(f"Fetching CFR {year} edition from govinfo")
                 print(f"Output: {output_subdir}")
                 print("-" * 50)
 
-                # Process titles one at a time to minimize memory usage
+                # Process titles
                 success_count = 0
                 for title_num in title_nums:
                     try:
-                        result = await fetch_year_title(session, year, title_num, semaphore)
+                        result = await fetch_year_title(session, year, title_num)
                         yr, t_num, success, msg, _, sections = result
                         symbol = "+" if success else "x"
                         print(f"{symbol} Title {t_num}: {msg}")
