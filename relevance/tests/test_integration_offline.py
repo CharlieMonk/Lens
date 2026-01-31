@@ -3,10 +3,10 @@ from relevance.application_aggregation import AggregationService
 from relevance.application_bootstrap import add_source, ensure_agency
 from relevance.application_citation_extractor import CitationExtractor
 from relevance.application_ingestion import IngestionService
-from relevance.application_query import QueryService
 from relevance.infrastructure_fixture_fetcher import FixtureFetcher, FixtureRegistry
 from relevance.infrastructure_repositories import (
     AgencyRepository,
+    AggregateRepository,
     CitationRepository,
     DocumentCitationRepository,
     DocumentRepository,
@@ -68,8 +68,7 @@ def test_offline_ingestion_and_aggregation(session, fixtures_path):
     aggregation = AggregationService()
     aggregation.rebuild(session, granularity="month")
 
-    query = QueryService(session)
-    top = query.top_cfr(limit=5)
+    top = AggregateRepository(session).top_cfr(agency_id=None, limit=5)
     assert len(top) > 0
     normalized = [row[0] for row in top]
     assert "17 CFR 240.10b-5" in normalized
