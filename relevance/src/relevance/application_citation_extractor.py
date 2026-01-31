@@ -22,7 +22,7 @@ class ExtractedCitation:
 class CitationExtractor:
     _section_pattern = re.compile(
         r"(?P<title>\d{1,3})\s*"
-        r"C\.?F\.?R\.?\s*"
+        r"C\s*\.?\s*F\s*\.?\s*R\s*\.?\s*"
         r"(?:§+|Sec\.?|Section)?\s*"
         r"(?P<part>\d+[A-Za-z]?)\.(?P<section>[0-9A-Za-z\-]+(?:\([^\)]+\))*)",
         re.IGNORECASE,
@@ -35,7 +35,7 @@ class CitationExtractor:
     )
     _part_pattern = re.compile(
         r"(?P<title>\d{1,3})\s*"
-        r"C\.?F\.?R\.?\s*"
+        r"C\s*\.?\s*F\s*\.?\s*R\s*\.?\s*"
         r"Part\s*(?P<part>\d+[A-Za-z]?)",
         re.IGNORECASE,
     )
