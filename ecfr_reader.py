@@ -2,6 +2,7 @@
 """Interface for querying downloaded Markdown CFR data."""
 
 import re
+import sqlite3
 from pathlib import Path
 
 
@@ -14,8 +15,17 @@ class ECFRReader:
 
     def __init__(self, data_dir: str = "data_cache"):
         self.data_dir = Path(data_dir)
+        self.db_path = self.data_dir / "ecfr.db"
+        self._db: sqlite3.Connection | None = None
         self._cache: dict[int, list[dict]] = {}
         self._section_index: dict[int, dict[str, dict]] = {}
+
+    @property
+    def db(self) -> sqlite3.Connection | None:
+        """Lazy-loaded database connection."""
+        if self._db is None and self.db_path.exists():
+            self._db = sqlite3.connect(self.db_path)
+        return self._db
 
     def list_titles(self) -> list[int]:
         """List available title numbers."""
@@ -183,15 +193,59 @@ class ECFRReader:
         return None
 
     def search(self, query: str, title: int = None) -> list[dict]:
-        """Full-text search across sections.
+        """Full-text search across sections using database.
 
         Args:
             query: Search string (case-insensitive)
             title: Optional title number to limit search
 
         Returns:
-            List of matching results with title, section, path, and snippet.
+            List of matching results with title, section, heading, and snippet.
         """
+        if self.db:
+            return self._search_db(query, title)
+        return self._search_markdown(query, title)
+
+    def _search_db(self, query: str, title: int = None) -> list[dict]:
+        """Search sections using database LIKE query."""
+        results = []
+        cursor = self.db.cursor()
+
+        if title:
+            cursor.execute(
+                "SELECT title, section, heading, text FROM sections WHERE title = ? AND text LIKE ?",
+                (title, f"%{query}%")
+            )
+        else:
+            cursor.execute(
+                "SELECT title, section, heading, text FROM sections WHERE text LIKE ?",
+                (f"%{query}%",)
+            )
+
+        query_lower = query.lower()
+        for row in cursor.fetchall():
+            t, section, heading, text = row
+            # Extract snippet around match
+            idx = text.lower().find(query_lower)
+            start = max(0, idx - 50)
+            end = min(len(text), idx + len(query) + 50)
+            snippet = text[start:end]
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+
+            results.append({
+                "title": t,
+                "section": section,
+                "heading": heading,
+                "snippet": snippet,
+            })
+
+        return results
+
+    def _search_markdown(self, query: str, title: int = None) -> list[dict]:
+        """Fallback search using markdown files."""
         results = []
         query_lower = query.lower()
 
@@ -219,42 +273,36 @@ class ECFRReader:
                     results.append({
                         "title": t,
                         "section": s['section'],
-                        "path": s['path'],
+                        "heading": s.get('heading', ''),
                         "snippet": snippet,
                     })
 
         return results
 
     def get_structure(self, title: int) -> dict:
-        """Return hierarchy tree for a title."""
-        sections = self.load_title(title)
-        if not sections:
+        """Return hierarchy tree for a title from the database."""
+        if not self.db:
             return {}
 
-        # Build nested structure from flat sections
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT DISTINCT part, section FROM sections
+            WHERE title = ? ORDER BY part, section
+        ''', (title,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return {}
+
         result = {"type": "title", "identifier": str(title), "children": []}
+        parts = {}
 
-        # Group sections by hierarchy
-        for s in sections:
-            path_dict = dict(s['path'])
-            # Just collect parts and their sections for now
-            part_id = path_dict.get('part', '')
-            if part_id:
-                # Find or create part entry
-                part_entry = None
-                for child in result.get('children', []):
-                    if child.get('type') == 'part' and child.get('identifier') == part_id:
-                        part_entry = child
-                        break
-                if not part_entry:
-                    part_entry = {"type": "part", "identifier": part_id, "children": []}
-                    result['children'].append(part_entry)
-
-                # Add section
-                part_entry['children'].append({
-                    "type": "section",
-                    "identifier": s['section']
-                })
+        for part, section in rows:
+            if part and part not in parts:
+                parts[part] = {"type": "part", "identifier": part, "children": []}
+                result["children"].append(parts[part])
+            if part and section:
+                parts[part]["children"].append({"type": "section", "identifier": section})
 
         return result
 
@@ -266,7 +314,7 @@ class ECFRReader:
         part: str = None,
         subpart: str = None,
     ) -> dict:
-        """Calculate word counts for sections.
+        """Get word counts for sections from the database.
 
         Args:
             title: CFR title number
@@ -278,32 +326,32 @@ class ECFRReader:
         Returns:
             Dict with 'sections' (section -> count) and 'total'.
         """
-        sections = self.load_title(title)
+        if not self.db:
+            return {"sections": {}, "total": 0}
 
-        # Build filter criteria
-        filters = {}
+        # Build query with filters
+        query = "SELECT section, word_count FROM sections WHERE title = ?"
+        params = [title]
+
         if chapter:
-            filters['chapter'] = chapter
+            query += " AND chapter = ?"
+            params.append(chapter)
         if subchapter:
-            filters['subchapter'] = subchapter
+            query += " AND subchapter = ?"
+            params.append(subchapter)
         if part:
-            filters['part'] = part
+            query += " AND part = ?"
+            params.append(part)
         if subpart:
-            filters['subpart'] = subpart
+            query += " AND subpart = ?"
+            params.append(subpart)
 
-        section_counts = {}
-        total = 0
+        cursor = self.db.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
 
-        for s in sections:
-            # Check filters
-            path_dict = dict(s['path'])
-            if filters:
-                if not all(path_dict.get(k) == v for k, v in filters.items()):
-                    continue
-
-            word_count = len(s['text'].split())
-            section_counts[s['section']] = word_count
-            total += word_count
+        section_counts = {row[0]: row[1] for row in rows if row[0]}
+        total = sum(row[1] for row in rows)
 
         return {"sections": section_counts, "total": total}
 
@@ -312,11 +360,63 @@ class ECFRReader:
         return self.get_word_counts(title)["total"]
 
     def get_section_heading(self, title: int, section: str) -> str | None:
-        """Get the heading text for a section."""
+        """Get the heading text for a section from database."""
+        if self.db:
+            cursor = self.db.cursor()
+            cursor.execute(
+                "SELECT heading FROM sections WHERE title = ? AND section = ?",
+                (title, section)
+            )
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        # Fallback to markdown parsing
         s = self.navigate(title, section=section)
         return s['heading'] if s else None
 
     def get_section_text(self, title: int, section: str) -> str | None:
-        """Get the full text content of a section."""
+        """Get the full text content of a section from database."""
+        if self.db:
+            cursor = self.db.cursor()
+            cursor.execute(
+                "SELECT text FROM sections WHERE title = ? AND section = ?",
+                (title, section)
+            )
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        # Fallback to markdown parsing
         s = self.navigate(title, section=section)
         return s['text'] if s else None
+
+    def get_section(self, title: int, section: str) -> dict | None:
+        """Get full section data from database.
+
+        Returns dict with keys: title, subtitle, chapter, subchapter,
+        part, subpart, section, heading, text, word_count.
+        """
+        if not self.db:
+            return None
+
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT title, subtitle, chapter, subchapter, part, subpart,
+                   section, heading, text, word_count
+            FROM sections WHERE title = ? AND section = ?
+        ''', (title, section))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            "title": row[0],
+            "subtitle": row[1],
+            "chapter": row[2],
+            "subchapter": row[3],
+            "part": row[4],
+            "subpart": row[5],
+            "section": row[6],
+            "heading": row[7],
+            "text": row[8],
+            "word_count": row[9],
+        }
