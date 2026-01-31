@@ -78,7 +78,7 @@ class ECFRDatabase:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS word_counts (
+            CREATE TABLE IF NOT EXISTS sections (
                 title INTEGER NOT NULL,
                 subtitle TEXT NOT NULL DEFAULT '',
                 chapter TEXT NOT NULL DEFAULT '',
@@ -86,14 +86,21 @@ class ECFRDatabase:
                 part TEXT NOT NULL DEFAULT '',
                 subpart TEXT NOT NULL DEFAULT '',
                 section TEXT NOT NULL DEFAULT '',
+                heading TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL DEFAULT '',
                 word_count INTEGER NOT NULL,
                 PRIMARY KEY (title, subtitle, chapter, subchapter, part, subpart, section)
             )
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_word_counts_title
-            ON word_counts(title)
+            CREATE INDEX IF NOT EXISTS idx_sections_title
+            ON sections(title)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_sections_title_section
+            ON sections(title, section)
         """)
 
         cursor.execute("""
@@ -302,34 +309,35 @@ class ECFRDatabase:
         conn.commit()
         conn.close()
 
-    def save_word_counts(self, word_counts: dict) -> None:
-        """Save granular word counts to the database.
+    def save_sections(self, sections: list[dict]) -> None:
+        """Save section data to the database.
 
         Args:
-            word_counts: Dict with tuple keys like (("title", "40"), ("chapter", "I"), ...)
-                         and word count values.
+            sections: List of dicts with keys: title, subtitle, chapter, subchapter,
+                     part, subpart, section, heading, text, word_count.
         """
-        if not word_counts:
+        if not sections:
             return
 
         conn = self._connect()
         cursor = conn.cursor()
 
-        for key, count in word_counts.items():
-            ctx = dict(key)
+        for s in sections:
             cursor.execute("""
-                INSERT OR REPLACE INTO word_counts
-                (title, subtitle, chapter, subchapter, part, subpart, section, word_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO sections
+                (title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                int(ctx.get("title", 0)),
-                ctx.get("subtitle") or "",
-                ctx.get("chapter") or "",
-                ctx.get("subchapter") or "",
-                ctx.get("part") or "",
-                ctx.get("subpart") or "",
-                ctx.get("section") or "",
-                count,
+                int(s.get("title", 0)),
+                s.get("subtitle") or "",
+                s.get("chapter") or "",
+                s.get("subchapter") or "",
+                s.get("part") or "",
+                s.get("subpart") or "",
+                s.get("section") or "",
+                s.get("heading") or "",
+                s.get("text") or "",
+                s.get("word_count", 0),
             ))
 
         conn.commit()
@@ -598,22 +606,23 @@ class MarkdownConverter:
     def __init__(self, agency_lookup: dict = None):
         self.agency_lookup = agency_lookup or {}
 
-    def convert(self, xml_content: bytes, output_path: Path, title_num: int = None) -> tuple[int, dict, dict]:
+    def convert(self, xml_content: bytes, output_path: Path, title_num: int = None) -> tuple[int, list, dict]:
         """Convert XML content to Markdown and write to file.
 
         Args:
             xml_content: Raw XML bytes.
             output_path: Path to write Markdown output.
-            title_num: CFR title number (used for word count tracking).
+            title_num: CFR title number (used for section tracking).
 
         Returns:
-            Tuple of (file_size, word_counts, chapter_word_counts).
+            Tuple of (file_size, sections, chapter_word_counts).
         """
         root = etree.fromstring(xml_content)
-        word_counts = defaultdict(int)
+        sections = []
         chapter_word_counts = defaultdict(int)
         lines = []
         cfr_title = str(title_num) if title_num else None
+        current_section = [None]  # Use list to allow mutation in nested function
 
         def get_text(elem):
             """Get all text content from an element."""
@@ -625,6 +634,16 @@ class MarkdownConverter:
                 if child.tail:
                     texts.append(child.tail)
             return ''.join(texts)
+
+        def finalize_section():
+            """Finalize and save the current section."""
+            if current_section[0]:
+                s = current_section[0]
+                s["text"] = "\n".join(s["_text_parts"]).strip()
+                s["word_count"] = len(s["text"].split())
+                del s["_text_parts"]
+                sections.append(s)
+                current_section[0] = None
 
         def process_element(elem, context):
             """Recursively process XML elements and generate Markdown."""
@@ -640,6 +659,21 @@ class MarkdownConverter:
                 else:
                     new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
 
+            # When entering a new section, finalize previous and start new
+            if elem_type == "SECTION":
+                finalize_section()
+                current_section[0] = {
+                    "title": new_context.get("title") or "",
+                    "subtitle": new_context.get("subtitle") or "",
+                    "chapter": new_context.get("chapter") or "",
+                    "subchapter": new_context.get("subchapter") or "",
+                    "part": new_context.get("part") or "",
+                    "subpart": new_context.get("subpart") or "",
+                    "section": elem_n,
+                    "heading": "",
+                    "_text_parts": [],
+                }
+
             if tag == "HEAD":
                 text = get_text(elem).strip()
                 if text:
@@ -649,11 +683,15 @@ class MarkdownConverter:
                     heading_level = self.TYPE_TO_HEADING.get(parent_type, 5)
                     lines.append(f"\n{'#' * heading_level} {text}\n")
 
+                    # Capture section heading
+                    if parent_type == "SECTION" and current_section[0]:
+                        current_section[0]["heading"] = text
+
                     if self.agency_lookup and parent_type in ("CHAPTER", "SUBTITLE", "SUBCHAP"):
-                        title_num = new_context.get("title")
-                        if title_num:
+                        title_num_ctx = new_context.get("title")
+                        if title_num_ctx:
                             try:
-                                key = (int(title_num), parent_n)
+                                key = (int(title_num_ctx), parent_n)
                                 agency_list = self.agency_lookup.get(key, [])
                                 if agency_list:
                                     lines.append("\n<!-- Agency Metadata\n")
@@ -672,12 +710,11 @@ class MarkdownConverter:
                 text = get_text(elem).strip()
                 if text:
                     wc = len(text.split())
-                    if new_context:
-                        key = tuple(sorted(new_context.items()))
-                        word_counts[key] += wc
-                        chapter = new_context.get("chapter") or new_context.get("subtitle")
-                        if chapter:
-                            chapter_word_counts[chapter] += wc
+                    chapter = new_context.get("chapter") or new_context.get("subtitle")
+                    if chapter:
+                        chapter_word_counts[chapter] += wc
+                    if current_section[0]:
+                        current_section[0]["_text_parts"].append(text)
                     lines.append(f"\n{text}\n")
                 return
 
@@ -703,12 +740,11 @@ class MarkdownConverter:
                 text = get_text(elem).strip()
                 if text:
                     wc = len(text.split())
-                    if new_context:
-                        key = tuple(sorted(new_context.items()))
-                        word_counts[key] += wc
-                        chapter = new_context.get("chapter") or new_context.get("subtitle")
-                        if chapter:
-                            chapter_word_counts[chapter] += wc
+                    chapter = new_context.get("chapter") or new_context.get("subtitle")
+                    if chapter:
+                        chapter_word_counts[chapter] += wc
+                    if current_section[0]:
+                        current_section[0]["_text_parts"].append(text)
                     lines.append(f"\n{text}\n")
                 return
 
@@ -717,6 +753,7 @@ class MarkdownConverter:
                 process_element(child, new_context)
 
         process_element(root, {})
+        finalize_section()  # Finalize last section
 
         content = ''.join(lines)
         content = re.sub(r'\n{3,}', '\n\n', content)
@@ -724,20 +761,20 @@ class MarkdownConverter:
         with open(output_path, "w") as f:
             f.write(content)
 
-        return output_path.stat().st_size, dict(word_counts), dict(chapter_word_counts)
+        return output_path.stat().st_size, sections, dict(chapter_word_counts)
 
-    def convert_chunks(self, xml_chunks: list[bytes], output_path: Path, title_num: int = None) -> tuple[int, dict, dict]:
+    def convert_chunks(self, xml_chunks: list[bytes], output_path: Path, title_num: int = None) -> tuple[int, list, dict]:
         """Convert multiple XML chunks to a single Markdown file.
 
         Args:
             xml_chunks: List of raw XML bytes (one per volume).
             output_path: Path to write Markdown output.
-            title_num: CFR title number (used for word count tracking).
+            title_num: CFR title number (used for section tracking).
 
         Returns:
-            Tuple of (file_size, word_counts, chapter_word_counts).
+            Tuple of (file_size, sections, chapter_word_counts).
         """
-        all_word_counts = defaultdict(int)
+        all_sections = []
         all_chapter_counts = defaultdict(int)
         cfr_title = str(title_num) if title_num else None
 
@@ -745,8 +782,8 @@ class MarkdownConverter:
             for xml_content in xml_chunks:
                 root = etree.fromstring(xml_content)
                 lines = []
-                word_counts = defaultdict(int)
                 chapter_word_counts = defaultdict(int)
+                current_section = [None]
 
                 def get_text(elem):
                     texts = []
@@ -757,6 +794,15 @@ class MarkdownConverter:
                         if child.tail:
                             texts.append(child.tail)
                     return ''.join(texts)
+
+                def finalize_section():
+                    if current_section[0]:
+                        s = current_section[0]
+                        s["text"] = "\n".join(s["_text_parts"]).strip()
+                        s["word_count"] = len(s["text"].split())
+                        del s["_text_parts"]
+                        all_sections.append(s)
+                        current_section[0] = None
 
                 def process_element(elem, context):
                     tag = elem.tag
@@ -771,6 +817,21 @@ class MarkdownConverter:
                         else:
                             new_context[self.TYPE_TO_LEVEL[elem_type]] = elem_n
 
+                    # When entering a new section, finalize previous and start new
+                    if elem_type == "SECTION":
+                        finalize_section()
+                        current_section[0] = {
+                            "title": new_context.get("title") or "",
+                            "subtitle": new_context.get("subtitle") or "",
+                            "chapter": new_context.get("chapter") or "",
+                            "subchapter": new_context.get("subchapter") or "",
+                            "part": new_context.get("part") or "",
+                            "subpart": new_context.get("subpart") or "",
+                            "section": elem_n,
+                            "heading": "",
+                            "_text_parts": [],
+                        }
+
                     if tag == "HEAD":
                         text = get_text(elem).strip()
                         if text:
@@ -778,18 +839,21 @@ class MarkdownConverter:
                             parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
                             heading_level = self.TYPE_TO_HEADING.get(parent_type, 5)
                             lines.append(f"\n{'#' * heading_level} {text}\n")
+
+                            # Capture section heading
+                            if parent_type == "SECTION" and current_section[0]:
+                                current_section[0]["heading"] = text
                         return
 
                     if tag == "P":
                         text = get_text(elem).strip()
                         if text:
                             wc = len(text.split())
-                            if new_context:
-                                key = tuple(sorted(new_context.items()))
-                                word_counts[key] += wc
-                                chapter = new_context.get("chapter") or new_context.get("subtitle")
-                                if chapter:
-                                    chapter_word_counts[chapter] += wc
+                            chapter = new_context.get("chapter") or new_context.get("subtitle")
+                            if chapter:
+                                chapter_word_counts[chapter] += wc
+                            if current_section[0]:
+                                current_section[0]["_text_parts"].append(text)
                             lines.append(f"\n{text}\n")
                         return
 
@@ -810,12 +874,11 @@ class MarkdownConverter:
                         text = get_text(elem).strip()
                         if text:
                             wc = len(text.split())
-                            if new_context:
-                                key = tuple(sorted(new_context.items()))
-                                word_counts[key] += wc
-                                chapter = new_context.get("chapter") or new_context.get("subtitle")
-                                if chapter:
-                                    chapter_word_counts[chapter] += wc
+                            chapter = new_context.get("chapter") or new_context.get("subtitle")
+                            if chapter:
+                                chapter_word_counts[chapter] += wc
+                            if current_section[0]:
+                                current_section[0]["_text_parts"].append(text)
                             lines.append(f"\n{text}\n")
                         return
 
@@ -823,17 +886,16 @@ class MarkdownConverter:
                         process_element(child, new_context)
 
                 process_element(root, {})
+                finalize_section()  # Finalize last section in this chunk
 
                 content = ''.join(lines)
                 content = re.sub(r'\n{3,}', '\n\n', content)
                 f.write(content)
 
-                for k, v in word_counts.items():
-                    all_word_counts[k] += v
                 for k, v in chapter_word_counts.items():
                     all_chapter_counts[k] += v
 
-        return output_path.stat().st_size, dict(all_word_counts), dict(all_chapter_counts)
+        return output_path.stat().st_size, all_sections, dict(all_chapter_counts)
 
 
 class ECFRFetcher:
@@ -901,13 +963,13 @@ class ECFRFetcher:
             output_subdir: Optional subdirectory for output.
 
         Returns:
-            Tuple of (success, message, word_counts).
+            Tuple of (success, message, sections).
         """
         output_dir = output_subdir or self.output_dir
         output_file = output_dir / f"title_{title_num}.md"
 
         if self._is_file_fresh(output_file):
-            return (True, "cached", {})
+            return (True, "cached", [])
 
         converter = MarkdownConverter(agency_lookup)
 
@@ -940,15 +1002,15 @@ class ECFRFetcher:
                 for t in tasks:
                     t.cancel()
                 try:
-                    size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file, title_num)
-                    self.db.save_word_counts(word_counts)
+                    size, sections, chapter_word_counts = converter.convert(xml_content, output_file, title_num)
+                    self.db.save_sections(sections)
                     if agency_lookup and chapter_word_counts:
                         self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
-                    return (True, f"{size:,} bytes ({source})", word_counts)
+                    return (True, f"{size:,} bytes ({source})", sections)
                 except Exception as e:
-                    return (False, f"Convert error: {e}", {})
+                    return (False, f"Convert error: {e}", [])
 
-        return (False, "Both sources failed", {})
+        return (False, "Both sources failed", [])
 
     async def fetch_current_async(self, clear_cache: bool = False) -> int:
         """Async fetch all CFR titles 1-50 for the latest issue date.
@@ -988,7 +1050,7 @@ class ECFRFetcher:
         print("-" * 50)
 
         success_count = 0
-        all_word_counts = {}
+        total_words = 0
 
         connector = aiohttp.TCPConnector(limit=20)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -1002,18 +1064,17 @@ class ECFRFetcher:
                 if isinstance(result, Exception):
                     print(f"x Title {num}: {result}")
                 else:
-                    success, msg, word_counts = result
+                    success, msg, sections = result
                     symbol = "+" if success else "x"
                     print(f"{symbol} Title {num}: {msg}")
                     if success:
                         success_count += 1
-                        all_word_counts.update(word_counts)
+                        total_words += sum(s.get("word_count", 0) for s in sections)
 
         print("-" * 50)
         print(f"Complete: {success_count}/{len(titles_to_fetch)} titles downloaded")
 
-        if all_word_counts:
-            total_words = sum(all_word_counts.values())
+        if total_words:
             print(f"Total words: {total_words:,}")
 
         return 0 if success_count == len(titles_to_fetch) else 1

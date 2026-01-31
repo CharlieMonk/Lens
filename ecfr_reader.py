@@ -193,15 +193,59 @@ class ECFRReader:
         return None
 
     def search(self, query: str, title: int = None) -> list[dict]:
-        """Full-text search across sections.
+        """Full-text search across sections using database.
 
         Args:
             query: Search string (case-insensitive)
             title: Optional title number to limit search
 
         Returns:
-            List of matching results with title, section, path, and snippet.
+            List of matching results with title, section, heading, and snippet.
         """
+        if self.db:
+            return self._search_db(query, title)
+        return self._search_markdown(query, title)
+
+    def _search_db(self, query: str, title: int = None) -> list[dict]:
+        """Search sections using database LIKE query."""
+        results = []
+        cursor = self.db.cursor()
+
+        if title:
+            cursor.execute(
+                "SELECT title, section, heading, text FROM sections WHERE title = ? AND text LIKE ?",
+                (title, f"%{query}%")
+            )
+        else:
+            cursor.execute(
+                "SELECT title, section, heading, text FROM sections WHERE text LIKE ?",
+                (f"%{query}%",)
+            )
+
+        query_lower = query.lower()
+        for row in cursor.fetchall():
+            t, section, heading, text = row
+            # Extract snippet around match
+            idx = text.lower().find(query_lower)
+            start = max(0, idx - 50)
+            end = min(len(text), idx + len(query) + 50)
+            snippet = text[start:end]
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+
+            results.append({
+                "title": t,
+                "section": section,
+                "heading": heading,
+                "snippet": snippet,
+            })
+
+        return results
+
+    def _search_markdown(self, query: str, title: int = None) -> list[dict]:
+        """Fallback search using markdown files."""
         results = []
         query_lower = query.lower()
 
@@ -229,7 +273,7 @@ class ECFRReader:
                     results.append({
                         "title": t,
                         "section": s['section'],
-                        "path": s['path'],
+                        "heading": s.get('heading', ''),
                         "snippet": snippet,
                     })
 
@@ -242,7 +286,7 @@ class ECFRReader:
 
         cursor = self.db.cursor()
         cursor.execute('''
-            SELECT DISTINCT part, section FROM word_counts
+            SELECT DISTINCT part, section FROM sections
             WHERE title = ? ORDER BY part, section
         ''', (title,))
         rows = cursor.fetchall()
@@ -286,7 +330,7 @@ class ECFRReader:
             return {"sections": {}, "total": 0}
 
         # Build query with filters
-        query = "SELECT section, word_count FROM word_counts WHERE title = ?"
+        query = "SELECT section, word_count FROM sections WHERE title = ?"
         params = [title]
 
         if chapter:
@@ -316,11 +360,63 @@ class ECFRReader:
         return self.get_word_counts(title)["total"]
 
     def get_section_heading(self, title: int, section: str) -> str | None:
-        """Get the heading text for a section."""
+        """Get the heading text for a section from database."""
+        if self.db:
+            cursor = self.db.cursor()
+            cursor.execute(
+                "SELECT heading FROM sections WHERE title = ? AND section = ?",
+                (title, section)
+            )
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        # Fallback to markdown parsing
         s = self.navigate(title, section=section)
         return s['heading'] if s else None
 
     def get_section_text(self, title: int, section: str) -> str | None:
-        """Get the full text content of a section."""
+        """Get the full text content of a section from database."""
+        if self.db:
+            cursor = self.db.cursor()
+            cursor.execute(
+                "SELECT text FROM sections WHERE title = ? AND section = ?",
+                (title, section)
+            )
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        # Fallback to markdown parsing
         s = self.navigate(title, section=section)
         return s['text'] if s else None
+
+    def get_section(self, title: int, section: str) -> dict | None:
+        """Get full section data from database.
+
+        Returns dict with keys: title, subtitle, chapter, subchapter,
+        part, subpart, section, heading, text, word_count.
+        """
+        if not self.db:
+            return None
+
+        cursor = self.db.cursor()
+        cursor.execute('''
+            SELECT title, subtitle, chapter, subchapter, part, subpart,
+                   section, heading, text, word_count
+            FROM sections WHERE title = ? AND section = ?
+        ''', (title, section))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            "title": row[0],
+            "subtitle": row[1],
+            "chapter": row[2],
+            "subchapter": row[3],
+            "part": row[4],
+            "subpart": row[5],
+            "section": row[6],
+            "heading": row[7],
+            "text": row[8],
+            "word_count": row[9],
+        }
