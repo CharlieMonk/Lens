@@ -9,7 +9,7 @@ from typing import Generator
 class ECFRReader:
     """Interface for reading and navigating eCFR Markdown data."""
 
-    def __init__(self, data_dir: str = "md_output"):
+    def __init__(self, data_dir: str = "data_cache"):
         self.data_dir = Path(data_dir)
         self._cache: dict[int, list[dict]] = {}
         self._section_index: dict[int, dict[str, dict]] = {}

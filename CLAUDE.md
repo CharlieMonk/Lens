@@ -24,7 +24,7 @@ The project consists of a single script (`fetch_titles.py`) that:
 1. Fetches titles metadata from `/api/versioner/v1/titles.json` to get latest issue dates
 2. Downloads full XML for each title using `/api/versioner/v1/full/{date}/title-{n}.xml`
 3. Converts XML to Markdown and counts words by hierarchy level (title/chapter/subchapter/part/subpart)
-4. Outputs Markdown files and a `word_counts.csv` to `md_output/`
+4. Outputs Markdown files and a `word_counts.csv` to `data_cache/`
 
 Key constants:
 - `MAX_WORKERS = 5`: Parallel fetch threads

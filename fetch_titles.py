@@ -19,10 +19,9 @@ MAX_WORKERS = 5
 MAX_RETRIES = 7
 RETRY_DELAY = 3  # seconds, doubles each retry
 CLEAR_CACHE = False
-OUTPUT_DIR = Path("md_output")
-METADATA_CACHE = OUTPUT_DIR / "titles_metadata.yaml"
+OUTPUT_DIR = Path("data_cache")
 WORD_COUNTS_CACHE = OUTPUT_DIR / "word_counts_cache.yaml"
-AGENCIES_DB = OUTPUT_DIR / "agencies.db"
+ECFR_DB = OUTPUT_DIR / "ecfr.db"
 
 # Maps DIV TYPE attributes to hierarchy levels and markdown heading depth
 TYPE_TO_LEVEL = {
@@ -47,11 +46,22 @@ TYPE_TO_HEADING = {
 }
 
 
-def init_agencies_db() -> None:
-    """Initialize the agencies SQLite database schema."""
-    AGENCIES_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(AGENCIES_DB)
+def init_db() -> None:
+    """Initialize the eCFR SQLite database schema."""
+    ECFR_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(ECFR_DB)
     cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS titles (
+            number INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            latest_amended_on TEXT,
+            latest_issue_date TEXT,
+            up_to_date_as_of TEXT,
+            reserved INTEGER NOT NULL DEFAULT 0
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS agencies (
@@ -111,13 +121,21 @@ def get_agencies_metadata() -> sqlite3.Connection:
     """Fetch agency metadata from the eCFR API, storing in SQLite database.
 
     Returns:
-        SQLite connection to the agencies database.
+        SQLite connection to the eCFR database.
 
     Raises:
         RuntimeError: If unable to fetch or parse the agencies metadata.
     """
-    if is_cache_valid(AGENCIES_DB):
-        return sqlite3.connect(AGENCIES_DB)
+    # Initialize database schema if needed
+    init_db()
+
+    conn = sqlite3.connect(ECFR_DB)
+    cursor = conn.cursor()
+
+    # Check if agencies table has data and is fresh
+    cursor.execute("SELECT COUNT(*) FROM agencies")
+    if cursor.fetchone()[0] > 0 and is_cache_valid(ECFR_DB):
+        return conn
 
     url = "https://www.ecfr.gov/api/admin/v1/agencies.json"
 
@@ -126,17 +144,15 @@ def get_agencies_metadata() -> sqlite3.Connection:
         response.raise_for_status()
         data = response.json()
     except requests.exceptions.RequestException as e:
+        conn.close()
         raise RuntimeError(f"Failed to fetch agencies metadata: {e}")
     except (KeyError, TypeError) as e:
+        conn.close()
         raise RuntimeError(f"Failed to parse agencies metadata: {e}")
 
-    # Initialize database
-    if AGENCIES_DB.exists():
-        AGENCIES_DB.unlink()
-    init_agencies_db()
-
-    conn = sqlite3.connect(AGENCIES_DB)
-    cursor = conn.cursor()
+    # Clear existing agency data
+    cursor.execute("DELETE FROM cfr_references")
+    cursor.execute("DELETE FROM agencies")
 
     # Insert agencies and their CFR references
     for agency in data.get("agencies", []):
@@ -254,7 +270,7 @@ def update_agency_word_counts(title_num: int, chapter_word_counts: dict, agency_
     if not chapter_word_counts:
         return
 
-    conn = sqlite3.connect(AGENCIES_DB)
+    conn = sqlite3.connect(ECFR_DB)
     cursor = conn.cursor()
 
     # Ensure table exists (may be missing from older cached database)
@@ -288,7 +304,7 @@ def get_agency_total_word_counts() -> dict[str, int]:
     Returns:
         Dict mapping agency slug to total word count (including children for parent agencies).
     """
-    conn = sqlite3.connect(AGENCIES_DB)
+    conn = sqlite3.connect(ECFR_DB)
     cursor = conn.cursor()
 
     # Get direct word counts for each agency
@@ -481,7 +497,7 @@ def clear_cache() -> None:
     for f in OUTPUT_DIR.glob("*.md"):
         f.unlink()
     # Delete cache files
-    for cache_file in [METADATA_CACHE, WORD_COUNTS_CACHE, AGENCIES_DB]:
+    for cache_file in [WORD_COUNTS_CACHE, ECFR_DB]:
         if cache_file.exists():
             cache_file.unlink()
     csv_file = OUTPUT_DIR / "word_counts.csv"
@@ -605,7 +621,7 @@ def save_word_counts_cache(cache: dict[int, dict]) -> None:
 
 
 def get_titles_metadata() -> dict[int, dict]:
-    """Fetch metadata for all titles, using cache if available and fresh.
+    """Fetch metadata for all titles, using database cache if available and fresh.
 
     Returns:
         Dict mapping title number to full metadata dict containing:
@@ -618,9 +634,31 @@ def get_titles_metadata() -> dict[int, dict]:
     Raises:
         RuntimeError: If unable to fetch or parse the titles metadata.
     """
-    if is_cache_valid(METADATA_CACHE):
-        with open(METADATA_CACHE) as f:
-            return yaml.safe_load(f)
+    # Initialize database schema if needed
+    init_db()
+
+    conn = sqlite3.connect(ECFR_DB)
+    cursor = conn.cursor()
+
+    # Check if titles table has data and is fresh
+    cursor.execute("SELECT COUNT(*) FROM titles")
+    if cursor.fetchone()[0] > 0 and is_cache_valid(ECFR_DB):
+        cursor.execute("""
+            SELECT number, name, latest_amended_on, latest_issue_date, up_to_date_as_of, reserved
+            FROM titles
+        """)
+        metadata = {
+            row[0]: {
+                "name": row[1],
+                "latest_amended_on": row[2],
+                "latest_issue_date": row[3],
+                "up_to_date_as_of": row[4],
+                "reserved": bool(row[5]),
+            }
+            for row in cursor.fetchall()
+        }
+        conn.close()
+        return metadata
 
     url = f"{BASE_URL}/titles.json"
 
@@ -628,24 +666,40 @@ def get_titles_metadata() -> dict[int, dict]:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         data = response.json()
-        metadata = {
-            t["number"]: {
-                "name": t.get("name"),
-                "latest_amended_on": t.get("latest_amended_on"),
-                "latest_issue_date": t.get("latest_issue_date"),
-                "up_to_date_as_of": t.get("up_to_date_as_of"),
-                "reserved": t.get("reserved", False),
-            }
-            for t in data["titles"]
-        }
-        METADATA_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        with open(METADATA_CACHE, "w") as f:
-            yaml.dump(metadata, f)
-        return metadata
     except requests.exceptions.RequestException as e:
+        conn.close()
         raise RuntimeError(f"Failed to fetch titles metadata: {e}")
     except (KeyError, TypeError) as e:
+        conn.close()
         raise RuntimeError(f"Failed to parse titles metadata: {e}")
+
+    # Clear and repopulate titles table
+    cursor.execute("DELETE FROM titles")
+    metadata = {}
+    for t in data["titles"]:
+        number = t["number"]
+        name = t.get("name")
+        latest_amended_on = t.get("latest_amended_on")
+        latest_issue_date = t.get("latest_issue_date")
+        up_to_date_as_of = t.get("up_to_date_as_of")
+        reserved = 1 if t.get("reserved", False) else 0
+
+        cursor.execute("""
+            INSERT INTO titles (number, name, latest_amended_on, latest_issue_date, up_to_date_as_of, reserved)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (number, name, latest_amended_on, latest_issue_date, up_to_date_as_of, reserved))
+
+        metadata[number] = {
+            "name": name,
+            "latest_amended_on": latest_amended_on,
+            "latest_issue_date": latest_issue_date,
+            "up_to_date_as_of": up_to_date_as_of,
+            "reserved": bool(reserved),
+        }
+
+    conn.commit()
+    conn.close()
+    return metadata
 
 
 def fetch_title(title_num: int, fetch_date: str, output_dir: Path, agency_lookup: dict = None) -> tuple[int, bool, str, dict]:
@@ -701,8 +755,8 @@ def main() -> int:
         print("Clearing cache...")
         clear_cache()
 
-    cached = is_cache_valid(METADATA_CACHE)
-    print(f"Loading titles metadata {'(cached)' if cached else '(fetching)'}...")
+    db_cached = is_cache_valid(ECFR_DB)
+    print(f"Loading titles metadata {'(cached)' if db_cached else '(fetching)'}...")
     try:
         titles_metadata = get_titles_metadata()
     except RuntimeError as e:
@@ -710,8 +764,7 @@ def main() -> int:
         return 1
 
     # Load agencies metadata and build lookup
-    agencies_cached = is_cache_valid(AGENCIES_DB)
-    print(f"Loading agencies metadata {'(cached)' if agencies_cached else '(fetching)'}...")
+    print(f"Loading agencies metadata {'(cached)' if db_cached else '(fetching)'}...")
     try:
         agencies_conn = get_agencies_metadata()
         agency_lookup = build_agency_lookup(agencies_conn)
@@ -785,7 +838,6 @@ def main() -> int:
                     str(count),
                 ]
                 f.write(",".join(row) + "\n")
-        print(f"Word counts saved to {csv_file}")
 
         # Print summary
         total_words = sum(all_word_counts.values())
