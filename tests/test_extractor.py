@@ -1,12 +1,9 @@
-"""Tests for ecfr/converter.py."""
-
-import tempfile
-from pathlib import Path
+"""Tests for ecfr/extractor.py."""
 
 import pytest
 from lxml import etree
 
-from ecfr.converter import get_element_text, SectionBuilder, MarkdownConverter
+from ecfr.extractor import get_element_text, SectionBuilder, XMLExtractor
 
 
 class TestGetElementText:
@@ -124,22 +121,16 @@ class TestSectionBuilder:
         assert sections[0]["part"] == ""
 
 
-class TestMarkdownConverter:
-    """Tests for MarkdownConverter class."""
+class TestXMLExtractor:
+    """Tests for XMLExtractor class."""
 
     @pytest.fixture
-    def converter(self):
-        """Create a MarkdownConverter instance."""
-        return MarkdownConverter()
+    def extractor(self):
+        """Create an XMLExtractor instance."""
+        return XMLExtractor()
 
-    @pytest.fixture
-    def temp_output(self):
-        """Create a temporary output file."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir) / "output.md"
-
-    def test_convert_simple_xml(self, converter, temp_output):
-        """Convert simple XML to markdown."""
+    def test_extract_simple_xml(self, extractor):
+        """Extract from simple XML."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
             <DIV8 TYPE="SECTION" N="1.1">
@@ -148,7 +139,7 @@ class TestMarkdownConverter:
             </DIV8>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output, title_num=1)
+        size, sections, word_counts = extractor.extract(xml, title_num=1)
 
         assert size > 0
         assert len(sections) == 1
@@ -156,8 +147,8 @@ class TestMarkdownConverter:
         assert sections[0]["heading"] == "Test Section"
         assert "Test paragraph" in sections[0]["text"]
 
-    def test_convert_multiple_sections(self, converter, temp_output):
-        """Convert XML with multiple sections."""
+    def test_extract_multiple_sections(self, extractor):
+        """Extract from XML with multiple sections."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
             <DIV8 TYPE="SECTION" N="1.1">
@@ -170,12 +161,12 @@ class TestMarkdownConverter:
             </DIV8>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
+        size, sections, word_counts = extractor.extract(xml)
 
         assert len(sections) == 2
 
-    def test_convert_with_hierarchy(self, converter, temp_output):
-        """Convert XML with chapter/part hierarchy."""
+    def test_extract_with_hierarchy(self, extractor):
+        """Extract from XML with chapter/part hierarchy."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
             <DIV3 TYPE="CHAPTER" N="I">
@@ -190,13 +181,13 @@ class TestMarkdownConverter:
             </DIV3>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output, title_num=1)
+        size, sections, word_counts = extractor.extract(xml, title_num=1)
 
         assert len(sections) == 1
         assert sections[0]["chapter"] == "I"
         assert sections[0]["part"] == "1"
 
-    def test_convert_word_counts_by_chapter(self, converter, temp_output):
+    def test_extract_word_counts_by_chapter(self, extractor):
         """Track word counts by chapter."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
@@ -214,14 +205,14 @@ class TestMarkdownConverter:
             </DIV3>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
+        size, sections, word_counts = extractor.extract(xml)
 
         assert "I" in word_counts
         assert "II" in word_counts
         assert word_counts["I"] == 3
         assert word_counts["II"] == 2
 
-    def test_convert_strips_section_prefix(self, converter, temp_output):
+    def test_extract_strips_section_prefix(self, extractor):
         """Strip § prefix from section numbers."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
@@ -231,107 +222,31 @@ class TestMarkdownConverter:
             </DIV8>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
+        size, sections, word_counts = extractor.extract(xml)
 
         assert sections[0]["section"] == "1.1"
 
-    def test_convert_auth_tag(self, converter, temp_output):
-        """Handle AUTH tag."""
+    def test_extract_returns_xml_size(self, extractor):
+        """Return the XML content size."""
         xml = b'''<?xml version="1.0"?>
         <ROOT>
-            <AUTH>
-                <P>Authority text here.</P>
-            </AUTH>
+            <P>Test content.</P>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
+        size, sections, word_counts = extractor.extract(xml)
 
-        content = temp_output.read_text()
-        assert "**Authority:**" in content
-
-    def test_convert_source_tag(self, converter, temp_output):
-        """Handle SOURCE tag."""
-        xml = b'''<?xml version="1.0"?>
-        <ROOT>
-            <SOURCE>
-                <P>Source citation.</P>
-            </SOURCE>
-        </ROOT>
-        '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
-
-        content = temp_output.read_text()
-        assert "**Source:**" in content
-
-    def test_convert_cita_tag(self, converter, temp_output):
-        """Handle CITA tag with italics."""
-        xml = b'''<?xml version="1.0"?>
-        <ROOT>
-            <CITA>Citation text</CITA>
-        </ROOT>
-        '''
-        size, sections, word_counts = converter.convert(xml, temp_output)
-
-        content = temp_output.read_text()
-        assert "*Citation text*" in content
-
-    def test_convert_with_agency_lookup(self, temp_output):
-        """Include agency metadata when lookup provided."""
-        agency_lookup = {
-            (1, "I"): [{"agency_slug": "test-agency", "parent_slug": None}]
-        }
-        converter = MarkdownConverter(agency_lookup)
-
-        # The agency metadata is added when processing HEAD elements
-        # for CHAPTER/SUBTITLE/SUBCHAP types
-        xml = b'''<?xml version="1.0"?>
-        <ROOT>
-            <DIV1 TYPE="TITLE" N="1">
-                <HEAD>Title 1</HEAD>
-                <DIV3 TYPE="CHAPTER" N="I">
-                    <HEAD>Chapter I</HEAD>
-                    <DIV8 TYPE="SECTION" N="1.1">
-                        <HEAD>Section</HEAD>
-                        <P>Content.</P>
-                    </DIV8>
-                </DIV3>
-            </DIV1>
-        </ROOT>
-        '''
-        size, sections, word_counts = converter.convert(xml, temp_output, title_num=1)
-
-        content = temp_output.read_text()
-        assert "Agency Metadata" in content
-        assert "test-agency" in content
-
-    def test_convert_collapses_blank_lines(self, converter, temp_output):
-        """Collapse multiple blank lines to two."""
-        xml = b'''<?xml version="1.0"?>
-        <ROOT>
-            <P>Para 1</P>
-            <P>Para 2</P>
-        </ROOT>
-        '''
-        converter.convert(xml, temp_output)
-
-        content = temp_output.read_text()
-        assert "\n\n\n" not in content
+        assert size == len(xml)
 
 
-class TestMarkdownConverterGovinfo:
-    """Tests for MarkdownConverter govinfo methods."""
+class TestXMLExtractorGovinfo:
+    """Tests for XMLExtractor govinfo methods."""
 
     @pytest.fixture
-    def converter(self):
-        return MarkdownConverter()
+    def extractor(self):
+        return XMLExtractor()
 
-    @pytest.fixture
-    def temp_output(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir) / "output.md"
-
-    def test_convert_govinfo_simple(self, converter, temp_output):
-        """Convert simple govinfo XML."""
+    def test_extract_govinfo_simple(self, extractor):
+        """Extract from simple govinfo XML."""
         xml = b'''<?xml version="1.0"?>
         <CFRDOC>
             <SECTION>
@@ -341,13 +256,13 @@ class TestMarkdownConverterGovinfo:
             </SECTION>
         </CFRDOC>
         '''
-        size, sections, word_counts = converter.convert_govinfo(xml, temp_output, title_num=1)
+        size, sections, word_counts = extractor.extract_govinfo(xml, title_num=1)
 
         assert len(sections) == 1
         assert sections[0]["section"] == "1.1"
         assert sections[0]["heading"] == "Test Subject"
 
-    def test_convert_govinfo_chapter_extraction(self, converter, temp_output):
+    def test_extract_govinfo_chapter_extraction(self, extractor):
         """Extract chapter from govinfo XML."""
         xml = b'''<?xml version="1.0"?>
         <CFRDOC>
@@ -361,11 +276,11 @@ class TestMarkdownConverterGovinfo:
             </SECTION>
         </CFRDOC>
         '''
-        size, sections, word_counts = converter.convert_govinfo(xml, temp_output)
+        size, sections, word_counts = extractor.extract_govinfo(xml)
 
         assert sections[0]["chapter"] == "III"
 
-    def test_convert_govinfo_part_extraction(self, converter, temp_output):
+    def test_extract_govinfo_part_extraction(self, extractor):
         """Extract part number from govinfo XML."""
         xml = b'''<?xml version="1.0"?>
         <CFRDOC>
@@ -379,11 +294,11 @@ class TestMarkdownConverterGovinfo:
             </SECTION>
         </CFRDOC>
         '''
-        size, sections, word_counts = converter.convert_govinfo(xml, temp_output)
+        size, sections, word_counts = extractor.extract_govinfo(xml)
 
         assert sections[0]["part"] == "100"
 
-    def test_convert_govinfo_missing_sectno(self, converter, temp_output):
+    def test_extract_govinfo_missing_sectno(self, extractor):
         """Skip sections without SECTNO."""
         xml = b'''<?xml version="1.0"?>
         <CFRDOC>
@@ -393,12 +308,12 @@ class TestMarkdownConverterGovinfo:
             </SECTION>
         </CFRDOC>
         '''
-        size, sections, word_counts = converter.convert_govinfo(xml, temp_output)
+        size, sections, word_counts = extractor.extract_govinfo(xml)
 
         assert len(sections) == 0
 
-    def test_convert_govinfo_volumes(self, converter, temp_output):
-        """Convert multiple volume XMLs."""
+    def test_extract_govinfo_volumes(self, extractor):
+        """Extract from multiple volume XMLs."""
         vol1 = b'''<?xml version="1.0"?>
         <CFRDOC>
             <SECTION>
@@ -417,14 +332,14 @@ class TestMarkdownConverterGovinfo:
             </SECTION>
         </CFRDOC>
         '''
-        size, sections, word_counts = converter.convert_govinfo_volumes([vol1, vol2], temp_output)
+        size, sections, word_counts = extractor.extract_govinfo_volumes([vol1, vol2])
 
         assert len(sections) == 2
         assert sections[0]["section"] == "1.1"
         assert sections[1]["section"] == "2.1"
 
-    def test_convert_chunks(self, converter, temp_output):
-        """Convert multiple XML chunks."""
+    def test_extract_chunks(self, extractor):
+        """Extract from multiple XML chunks."""
         chunk1 = b'''<?xml version="1.0"?>
         <ROOT>
             <DIV8 TYPE="SECTION" N="1.1">
@@ -441,6 +356,6 @@ class TestMarkdownConverterGovinfo:
             </DIV8>
         </ROOT>
         '''
-        size, sections, word_counts = converter.convert_chunks([chunk1, chunk2], temp_output)
+        size, sections, word_counts = extractor.extract_chunks([chunk1, chunk2])
 
         assert len(sections) == 2

@@ -38,14 +38,14 @@ Four classes handle data fetching:
 
 - **ECFRDatabase**: SQLite persistence for titles, agencies, sections, word counts, and TF-IDF similarities. Stores in `ecfr/ecfr_data/ecfr.db`.
 - **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
-- **MarkdownConverter**: Converts eCFR/govinfo XML to Markdown. Tracks word counts and extracts section data (title/chapter/part/section/text).
+- **XMLExtractor**: Extracts section data directly from eCFR/govinfo XML. Tracks word counts and extracts section data (title/chapter/part/section/text).
 - **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
 
 Data flow:
 1. Fetch titles metadata from eCFR API
 2. Fetch agencies metadata (for chapter-to-agency mapping)
 3. Race eCFR and govinfo endpoints for each title XML
-4. Convert XML to sections, save to SQLite, delete intermediate Markdown
+4. Extract sections from XML and save to SQLite
 
 ### CFR Reader (`ecfr_reader.py`)
 

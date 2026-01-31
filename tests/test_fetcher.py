@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch, AsyncMock
 
 import pytest
 
@@ -44,23 +44,8 @@ class TestECFRFetcherInit:
 class TestECFRFetcherCache:
     """Tests for cache operations."""
 
-    def test_clear_cache(self):
-        """Clear cache removes files."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir)
-            fetcher = ECFRFetcher(output_dir=output_dir)
-
-            # Create some markdown files
-            (output_dir / "test.md").write_text("test")
-            (output_dir / "title_1.md").write_text("title 1")
-
-            fetcher.clear_cache()
-
-            assert not (output_dir / "test.md").exists()
-            assert not (output_dir / "title_1.md").exists()
-
     def test_clear_cache_removes_db(self):
-        """Clear cache also removes database."""
+        """Clear cache removes database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             fetcher = ECFRFetcher(output_dir=output_dir)

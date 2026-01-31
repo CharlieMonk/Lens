@@ -9,7 +9,7 @@ import requests
 
 from .client import ECFRClient
 from .constants import HISTORICAL_YEARS
-from .converter import MarkdownConverter
+from .extractor import XMLExtractor
 from .database import ECFRDatabase
 
 
@@ -26,8 +26,6 @@ class ECFRFetcher:
         """Delete all cached files in the output directory."""
         if not self.output_dir.exists():
             return
-        for f in self.output_dir.glob("*.md"):
-            f.unlink()
         self.db.clear()
 
     def _is_file_fresh(self, path: Path) -> bool:
@@ -71,27 +69,21 @@ class ECFRFetcher:
         title_num: int,
         date: str,
         agency_lookup: dict,
-        output_subdir: Path = None
     ) -> tuple[bool, str, list]:
         """Async fetch a single CFR title.
 
         Returns:
             Tuple of (success, message, sections).
         """
-        output_dir = output_subdir or self.output_dir
-        output_file = output_dir / f"title_{title_num}.md"
-        converter = MarkdownConverter(agency_lookup)
+        extractor = XMLExtractor(agency_lookup)
 
         try:
             source, xml_content = await self.client.fetch_title_racing(session, title_num, date)
-            size, sections, chapter_word_counts = converter.convert(xml_content, output_file, title_num)
+            size, sections, chapter_word_counts = extractor.extract(xml_content, title_num)
             self.db.save_sections(sections)
 
             if agency_lookup and chapter_word_counts:
                 self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
-
-            if output_file.exists():
-                output_file.unlink()
 
             return (True, f"{size:,} bytes ({source})", sections)
 
@@ -178,22 +170,16 @@ class ECFRFetcher:
         if title_nums is None:
             title_nums = [t for t in range(1, 51) if t != 35]  # Title 35 is reserved
 
-        converter = MarkdownConverter()
+        extractor = XMLExtractor()
 
         async def fetch_year_title(session, year, title_num):
-            output_subdir = self.output_dir / str(year)
-            output_subdir.mkdir(parents=True, exist_ok=True)
-            output_file = output_subdir / f"title_{title_num}.md"
-
             volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
             if volumes:
                 try:
-                    size, sections, _ = converter.convert_govinfo_volumes(volumes, output_file, title_num)
-                    if output_file.exists():
-                        output_file.unlink()
+                    size, sections, _ = extractor.extract_govinfo_volumes(volumes, title_num)
                     return (year, title_num, True, f"{size:,} bytes ({len(volumes)} vols)", sections)
                 except Exception as e:
-                    return (year, title_num, False, f"convert error: {e}", [])
+                    return (year, title_num, False, f"extract error: {e}", [])
 
             return (year, title_num, False, "not available", [])
 
@@ -212,11 +198,8 @@ class ECFRFetcher:
 
         async with aiohttp.ClientSession(connector=connector, timeout=session_timeout) as session:
             for year in years_to_fetch:
-                output_subdir = self.output_dir / str(year)
-                output_subdir.mkdir(parents=True, exist_ok=True)
                 print(f"\n{'='*50}")
                 print(f"Fetching CFR {year} edition from govinfo")
-                print(f"Output: {output_subdir}")
                 print("-" * 50)
 
                 success_count = 0
