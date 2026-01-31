@@ -187,7 +187,7 @@ class TestECFRReaderSimilarity:
             db.save_sections(sample_sections, year=0)
             db.compute_similarities(title=1, year=0)
 
-            from ecfr_reader import ECFRReader
+            from ecfr import ECFRReader
 
             reader = ECFRReader(db_path=str(db_path))
             yield reader
