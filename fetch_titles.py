@@ -1165,9 +1165,6 @@ class ECFRFetcher:
         output_dir = output_subdir or self.output_dir
         output_file = output_dir / f"title_{title_num}.md"
 
-        if self._is_file_fresh(output_file):
-            return (True, "cached", [])
-
         converter = MarkdownConverter(agency_lookup)
 
         async def fetch_ecfr():
@@ -1203,6 +1200,9 @@ class ECFRFetcher:
                     self.db.save_sections(sections)
                     if agency_lookup and chapter_word_counts:
                         self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
+                    # Delete markdown file after saving to database
+                    if output_file.exists():
+                        output_file.unlink()
                     return (True, f"{size:,} bytes ({source})", sections)
                 except Exception as e:
                     return (False, f"Convert error: {e}", [])
@@ -1321,14 +1321,14 @@ class ECFRFetcher:
             output_subdir.mkdir(parents=True, exist_ok=True)
             output_file = output_subdir / f"title_{title_num}.md"
 
-            if self._is_file_fresh(output_file):
-                return (year, title_num, True, "cached", 0, [])
-
-            # Try govinfo bulk data first (fast)
+            # Try govinfo bulk data (fast)
             volumes = await fetch_govinfo_volumes(session, year, title_num)
             if volumes:
                 try:
                     size, sections, _ = converter.convert_govinfo_volumes(volumes, output_file, title_num)
+                    # Delete markdown file after processing (data goes to DB)
+                    if output_file.exists():
+                        output_file.unlink()
                     return (year, title_num, True, f"{size:,} bytes ({len(volumes)} vols)", size, sections)
                 except Exception as e:
                     return (year, title_num, False, f"convert error: {e}", 0, [])
