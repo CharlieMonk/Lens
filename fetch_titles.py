@@ -6,7 +6,6 @@ import re
 import sqlite3
 import time
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -374,6 +373,46 @@ class ECFRClient:
         url = f"https://www.govinfo.gov/bulkdata/ECFR/title-{title_num}/ECFR-title{title_num}.xml"
         response = self._request_with_retry(url, timeout=timeout)
         return response.content
+
+    async def fetch_title_parallel(self, title_num: int, date: str) -> tuple[str, bytes]:
+        """Fetch title from both eCFR and govinfo in parallel, return first success.
+
+        Returns tuple of (source, xml_content).
+        """
+        async def fetch_ecfr():
+            url = f"{self.BASE_URL}/versioner/v1/full/{date}/title-{title_num}.xml"
+            connector = aiohttp.TCPConnector()
+            timeout = aiohttp.ClientTimeout(total=120)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        return "ecfr", await resp.read()
+                    return None
+
+        async def fetch_govinfo():
+            url = f"https://www.govinfo.gov/bulkdata/ECFR/title-{title_num}/ECFR-title{title_num}.xml"
+            connector = aiohttp.TCPConnector()
+            timeout = aiohttp.ClientTimeout(total=120)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        return "govinfo", await resp.read()
+                    return None
+
+        # Race both fetches, return first successful result
+        tasks = [asyncio.create_task(fetch_ecfr()), asyncio.create_task(fetch_govinfo())]
+        for coro in asyncio.as_completed(tasks):
+            try:
+                result = await coro
+                if result:
+                    # Cancel remaining tasks
+                    for t in tasks:
+                        t.cancel()
+                    return result
+            except:
+                continue
+
+        raise aiohttp.ClientError(f"Both sources failed for title {title_num}")
 
     async def fetch_cfr_annual_async(self, title_num: int, year: int) -> list[bytes]:
         """Fetch CFR annual edition volumes from govinfo bulk (fast historical data).
@@ -780,22 +819,15 @@ class ECFRFetcher:
         self.db.save_agencies(agencies)
         return self.db.build_agency_lookup()
 
-    def fetch_title(self, title_num: int, date: str, agency_lookup: dict,
-                    output_subdir: Path = None, use_bulk: bool = False) -> tuple[bool, str, dict]:
-        """Fetch a single CFR title and save to disk.
-
-        Args:
-            title_num: CFR title number.
-            date: Date string (YYYY-MM-DD).
-            agency_lookup: Dict mapping (title, chapter) to agency info.
-            output_subdir: Optional subdirectory for output (for historical dates).
-            use_bulk: If True, use govinfo bulk endpoint (current data only, faster).
+    async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int,
+                                  date: str, agency_lookup: dict,
+                                  output_subdir: Path = None) -> tuple[bool, str, dict]:
+        """Async fetch a single CFR title from both eCFR and govinfo in parallel.
 
         Returns:
             Tuple of (success, message, word_counts).
         """
         output_dir = output_subdir or self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"title_{title_num}.md"
 
         if self._is_file_fresh(output_file):
@@ -803,64 +835,47 @@ class ECFRFetcher:
 
         converter = MarkdownConverter(agency_lookup)
 
-        # Try bulk endpoint first if requested (faster for current data)
-        if use_bulk:
+        # Fetch from both sources in parallel
+        async def fetch_ecfr():
+            url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml"
             try:
-                xml_content = self.client.fetch_title_xml_bulk(title_num)
-                size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status == 200:
+                        return "ecfr", await resp.read()
+            except:
+                pass
+            return None
 
-                if agency_lookup and chapter_word_counts:
-                    self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
+        async def fetch_govinfo():
+            url = f"https://www.govinfo.gov/bulkdata/ECFR/title-{title_num}/ECFR-title{title_num}.xml"
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                    if resp.status == 200:
+                        return "govinfo", await resp.read()
+            except:
+                pass
+            return None
 
-                return (True, f"{size:,} bytes (bulk)", word_counts)
-            except requests.exceptions.RequestException:
-                pass  # Fall through to regular API
+        # Race both fetches
+        tasks = [asyncio.create_task(fetch_ecfr()), asyncio.create_task(fetch_govinfo())]
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            if result:
+                source, xml_content = result
+                for t in tasks:
+                    t.cancel()
+                try:
+                    size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
+                    if agency_lookup and chapter_word_counts:
+                        self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
+                    return (True, f"{size:,} bytes ({source})", word_counts)
+                except Exception as e:
+                    return (False, f"Convert error: {e}", {})
 
-        try:
-            xml_content = self.client.fetch_title_xml(title_num, date)
-            size, word_counts, chapter_word_counts = converter.convert(xml_content, output_file)
+        return (False, "Both sources failed", {})
 
-            if agency_lookup and chapter_word_counts:
-                self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
-
-            return (True, f"{size:,} bytes", word_counts)
-
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code != 504:
-                return (False, f"HTTP {e.response.status_code}", {})
-            # 504 timeout - try chunked fetching
-        except requests.exceptions.Timeout:
-            pass  # Timeout - try chunked fetching
-        except requests.exceptions.RequestException as e:
-            return (False, str(e), {})
-
-        # Fall back to chunked fetching (by part) using async for speed
-        try:
-            chunks = self.client.get_title_chunks(title_num, date)
-            if not chunks:
-                return (False, "No chunks found", {})
-
-            print(f"  Title {title_num}: fetching {len(chunks)} parts async...", flush=True)
-
-            # Use async fetching for better performance
-            xml_chunks = asyncio.run(self.client.fetch_chunks_async(title_num, date, chunks))
-
-            size, word_counts, chapter_word_counts = converter.convert_chunks(xml_chunks, output_file)
-
-            if agency_lookup and chapter_word_counts:
-                self.db.update_word_counts(title_num, chapter_word_counts, agency_lookup)
-
-            return (True, f"{size:,} bytes ({len(chunks)} parts)", word_counts)
-
-        except aiohttp.ClientError as e:
-            return (False, f"Async error: {e}", {})
-        except requests.exceptions.HTTPError as e:
-            return (False, f"HTTP {e.response.status_code} (chunked)", {})
-        except requests.exceptions.RequestException as e:
-            return (False, f"{e} (chunked)", {})
-
-    def fetch_all(self, clear_cache: bool = False) -> int:
-        """Fetch all CFR titles 1-50 for the latest issue date in parallel.
+    async def fetch_current_async(self, clear_cache: bool = False) -> int:
+        """Async fetch all CFR titles 1-50 for the latest issue date.
 
         Returns:
             Exit code (0 for success, 1 for failure).
@@ -899,20 +914,24 @@ class ECFRFetcher:
         success_count = 0
         all_word_counts = {}
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {
-                executor.submit(self.fetch_title, num, date, agency_lookup, None, True): num
+        connector = aiohttp.TCPConnector(limit=20)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            tasks = [
+                self.fetch_title_async(session, num, date, agency_lookup)
                 for num, date in titles_to_fetch
-            }
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for future in as_completed(futures):
-                title_num = futures[future]
-                success, msg, word_counts = future.result()
-                symbol = "+" if success else "x"
-                print(f"{symbol} Title {title_num}: {msg}")
-                if success:
-                    success_count += 1
-                    all_word_counts.update(word_counts)
+            for (num, _), result in zip(titles_to_fetch, results):
+                if isinstance(result, Exception):
+                    print(f"x Title {num}: {result}")
+                else:
+                    success, msg, word_counts = result
+                    symbol = "+" if success else "x"
+                    print(f"{symbol} Title {num}: {msg}")
+                    if success:
+                        success_count += 1
+                        all_word_counts.update(word_counts)
 
         print("-" * 50)
         print(f"Complete: {success_count}/{len(titles_to_fetch)} titles downloaded")
@@ -938,8 +957,12 @@ class ECFRFetcher:
 
         return 0 if success_count == len(titles_to_fetch) else 1
 
-    def fetch_historical(self, historical_years: list[int], title_nums: list[int] = None) -> int:
-        """Fetch titles for historical years using fast CFR annual bulk download.
+    def fetch_current(self, clear_cache: bool = False) -> int:
+        """Sync wrapper for fetch_current_async."""
+        return asyncio.run(self.fetch_current_async(clear_cache))
+
+    async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
+        """Async fetch titles for historical years using CFR annual bulk download.
 
         Args:
             historical_years: List of years (e.g., [2020, 2015]).
@@ -949,47 +972,107 @@ class ECFRFetcher:
             Exit code (0 for success, 1 for any failure).
         """
         if title_nums is None:
-            title_nums = list(range(1, 51))
+            # Title 35 is reserved (has never had content)
+            title_nums = [t for t in range(1, 51) if t != 35]
 
-        all_success = True
         converter = MarkdownConverter()
 
-        for year in historical_years:
+        async def fetch_year_title(session, year, title_num):
+            """Fetch all volumes for a title/year combination."""
             output_subdir = self.output_dir / str(year)
             output_subdir.mkdir(parents=True, exist_ok=True)
-            print(f"\n{'='*50}")
-            print(f"Fetching CFR {year} edition")
-            print(f"Output: {output_subdir}")
-            print("-" * 50)
+            output_file = output_subdir / f"title_{title_num}.md"
 
-            success_count = 0
-            for title_num in title_nums:
-                output_file = output_subdir / f"title_{title_num}.md"
+            if self._is_file_fresh(output_file):
+                return (year, title_num, True, "cached", 0)
 
-                if self._is_file_fresh(output_file):
-                    print(f"+ Title {title_num}: cached")
-                    success_count += 1
-                    continue
+            base = f"https://www.govinfo.gov/bulkdata/CFR/{year}/title-{title_num}"
 
+            async def fetch_vol(vol):
+                url = f"{base}/CFR-{year}-title{title_num}-vol{vol}.xml"
                 try:
-                    # Use fast CFR annual bulk download
-                    xml_chunks = asyncio.run(self.client.fetch_cfr_annual_async(title_num, year))
-                    if not xml_chunks:
-                        print(f"x Title {title_num}: no data for {year}")
-                        continue
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            return await resp.read()
+                except:
+                    pass
+                return None
 
-                    size, _, _ = converter.convert_chunks(xml_chunks, output_file)
-                    print(f"+ Title {title_num}: {size:,} bytes ({len(xml_chunks)} vols)")
-                    success_count += 1
+            # Fetch all volumes in parallel
+            vol_tasks = [fetch_vol(v) for v in range(1, 51)]
+            vol_results = await asyncio.gather(*vol_tasks)
+            xml_chunks = [r for r in vol_results if r is not None]
 
-                except Exception as e:
-                    print(f"x Title {title_num}: {e}")
+            if not xml_chunks:
+                return (year, title_num, False, f"no data for {year}", 0)
 
-            print(f"Complete: {success_count}/{len(title_nums)} titles")
-            if success_count < len(title_nums):
-                all_success = False
+            try:
+                size, _, _ = converter.convert_chunks(xml_chunks, output_file)
+                return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} vols)", size)
+            except Exception as e:
+                return (year, title_num, False, str(e), 0)
+
+        all_success = True
+        connector = aiohttp.TCPConnector(limit=50)
+        timeout = aiohttp.ClientTimeout(total=300)
+
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            for year in historical_years:
+                output_subdir = self.output_dir / str(year)
+                output_subdir.mkdir(parents=True, exist_ok=True)
+                print(f"\n{'='*50}")
+                print(f"Fetching CFR {year} edition")
+                print(f"Output: {output_subdir}")
+                print("-" * 50)
+
+                # Fetch all titles for this year in parallel
+                tasks = [fetch_year_title(session, year, t) for t in title_nums]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                success_count = 0
+                for result in results:
+                    if isinstance(result, Exception):
+                        print(f"x Error: {result}")
+                    else:
+                        yr, title_num, success, msg, _ = result
+                        symbol = "+" if success else "x"
+                        print(f"{symbol} Title {title_num}: {msg}")
+                        if success:
+                            success_count += 1
+
+                print(f"Complete: {success_count}/{len(title_nums)} titles")
+                if success_count < len(title_nums):
+                    all_success = False
 
         return 0 if all_success else 1
+
+    def fetch_historical(self, historical_years: list[int], title_nums: list[int] = None) -> int:
+        """Sync wrapper for fetch_historical_async."""
+        return asyncio.run(self.fetch_historical_async(historical_years, title_nums))
+
+    async def fetch_all_async(self, historical_years: list[int] = None) -> int:
+        """Async fetch current and historical data in parallel.
+
+        Args:
+            historical_years: List of years for historical data (default: [2024, 2020, 2015]).
+
+        Returns:
+            Exit code (0 for success, 1 for any failure).
+        """
+        if historical_years is None:
+            historical_years = [2024, 2020, 2015]
+
+        # Run both fetches in parallel
+        current_result, historical_result = await asyncio.gather(
+            self.fetch_current_async(),
+            self.fetch_historical_async(historical_years)
+        )
+
+        return 0 if current_result == 0 and historical_result == 0 else 1
+
+    def fetch_all(self, historical_years: list[int] = None) -> int:
+        """Sync wrapper for fetch_all_async."""
+        return asyncio.run(self.fetch_all_async(historical_years))
 
 
 if __name__ == "__main__":
@@ -998,18 +1081,21 @@ if __name__ == "__main__":
 
     fetcher = ECFRFetcher()
 
-    # Check for --historical flag
-    if "--historical" in sys.argv:
-        historical_years = [2024, 2020, 2015]  # CFR annual editions
-        # Check for --title flag to fetch specific title(s)
+    if "--current" in sys.argv:
+        # Fetch only current data
+        exit_code = fetcher.fetch_current()
+    elif "--historical" in sys.argv:
+        # Fetch only historical data
+        historical_years = [2024, 2020, 2015]
         title_nums = None
         if "--title" in sys.argv:
             idx = sys.argv.index("--title")
             if idx + 1 < len(sys.argv):
                 title_nums = [int(sys.argv[idx + 1])]
         exit_code = fetcher.fetch_historical(historical_years, title_nums)
-
-    exit_code = fetcher.fetch_all()
+    else:
+        # Fetch both current and historical in parallel
+        exit_code = fetcher.fetch_all()
 
     print(f"\n{time.time() - time0:.1f}s")
     exit(exit_code)
