@@ -662,6 +662,8 @@ class MarkdownConverter:
             # When entering a new section, finalize previous and start new
             if elem_type == "SECTION":
                 finalize_section()
+                # Strip § symbol to match markdown parser format (e.g., "§ 1.1" -> "1.1")
+                section_num = elem_n.lstrip("§ ").strip()
                 current_section[0] = {
                     "title": new_context.get("title") or "",
                     "subtitle": new_context.get("subtitle") or "",
@@ -669,7 +671,7 @@ class MarkdownConverter:
                     "subchapter": new_context.get("subchapter") or "",
                     "part": new_context.get("part") or "",
                     "subpart": new_context.get("subpart") or "",
-                    "section": elem_n,
+                    "section": section_num,
                     "heading": "",
                     "_text_parts": [],
                 }
@@ -820,6 +822,8 @@ class MarkdownConverter:
                     # When entering a new section, finalize previous and start new
                     if elem_type == "SECTION":
                         finalize_section()
+                        # Strip § symbol to match markdown parser format (e.g., "§ 1.1" -> "1.1")
+                        section_num = elem_n.lstrip("§ ").strip()
                         current_section[0] = {
                             "title": new_context.get("title") or "",
                             "subtitle": new_context.get("subtitle") or "",
@@ -827,7 +831,7 @@ class MarkdownConverter:
                             "subchapter": new_context.get("subchapter") or "",
                             "part": new_context.get("part") or "",
                             "subpart": new_context.get("subpart") or "",
-                            "section": elem_n,
+                            "section": section_num,
                             "heading": "",
                             "_text_parts": [],
                         }
