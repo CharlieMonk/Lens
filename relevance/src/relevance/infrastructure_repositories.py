@@ -35,6 +35,13 @@ class AgencyRepository:
         self._session.flush()
         return row
 
+    def update(self, existing: AgencyModel, aliases: list[str]) -> AgencyModel:
+        merged = list({*existing.aliases, *aliases})
+        existing.aliases = merged
+        self._session.add(existing)
+        self._session.flush()
+        return existing
+
 
 class SourceRepository:
     def __init__(self, session: Session) -> None:
@@ -50,6 +57,19 @@ class SourceRepository:
         self._session.add(row)
         self._session.flush()
         return row
+
+    def get_by_base_url(self, base_url: str) -> SourceModel | None:
+        return self._session.execute(
+            select(SourceModel).where(SourceModel.base_url == base_url)
+        ).scalar_one_or_none()
+
+    def update(self, existing: SourceModel, source: models.Source) -> SourceModel:
+        existing.agency_id = source.agency_id
+        existing.source_type = source.source_type.value
+        existing.config_json = source.config_json
+        self._session.add(existing)
+        self._session.flush()
+        return existing
 
     def list_by_agency(self, agency_id: int) -> list[SourceModel]:
         return list(
@@ -73,15 +93,11 @@ class DocumentRepository:
 
     def add(self, document: models.Document) -> DocumentModel:
         row = DocumentModel(
-            source_id=document.source_id,
             agency_id=document.agency_id,
             title=document.title,
             url=document.url,
             published_at=document.published_at,
             retrieved_at=document.retrieved_at,
-            raw_html=document.raw_html,
-            text=document.text,
-            content_hash=document.content_hash,
         )
         self._session.add(row)
         self._session.flush()
@@ -91,9 +107,6 @@ class DocumentRepository:
         existing.title = document.title
         existing.published_at = document.published_at
         existing.retrieved_at = document.retrieved_at
-        existing.raw_html = document.raw_html
-        existing.text = document.text
-        existing.content_hash = document.content_hash
         self._session.add(existing)
         self._session.flush()
         return existing
