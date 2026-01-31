@@ -163,6 +163,79 @@ class ECFRReader:
         Returns:
             The matching section dict or None if not found.
         """
+        if self.db:
+            return self._navigate_db(title, subtitle, chapter, subchapter, part, subpart, section)
+        return self._navigate_markdown(title, subtitle, chapter, subchapter, part, subpart, section)
+
+    def _navigate_db(
+        self,
+        title: int,
+        subtitle: str = None,
+        chapter: str = None,
+        subchapter: str = None,
+        part: str = None,
+        subpart: str = None,
+        section: str = None,
+    ) -> dict | None:
+        """Navigate using database queries."""
+        cursor = self.db.cursor()
+
+        # Build query with filters
+        query = """SELECT title, subtitle, chapter, subchapter, part, subpart,
+                          section, heading, text, word_count
+                   FROM sections WHERE title = ?"""
+        params = [title]
+
+        if section:
+            query += " AND section = ?"
+            params.append(section)
+        if subtitle:
+            query += " AND subtitle = ?"
+            params.append(subtitle)
+        if chapter:
+            query += " AND chapter = ?"
+            params.append(chapter)
+        if subchapter:
+            query += " AND subchapter = ?"
+            params.append(subchapter)
+        if part:
+            query += " AND part = ?"
+            params.append(part)
+        if subpart:
+            query += " AND subpart = ?"
+            params.append(subpart)
+
+        query += " LIMIT 1"
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        return {
+            "title": row[0],
+            "subtitle": row[1],
+            "chapter": row[2],
+            "subchapter": row[3],
+            "part": row[4],
+            "subpart": row[5],
+            "section": row[6],
+            "heading": row[7],
+            "text": row[8],
+            "word_count": row[9],
+        }
+
+    def _navigate_markdown(
+        self,
+        title: int,
+        subtitle: str = None,
+        chapter: str = None,
+        subchapter: str = None,
+        part: str = None,
+        subpart: str = None,
+        section: str = None,
+    ) -> dict | None:
+        """Fallback navigation using markdown parsing."""
         # Fast path for section lookups
         if section:
             index = self._build_index(title)
@@ -420,3 +493,54 @@ class ECFRReader:
             "text": row[8],
             "word_count": row[9],
         }
+
+    def get_sections(
+        self,
+        title: int,
+        chapter: str = None,
+        part: str = None,
+    ) -> list[dict]:
+        """Get all sections for a title from database.
+
+        Args:
+            title: CFR title number
+            chapter: Optional chapter filter
+            part: Optional part filter
+
+        Returns:
+            List of section dicts with all fields.
+        """
+        if not self.db:
+            return self.load_title(title)
+
+        cursor = self.db.cursor()
+        query = """SELECT title, subtitle, chapter, subchapter, part, subpart,
+                          section, heading, text, word_count
+                   FROM sections WHERE title = ?"""
+        params = [title]
+
+        if chapter:
+            query += " AND chapter = ?"
+            params.append(chapter)
+        if part:
+            query += " AND part = ?"
+            params.append(part)
+
+        query += " ORDER BY part, section"
+        cursor.execute(query, params)
+
+        return [
+            {
+                "title": row[0],
+                "subtitle": row[1],
+                "chapter": row[2],
+                "subchapter": row[3],
+                "part": row[4],
+                "subpart": row[5],
+                "section": row[6],
+                "heading": row[7],
+                "text": row[8],
+                "word_count": row[9],
+            }
+            for row in cursor.fetchall()
+        ]
