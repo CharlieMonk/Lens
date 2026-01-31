@@ -67,3 +67,15 @@ class HttpFetcher(Fetcher):
         resp.raise_for_status()
         self._last_request[domain] = time.time()
         return resp.text
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    def get_bytes(self, url: str) -> bytes:
+        if not self._robots_allowed(url):
+            raise RuntimeError(f"Blocked by robots.txt: {url}")
+        domain = urlparse(url).netloc
+        self._rate_limit(domain)
+        logger.info("fetching-bytes", extra={"extra": {"url": url}})
+        resp = self._client.get(url)
+        resp.raise_for_status()
+        self._last_request[domain] = time.time()
+        return resp.content

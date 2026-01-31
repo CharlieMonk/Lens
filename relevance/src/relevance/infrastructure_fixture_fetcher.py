@@ -28,3 +28,7 @@ class FixtureFetcher(Fetcher):
     def get(self, url: str) -> str:
         path = self._registry.resolve(url)
         return path.read_text(encoding="utf-8")
+
+    def get_bytes(self, url: str) -> bytes:
+        path = self._registry.resolve(url)
+        return path.read_bytes()

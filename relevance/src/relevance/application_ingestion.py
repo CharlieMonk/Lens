@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -34,6 +33,7 @@ class IngestionService:
         doc_citation_repo: DocumentCitationRepository,
         agency_filter: str | None = None,
         base_url_override: dict[int, str] | None = None,
+        continue_on_error: bool = False,
     ) -> dict[str, int]:
         sources = source_repo.list_all()
         stats = {"documents": 0, "citations": 0}
@@ -44,24 +44,26 @@ class IngestionService:
             base_url = source.base_url
             if base_url_override and source.id in base_url_override:
                 base_url = base_url_override[source.id]
-            parsed_docs = adapter.fetch_documents(fetcher, base_url)
+            try:
+                parsed_docs = adapter.fetch_documents(
+                    fetcher, base_url, config=source.config_json
+                )
+            except Exception as exc:
+                if continue_on_error:
+                    if _is_robots_blocked(exc):
+                        continue
+                    continue
+                raise
             for parsed in parsed_docs:
-                content_hash = hashlib.sha256(parsed.raw_html.encode("utf-8")).hexdigest()
                 existing = document_repo.get_by_url(parsed.url)
                 doc_model = None
-                if existing and existing.content_hash == content_hash:
-                    continue
                 document = models.Document(
                     id=existing.id if existing else None,
-                    source_id=source.id,
                     agency_id=source.agency_id,
                     title=parsed.title,
                     url=parsed.url,
                     published_at=parsed.published_at,
                     retrieved_at=datetime.now(timezone.utc),
-                    raw_html=parsed.raw_html,
-                    text=parsed.text,
-                    content_hash=content_hash,
                 )
                 if existing:
                     doc_model = document_repo.update(existing, document)
@@ -102,3 +104,14 @@ class IngestionService:
                 stats["documents"] += 1
                 stats["citations"] += len(doc_citations)
         return stats
+
+
+def _is_robots_blocked(exc: Exception) -> bool:
+    if "robots.txt" in str(exc):
+        return True
+    if isinstance(exc, RetryError) and exc.last_attempt:
+        inner = exc.last_attempt.exception()
+        if inner and "robots.txt" in str(inner):
+            return True
+    return False
+from tenacity import RetryError

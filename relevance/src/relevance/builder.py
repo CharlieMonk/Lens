@@ -30,12 +30,75 @@ class SourceConfig:
     source_type: SourceType
     base_url: str
     fixture_base_url: str | None = None
+    max_links: int | None = None
 
 
 class CitationDatabaseBuilder:
     def __init__(self, database_url: str) -> None:
         self._db = Database(DatabaseConfig(url=database_url))
         MigrationRunner(self._db.engine).run()
+
+    @staticmethod
+    def default_live_sources() -> list[SourceConfig]:
+        return [
+            SourceConfig(
+                agency_name="Securities and Exchange Commission",
+                aliases=["SEC"],
+                source_type=SourceType.ENFORCEMENT,
+                base_url="https://www.sec.gov/enforcement-litigation/litigation-releases/rss",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Securities and Exchange Commission",
+                aliases=["SEC"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.sec.gov/news/pressreleases.rss",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Securities and Exchange Commission",
+                aliases=["SEC"],
+                source_type=SourceType.LITIGATION,
+                base_url="https://www.sec.gov/rss/litigation/litreleases.xml",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.ENFORCEMENT,
+                base_url="https://www.epa.gov/newsreleases/search/rss/news_releases_language/en/subject/compliance-and-enforcement-226191",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.epa.gov/newsreleases/search/rss/news_releases_language/en",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Department of Labor",
+                aliases=["DOL"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.osha.gov/news/newsreleases.xml",
+                max_links=2,
+            ),
+            SourceConfig(
+                agency_name="Department of Labor",
+                aliases=["DOL"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.dol.gov/newsroom/releases/rss",
+                max_links=2,
+            ),
+        ]
+
+    def build_live_db(self, respect_robots: bool = True) -> dict[str, int]:
+        self.register_sources(self.default_live_sources())
+        stats = self.ingest(
+            offline=False, continue_on_error=True, respect_robots=respect_robots
+        )
+        self.rebuild_counts()
+        return stats
 
     def register_sources(self, sources: list[SourceConfig]) -> list[int]:
         with self._db.session() as session:
@@ -47,6 +110,9 @@ class CitationDatabaseBuilder:
                 config = {}
                 if source.fixture_base_url:
                     config["fixture_base_url"] = source.fixture_base_url
+                if source.max_links:
+                    config["max_links"] = source.max_links
+                config["use_pdf"] = True
                 source_id = add_source(
                     sources_repo,
                     agency_id=agency_id,
@@ -62,8 +128,10 @@ class CitationDatabaseBuilder:
         offline: bool = False,
         fixtures_path: Path | None = None,
         agency_filter: str | None = None,
+        continue_on_error: bool = False,
+        respect_robots: bool = True,
     ) -> dict[str, int]:
-        fetcher = self._build_fetcher(offline, fixtures_path)
+        fetcher = self._build_fetcher(offline, fixtures_path, respect_robots)
         ingestion = IngestionService(AdapterRegistry(), CitationExtractor())
         with self._db.session() as session:
             sources = SourceRepository(session)
@@ -86,6 +154,7 @@ class CitationDatabaseBuilder:
                 doc_citations,
                 agency_filter=agency_filter,
                 base_url_override=override,
+                continue_on_error=continue_on_error,
             )
 
     def rebuild_counts(self) -> int:
@@ -148,9 +217,11 @@ class CitationDatabaseBuilder:
                 result[agency.name] = repo.top_cfr(agency_id=agency.id, limit=1000)
             return result
 
-    def _build_fetcher(self, offline: bool, fixtures_path: Path | None):
+    def _build_fetcher(
+        self, offline: bool, fixtures_path: Path | None, respect_robots: bool
+    ):
         if offline:
             if not fixtures_path:
                 raise ValueError("fixtures_path required for offline ingestion")
             return FixtureFetcher(FixtureRegistry(fixtures_path))
-        return HttpFetcher(HttpFetcherConfig())
+        return HttpFetcher(HttpFetcherConfig(respect_robots=respect_robots))

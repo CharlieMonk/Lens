@@ -5,7 +5,7 @@ Production-grade Python system for identifying which CFR sections are most commo
 ## Features
 - Ingests enforcement actions, litigation releases, and press releases via agency adapters
 - Extracts and normalizes CFR citations from text
-- Stores raw documents, citations, and per-agency citation counts in SQLite
+- Stores citations, per-agency citation counts, and links/titles for each enforcement action in SQLite
 - Deterministic offline ingestion via HTML fixtures
 - Pluggable adapters to add agencies without touching core logic
 
@@ -30,6 +30,19 @@ builder.build_offline_starter_db(Path("relevance/tests/fixtures"))
 builder.rebuild_counts()
 top = builder.top_citations(limit=10)
 ```
+
+## Live sources
+```python
+from relevance import CitationDatabaseBuilder
+
+builder = CitationDatabaseBuilder("sqlite:///data/relevance_live.sqlite")
+stats = builder.build_live_db(respect_robots=True)
+print(stats)
+```
+
+The default live sources use multiple RSS/Atom feeds per agency for broader coverage (SEC litigation + press releases, EPA enforcement + general news releases, DOL OSHA + DOL newsroom releases).
+If a source is blocked by robots.txt, live ingestion skips it and continues.
+Set `respect_robots=False` if you are permitted to crawl blocked sources.
 
 ## Testing
 ```bash
