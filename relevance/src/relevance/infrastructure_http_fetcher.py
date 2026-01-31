@@ -20,12 +20,17 @@ class HttpFetcherConfig:
     user_agent: str = "relevance-bot/0.1"
     rate_limit_per_domain: float = 1.0
     respect_robots: bool = True
+    follow_redirects: bool = True
 
 
 class HttpFetcher(Fetcher):
     def __init__(self, config: HttpFetcherConfig) -> None:
         self._config = config
-        self._client = httpx.Client(timeout=config.timeout_seconds, headers={"User-Agent": config.user_agent})
+        self._client = httpx.Client(
+            timeout=config.timeout_seconds,
+            headers={"User-Agent": config.user_agent},
+            follow_redirects=config.follow_redirects,
+        )
         self._robots_cache: dict[str, RobotFileParser] = {}
         self._last_request: dict[str, float] = {}
 

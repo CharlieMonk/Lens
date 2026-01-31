@@ -1153,6 +1153,49 @@ class ECFRFetcher:
 
         converter = MarkdownConverter()
 
+        async def fetch_part_with_retry(session, date, title_num, part_id):
+            """Fetch a single part of a title with retry logic."""
+            url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml?part={part_id}"
+            for attempt in range(5):
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                        if resp.status == 200:
+                            return await resp.read()
+                        elif resp.status == 429:
+                            await asyncio.sleep((2 ** attempt) * 5)
+                            continue
+                        elif resp.status == 404:
+                            return None
+                except asyncio.TimeoutError:
+                    await asyncio.sleep(2)
+                    continue
+                except Exception:
+                    return None
+            return None
+
+        async def fetch_by_parts(session, date, title_num):
+            """Fetch a title by fetching each part separately using structure endpoint."""
+            # Get actual parts from structure endpoint
+            try:
+                chunks = self.client.get_title_chunks(title_num, date)
+                if not chunks:
+                    return []
+                print(f"    Fetching {len(chunks)} parts for Title {title_num}...")
+            except Exception as e:
+                print(f"    Could not get structure: {e}")
+                return []
+
+            xml_chunks = []
+            for i, (chunk_type, chunk_id) in enumerate(chunks):
+                chunk = await fetch_part_with_retry(session, date, title_num, chunk_id)
+                if chunk:
+                    xml_chunks.append(chunk)
+                # Rate limiting delay
+                await asyncio.sleep(0.5)
+                if (i + 1) % 20 == 0:
+                    print(f"    {i + 1}/{len(chunks)} parts...")
+            return xml_chunks
+
         async def fetch_year_title(session, year, title_num, semaphore):
             """Fetch a single title for a specific year from eCFR with retry logic."""
             async with semaphore:  # Limit concurrent requests
@@ -1163,37 +1206,40 @@ class ECFRFetcher:
                 if self._is_file_fresh(output_file):
                     return (year, title_num, True, "cached", 0, [])
 
-                # Use January 1 of the year for historical snapshot
                 date = f"{year}-01-01"
                 url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml"
 
-                # Retry with exponential backoff
-                max_retries = 5
-                for attempt in range(max_retries):
+                # Try full fetch first with retries
+                for attempt in range(3):
                     try:
-                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=180)) as resp:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
                             if resp.status == 200:
                                 xml_content = await resp.read()
                                 size, sections, _ = converter.convert(xml_content, output_file, title_num)
                                 return (year, title_num, True, f"{size:,} bytes", size, sections)
                             elif resp.status == 429:
-                                # Rate limited - wait and retry
-                                wait_time = (2 ** attempt) * 2  # 2, 4, 8, 16, 32 seconds
-                                await asyncio.sleep(wait_time)
+                                await asyncio.sleep((2 ** attempt) * 5)
                                 continue
+                            elif resp.status in (502, 503, 504):
+                                # Server timeout - try fetching by parts
+                                break
                             elif resp.status == 404:
                                 return (year, title_num, False, "not available", 0, [])
-                            else:
-                                return (year, title_num, False, f"HTTP {resp.status}", 0, [])
                     except asyncio.TimeoutError:
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(2 ** attempt)
-                            continue
-                        return (year, title_num, False, "timeout", 0, [])
+                        break  # Try by parts
                     except Exception as e:
                         return (year, title_num, False, str(e), 0, [])
 
-                return (year, title_num, False, "max retries exceeded", 0, [])
+                # Fallback: fetch by parts for large titles
+                xml_chunks = await fetch_by_parts(session, date, title_num)
+                if xml_chunks:
+                    try:
+                        size, sections, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
+                        return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} parts)", size, sections)
+                    except Exception as e:
+                        return (year, title_num, False, f"convert error: {e}", 0, [])
+
+                return (year, title_num, False, "failed", 0, [])
 
         # Filter out years already in the database
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
@@ -1206,9 +1252,9 @@ class ECFRFetcher:
             print(f"Skipping years already in database: {sorted(skipped)}")
 
         all_success = True
-        connector = aiohttp.TCPConnector(limit=5)
+        connector = aiohttp.TCPConnector(limit=2)
         timeout = aiohttp.ClientTimeout(total=600)
-        semaphore = asyncio.Semaphore(3)  # Only 3 concurrent requests to avoid rate limiting
+        semaphore = asyncio.Semaphore(1)  # Process one title at a time to minimize memory
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             for year in years_to_fetch:
@@ -1219,22 +1265,21 @@ class ECFRFetcher:
                 print(f"Output: {output_subdir}")
                 print("-" * 50)
 
-                # Fetch all titles for this year with limited concurrency
-                tasks = [fetch_year_title(session, year, t, semaphore) for t in title_nums]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
+                # Process titles one at a time to minimize memory usage
                 success_count = 0
-                for result in results:
-                    if isinstance(result, Exception):
-                        print(f"x Error: {result}")
-                    else:
-                        yr, title_num, success, msg, _, sections = result
+                for title_num in title_nums:
+                    try:
+                        result = await fetch_year_title(session, year, title_num, semaphore)
+                        yr, t_num, success, msg, _, sections = result
                         symbol = "+" if success else "x"
-                        print(f"{symbol} Title {title_num}: {msg}")
+                        print(f"{symbol} Title {t_num}: {msg}")
                         if success:
                             success_count += 1
                             if sections:
                                 self.db.save_sections(sections, year=yr)
+                                del sections  # Free memory immediately
+                    except Exception as e:
+                        print(f"x Title {title_num}: {e}")
 
                 print(f"Complete: {success_count}/{len(title_nums)} titles")
                 if success_count < len(title_nums):

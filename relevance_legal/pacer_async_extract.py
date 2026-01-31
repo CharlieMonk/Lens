@@ -22,10 +22,16 @@ class SearchResult:
 
 
 class CourtListenerAsyncClient:
-    def __init__(self, api_key: str, base_url: str = "https://www.courtlistener.com/api/rest/v4"):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://www.courtlistener.com/api/rest/v4",
+        max_in_flight: int = 3,
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self._session: Optional[aiohttp.ClientSession] = None
+        self._request_sem = asyncio.Semaphore(max(1, max_in_flight))
 
     async def __aenter__(self) -> "CourtListenerAsyncClient":
         headers = {
@@ -46,13 +52,32 @@ class CourtListenerAsyncClient:
 
         backoff = 1
         while True:
-            async with self._session.get(url, params=params) as resp:
-                if resp.status in (429, 500, 502, 503, 504):
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 30)
-                    continue
-                resp.raise_for_status()
-                return await resp.json()
+            async with self._request_sem:
+                async with self._session.get(url, params=params) as resp:
+                    if resp.status in (429, 500, 502, 503, 504):
+                        retry_after = resp.headers.get("Retry-After")
+                        wait_time = None
+                        if retry_after and retry_after.isdigit():
+                            wait_time = int(retry_after)
+                        else:
+                            try:
+                                detail = await resp.json()
+                                if isinstance(detail, dict) and "detail" in detail:
+                                    text = str(detail["detail"])
+                                    # e.g., "Expected available in 834 seconds."
+                                    for token in text.split():
+                                        if token.isdigit():
+                                            wait_time = int(token)
+                                            break
+                            except Exception:
+                                pass
+                        if wait_time is None:
+                            wait_time = backoff
+                            backoff = min(backoff * 2, 30)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    resp.raise_for_status()
+                    return await resp.json()
 
     async def search_opinions(self, query: str, type_code: str = "o") -> List[SearchResult]:
         url = f"{self.base_url}/search/"
@@ -370,6 +395,12 @@ async def async_main() -> int:
     )
     parser.add_argument("--concurrency", type=int, default=10, help="Concurrent requests")
     parser.add_argument(
+        "--max-in-flight",
+        type=int,
+        default=3,
+        help="Max concurrent HTTP requests across all titles",
+    )
+    parser.add_argument(
         "--titles",
         default="1-5",
         help="Title range/list, e.g. '1-5' or '1,2,3'",
@@ -393,7 +424,7 @@ async def async_main() -> int:
 
     if not args.index_only:
         titles = _parse_titles(args.titles)
-        async with CourtListenerAsyncClient(api_key) as client:
+        async with CourtListenerAsyncClient(api_key, max_in_flight=args.max_in_flight) as client:
             tasks = []
             for title in titles:
                 output_path = _title_output_path(args.output, title)

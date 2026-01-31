@@ -10,7 +10,6 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -40,24 +39,17 @@ class SourceModel(Base):
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     agency = relationship("AgencyModel", back_populates="sources")
-    documents = relationship("DocumentModel", back_populates="source")
 
 
 class DocumentModel(Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
     agency_id: Mapped[int] = mapped_column(ForeignKey("agencies.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    raw_html: Mapped[str] = mapped_column(Text, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-
-    source = relationship("SourceModel", back_populates="documents")
 
     __table_args__ = (
         UniqueConstraint("url", name="uq_documents_url"),
