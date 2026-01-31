@@ -157,6 +157,24 @@ class ECFRDatabase:
             ON agency_word_counts(agency_slug)
         """)
 
+        # Section similarities table for TF-IDF cosine similarity
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS section_similarities (
+                year INTEGER NOT NULL,
+                title INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                similar_title INTEGER NOT NULL,
+                similar_section TEXT NOT NULL,
+                similarity REAL NOT NULL,
+                PRIMARY KEY (year, title, section, similar_title, similar_section)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_similarities_source
+            ON section_similarities(year, title, section)
+        """)
+
         conn.commit()
         conn.close()
 
@@ -392,6 +410,101 @@ class ECFRDatabase:
 
         conn.commit()
         conn.close()
+
+    def compute_similarities(self, title: int, year: int = 0, top_n: int = 5, max_sections: int = 2000) -> int:
+        """Compute TF-IDF cosine similarities for sections within a title.
+
+        Uses batched processing to avoid memory issues with large titles.
+
+        Args:
+            title: CFR title number
+            year: Year for historical data (0 = current)
+            top_n: Number of most similar sections to store per section
+            max_sections: Maximum sections to process (skip if more)
+
+        Returns:
+            Number of similarity pairs stored.
+        """
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import linear_kernel
+        import numpy as np
+
+        conn = self._connect()
+        cursor = conn.cursor()
+
+        # Get all sections for this title
+        cursor.execute("""
+            SELECT section, text FROM sections
+            WHERE year = ? AND title = ? AND text != ''
+        """, (year, title))
+        rows = cursor.fetchall()
+
+        if len(rows) < 2:
+            conn.close()
+            return 0
+
+        # Skip very large titles to avoid OOM
+        if len(rows) > max_sections:
+            conn.close()
+            return -1  # Signal skipped
+
+        sections = [row[0] for row in rows]
+        texts = [row[1] for row in rows]
+
+        # Compute TF-IDF vectors with sparse matrix
+        vectorizer = TfidfVectorizer(
+            max_features=1000,  # Reduced for memory
+            stop_words='english',
+            min_df=2,
+            max_df=0.95
+        )
+
+        try:
+            tfidf_matrix = vectorizer.fit_transform(texts)
+        except ValueError:
+            conn.close()
+            return 0
+
+        # Clear existing similarities for this title/year
+        cursor.execute("""
+            DELETE FROM section_similarities
+            WHERE year = ? AND title = ?
+        """, (year, title))
+
+        # Process in batches to avoid memory issues
+        count = 0
+        batch_size = 500
+        n_sections = len(sections)
+
+        for batch_start in range(0, n_sections, batch_size):
+            batch_end = min(batch_start + batch_size, n_sections)
+            batch_vectors = tfidf_matrix[batch_start:batch_end]
+
+            # Compute similarities for this batch against all sections
+            similarities = linear_kernel(batch_vectors, tfidf_matrix)
+
+            for i, row_idx in enumerate(range(batch_start, batch_end)):
+                section = sections[row_idx]
+                sim_scores = similarities[i].copy()
+                sim_scores[row_idx] = -1  # Exclude self
+
+                # Get top-N indices
+                top_indices = np.argsort(sim_scores)[-top_n:][::-1]
+
+                for j in top_indices:
+                    if sim_scores[j] > 0.1:  # Only store meaningful similarities
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO section_similarities
+                            (year, title, section, similar_title, similar_section, similarity)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (year, title, section, title, sections[j], float(sim_scores[j])))
+                        count += 1
+
+            # Commit after each batch
+            conn.commit()
+
+        conn.close()
+        return count
 
     def get_agency_word_counts(self) -> dict[str, int]:
         """Get total word counts for all agencies, including parent aggregates."""
@@ -1249,24 +1362,21 @@ class ECFRFetcher:
         success_count = 0
         total_words = 0
 
-        connector = aiohttp.TCPConnector(limit=20)
+        # Process titles sequentially to avoid memory pressure
+        connector = aiohttp.TCPConnector(limit=5)
         async with aiohttp.ClientSession(connector=connector) as session:
-            tasks = [
-                self.fetch_title_async(session, num, date, agency_lookup)
-                for num, date in titles_to_fetch
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for (num, _), result in zip(titles_to_fetch, results):
-                if isinstance(result, Exception):
-                    print(f"x Title {num}: {result}")
-                else:
+            for num, date in titles_to_fetch:
+                try:
+                    result = await self.fetch_title_async(session, num, date, agency_lookup)
                     success, msg, sections = result
                     symbol = "+" if success else "x"
                     print(f"{symbol} Title {num}: {msg}")
                     if success:
                         success_count += 1
                         total_words += sum(s.get("word_count", 0) for s in sections)
+                        del sections  # Free memory immediately
+                except Exception as e:
+                    print(f"x Title {num}: {e}")
 
         print("-" * 50)
         print(f"Complete: {success_count}/{len(titles_to_fetch)} titles downloaded")
@@ -1406,6 +1516,34 @@ class ECFRFetcher:
         """Sync wrapper for fetch_all_async."""
         return asyncio.run(self.fetch_all_async(historical_years))
 
+    def compute_all_similarities(self, year: int = 0) -> dict[int, int]:
+        """Compute TF-IDF similarities for all titles in the database.
+
+        Args:
+            year: Year for data (0 = current)
+
+        Returns:
+            Dict mapping title number to similarity count (-1 if skipped).
+        """
+        import sqlite3
+        conn = sqlite3.connect(self.db.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT title FROM sections WHERE year = ? ORDER BY title", (year,))
+        titles = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        results = {}
+        for title in titles:
+            print(f"Computing similarities for Title {title}...", end=" ", flush=True)
+            count = self.db.compute_similarities(title, year=year)
+            if count >= 0:
+                print(f"{count} pairs")
+            else:
+                print("skipped (too large)")
+            results[title] = count
+
+        return results
+
 
 if __name__ == "__main__":
     import sys
@@ -1424,8 +1562,20 @@ if __name__ == "__main__":
             if idx + 1 < len(sys.argv):
                 title_nums = [int(sys.argv[idx + 1])]
         exit_code = fetcher.fetch_historical(HISTORICAL_YEARS, title_nums)
+    elif "--similarities" in sys.argv:
+        # Compute TF-IDF similarities for existing data
+        year = 0
+        if "--year" in sys.argv:
+            idx = sys.argv.index("--year")
+            if idx + 1 < len(sys.argv):
+                year = int(sys.argv[idx + 1])
+        results = fetcher.compute_all_similarities(year=year)
+        total = sum(v for v in results.values() if v >= 0)
+        skipped = sum(1 for v in results.values() if v < 0)
+        print(f"\nTotal: {total:,} similarity pairs, {skipped} titles skipped")
+        exit_code = 0
     else:
-        # Fetch both current and historical in parallel
+        # Fetch both current and historical
         exit_code = fetcher.fetch_all()
 
     print(f"\n{time.time() - time0:.1f}s")
