@@ -63,17 +63,38 @@ LIVE_SOURCES = [
         "Environmental Protection Agency",
         ["EPA"],
         SourceType.ENFORCEMENT,
-        "https://www.epa.gov/newsreleases/search/rss/news_releases_language/en/subject/compliance-and-enforcement-226191",
+        "https://www.epa.gov/newsreleases/search?f%5B0%5D=subject%3A226191",
         max_links=150,
         use_pdf=True,
+        link_regex=r"/newsreleases/[^?]+$",
+        link_selector="a[href]",
     ),
     LiveSource(
         "Environmental Protection Agency",
         ["EPA"],
         SourceType.PRESS,
-        "https://www.epa.gov/newsreleases/search/rss/news_releases_language/en",
+        "https://www.epa.gov/newsreleases/search",
         max_links=150,
         use_pdf=True,
+        link_regex=r"/newsreleases/[^?]+$",
+        link_selector="a[href]",
+    ),
+    LiveSource(
+        "Environmental Protection Agency",
+        ["EPA"],
+        SourceType.ENFORCEMENT,
+        "https://nepis.epa.gov/RSS/ECA.xml",
+        max_links=50,
+        use_pdf=True,
+    ),
+    LiveSource(
+        "Environmental Protection Agency",
+        ["EPA"],
+        SourceType.ENFORCEMENT,
+        "https://www.epa.gov/enforcement/compliance-advisories-and-enforcement-alerts",
+        max_links=200,
+        use_pdf=True,
+        link_selector="table a",
     ),
     LiveSource(
         "Department of Labor",
@@ -148,6 +169,8 @@ def build_sources(session, sources: list[LiveSource]) -> list[int]:
             config["link_regex"] = source.link_regex
         if source.link_selector:
             config["link_selector"] = source.link_selector
+        if "epa.gov/newsreleases/search" in source.base_url:
+            config["use_playwright_listing"] = True
         source_id = add_source(
             repo,
             agency_id=agency_id,

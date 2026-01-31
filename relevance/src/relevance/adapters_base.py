@@ -6,6 +6,7 @@ from datetime import datetime
 import re
 
 from io import BytesIO
+from typing import Iterable
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -38,6 +39,9 @@ class AgencyAdapter(ABC):
 _DATE_RE = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b"
 )
+_JS_REDIRECT_RE = re.compile(r"location\.replace\([\"']([^\"']+)[\"']\)", re.IGNORECASE)
+_PDF_JS_RE = re.compile(r"/Exe/(?:PDF|ZyPDF)\.cgi/[^\"'\s>]+", re.IGNORECASE)
+_PDF_NET_RE = re.compile(r"/Exe/ZyNET\.exe/[^\"'\s>]+\.PDF[^\"'\s>]*", re.IGNORECASE)
 
 
 def looks_like_rss(text: str) -> bool:
@@ -111,6 +115,34 @@ def extract_body_text(soup: BeautifulSoup) -> str:
     return " ".join(soup.get_text(" ").split())
 
 
+def resolve_js_redirect(html: str, base_url: str) -> str | None:
+    match = _JS_REDIRECT_RE.search(html)
+    if not match:
+        return None
+    return urljoin(base_url, match.group(1))
+
+
+def extract_links_from_listing(
+    html: str,
+    page_url: str,
+    link_selector: str | None = None,
+    href_regex: str | None = None,
+) -> list[str]:
+    soup = BeautifulSoup(html, "lxml")
+    anchors: Iterable = soup.select(link_selector) if link_selector else soup.select("a[href]")
+    links: list[str] = []
+    pattern = re.compile(href_regex) if href_regex else None
+    for anchor in anchors:
+        href = anchor.get("href")
+        if not href:
+            continue
+        url = urljoin(page_url, href)
+        if pattern and not pattern.search(url):
+            continue
+        links.append(url)
+    return links
+
+
 def find_pdf_links(soup: BeautifulSoup, page_url: str, limit: int = 1) -> list[str]:
     links: list[str] = []
     for anchor in soup.select("a[href]"):
@@ -124,8 +156,26 @@ def find_pdf_links(soup: BeautifulSoup, page_url: str, limit: int = 1) -> list[s
     return links
 
 
+def find_pdf_links_in_html(html: str, page_url: str, limit: int = 1) -> list[str]:
+    soup = BeautifulSoup(html, "lxml")
+    links = find_pdf_links(soup, page_url, limit=limit)
+    if len(links) >= limit:
+        return links
+    for pattern in (_PDF_JS_RE, _PDF_NET_RE):
+        for match in pattern.findall(html):
+            url = urljoin(page_url, match)
+            if url in links:
+                continue
+            links.append(url)
+            if len(links) >= limit:
+                return links
+    return links
+
+
 def extract_pdf_text(fetcher: Fetcher, pdf_url: str) -> str:
     data = fetcher.get_bytes(pdf_url)
+    if b"%PDF" not in data[:1024]:
+        raise ValueError(f"Not a PDF response: {pdf_url}")
     reader = PdfReader(BytesIO(data))
     chunks = []
     for page in reader.pages:

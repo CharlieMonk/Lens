@@ -31,6 +31,10 @@ class SourceConfig:
     base_url: str
     fixture_base_url: str | None = None
     max_links: int | None = None
+    use_pdf: bool | None = None
+    listing_urls: list[str] | None = None
+    link_regex: str | None = None
+    link_selector: str | None = None
 
 
 class CitationDatabaseBuilder:
@@ -40,55 +44,130 @@ class CitationDatabaseBuilder:
 
     @staticmethod
     def default_live_sources() -> list[SourceConfig]:
+        sec_archive_urls = []
+        for year in range(2018, 2027):
+            for page in range(0, 7):
+                sec_archive_urls.append(
+                    f"https://www.sec.gov/enforcement-litigation/litigation-releases?populate=&year={year}&month=All&page={page}"
+                )
         return [
             SourceConfig(
                 agency_name="Securities and Exchange Commission",
                 aliases=["SEC"],
                 source_type=SourceType.ENFORCEMENT,
                 base_url="https://www.sec.gov/enforcement-litigation/litigation-releases/rss",
-                max_links=2,
+                max_links=200,
+                use_pdf=True,
             ),
             SourceConfig(
                 agency_name="Securities and Exchange Commission",
                 aliases=["SEC"],
                 source_type=SourceType.PRESS,
                 base_url="https://www.sec.gov/news/pressreleases.rss",
-                max_links=2,
+                max_links=200,
+                use_pdf=True,
             ),
             SourceConfig(
                 agency_name="Securities and Exchange Commission",
                 aliases=["SEC"],
                 source_type=SourceType.LITIGATION,
                 base_url="https://www.sec.gov/rss/litigation/litreleases.xml",
-                max_links=2,
+                max_links=200,
+                use_pdf=True,
+            ),
+            SourceConfig(
+                agency_name="Securities and Exchange Commission",
+                aliases=["SEC"],
+                source_type=SourceType.LITIGATION,
+                base_url="https://www.sec.gov/enforcement-litigation/litigation-releases",
+                max_links=500,
+                use_pdf=True,
+                listing_urls=sec_archive_urls,
+                link_regex=r"/litigation-releases/lr-",
+                link_selector="a[href]",
             ),
             SourceConfig(
                 agency_name="Environmental Protection Agency",
                 aliases=["EPA"],
                 source_type=SourceType.ENFORCEMENT,
-                base_url="https://www.epa.gov/newsreleases/search/rss/news_releases_language/en/subject/compliance-and-enforcement-226191",
-                max_links=2,
+                base_url="https://www.epa.gov/newsreleases/search?f%5B0%5D=subject%3A226191",
+                max_links=200,
+                use_pdf=True,
+                link_regex=r"/newsreleases/[^?]+$",
+                link_selector="a[href]",
             ),
             SourceConfig(
                 agency_name="Environmental Protection Agency",
                 aliases=["EPA"],
                 source_type=SourceType.PRESS,
-                base_url="https://www.epa.gov/newsreleases/search/rss/news_releases_language/en",
-                max_links=2,
+                base_url="https://www.epa.gov/newsreleases/search",
+                max_links=200,
+                use_pdf=True,
+                link_regex=r"/newsreleases/[^?]+$",
+                link_selector="a[href]",
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.ENFORCEMENT,
+                base_url="https://nepis.epa.gov/RSS/ECA.xml",
+                max_links=50,
+                use_pdf=True,
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.ENFORCEMENT,
+                base_url="https://www.epa.gov/enforcement/compliance-advisories-and-enforcement-alerts",
+                max_links=200,
+                use_pdf=True,
+                link_selector="table a",
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.ENFORCEMENT,
+                base_url="https://www.epa.gov/enforcement",
+                max_links=200,
+                use_pdf=True,
+                link_regex=r"/newsreleases/",
+                link_selector="a[href]",
+            ),
+            SourceConfig(
+                agency_name="Environmental Protection Agency",
+                aliases=["EPA"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.epa.gov/newsroom/browse-news-releases",
+                max_links=200,
+                use_pdf=True,
+                link_regex=r"/newsreleases/",
+                link_selector="a[href]",
             ),
             SourceConfig(
                 agency_name="Department of Labor",
                 aliases=["DOL"],
                 source_type=SourceType.PRESS,
                 base_url="https://www.osha.gov/news/newsreleases.xml",
-                max_links=2,
+                max_links=200,
+                use_pdf=True,
             ),
             SourceConfig(
                 agency_name="Department of Labor",
                 aliases=["DOL"],
                 source_type=SourceType.PRESS,
                 base_url="https://www.dol.gov/newsroom/releases/rss",
-                max_links=2,
+                max_links=200,
+                use_pdf=True,
+            ),
+            SourceConfig(
+                agency_name="Department of Labor",
+                aliases=["DOL"],
+                source_type=SourceType.PRESS,
+                base_url="https://www.osha.gov/news/newsreleases/search",
+                max_links=200,
+                use_pdf=True,
+                link_regex=r"/news/newsreleases/",
+                link_selector="a[href]",
             ),
         ]
 
@@ -112,7 +191,15 @@ class CitationDatabaseBuilder:
                     config["fixture_base_url"] = source.fixture_base_url
                 if source.max_links:
                     config["max_links"] = source.max_links
-                config["use_pdf"] = True
+                if source.use_pdf is not None:
+                    config["use_pdf"] = source.use_pdf
+                if source.listing_urls:
+                    config["listing_urls"] = source.listing_urls
+                if source.link_regex:
+                    config["link_regex"] = source.link_regex
+                if source.link_selector:
+                    config["link_selector"] = source.link_selector
+                config["max_workers"] = 6
                 source_id = add_source(
                     sources_repo,
                     agency_id=agency_id,
@@ -224,4 +311,6 @@ class CitationDatabaseBuilder:
             if not fixtures_path:
                 raise ValueError("fixtures_path required for offline ingestion")
             return FixtureFetcher(FixtureRegistry(fixtures_path))
-        return HttpFetcher(HttpFetcherConfig(respect_robots=respect_robots))
+        return HttpFetcher(
+            HttpFetcherConfig(respect_robots=respect_robots, rate_limit_per_domain=0.2)
+        )
