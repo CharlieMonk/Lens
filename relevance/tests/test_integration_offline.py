@@ -1,12 +1,12 @@
 from relevance.adapters_registry import AdapterRegistry
-from relevance.application_aggregation import AggregationService
+from relevance.application_counts import CitationCountService
 from relevance.application_bootstrap import add_source, ensure_agency
 from relevance.application_citation_extractor import CitationExtractor
 from relevance.application_ingestion import IngestionService
 from relevance.infrastructure_fixture_fetcher import FixtureFetcher, FixtureRegistry
 from relevance.infrastructure_repositories import (
     AgencyRepository,
-    AggregateRepository,
+    CitationCountRepository,
     CitationRepository,
     DocumentCitationRepository,
     DocumentRepository,
@@ -15,7 +15,7 @@ from relevance.infrastructure_repositories import (
 from relevance.domain_models import SourceType
 
 
-def test_offline_ingestion_and_aggregation(session, fixtures_path):
+def test_offline_ingestion_and_counts(session, fixtures_path):
     agencies = AgencyRepository(session)
     sources = SourceRepository(session)
     docs = DocumentRepository(session)
@@ -65,10 +65,10 @@ def test_offline_ingestion_and_aggregation(session, fixtures_path):
     assert stats["documents"] == 9
     assert stats["citations"] > 0
 
-    aggregation = AggregationService()
-    aggregation.rebuild(session, granularity="month")
+    counter = CitationCountService()
+    counter.rebuild(session)
 
-    top = AggregateRepository(session).top_cfr(agency_id=None, limit=5)
+    top = CitationCountRepository(session).top_cfr(agency_id=None, limit=5)
     assert len(top) > 0
     normalized = [row[0] for row in top]
     assert "17 CFR 240.10b-5" in normalized

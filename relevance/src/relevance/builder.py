@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from relevance.adapters_registry import AdapterRegistry
-from relevance.application_aggregation import AggregationService
+from relevance.application_counts import CitationCountService
 from relevance.application_bootstrap import add_source, ensure_agency
 from relevance.application_citation_extractor import CitationExtractor
 from relevance.application_ingestion import IngestionService
@@ -15,7 +15,7 @@ from relevance.infrastructure_http_fetcher import HttpFetcher, HttpFetcherConfig
 from relevance.infrastructure_migrations import MigrationRunner
 from relevance.infrastructure_repositories import (
     AgencyRepository,
-    AggregateRepository,
+    CitationCountRepository,
     CitationRepository,
     DocumentCitationRepository,
     DocumentRepository,
@@ -88,10 +88,10 @@ class CitationDatabaseBuilder:
                 base_url_override=override,
             )
 
-    def rebuild_aggregates(self, granularity: str = "month") -> int:
+    def rebuild_counts(self) -> int:
         with self._db.session() as session:
-            aggregation = AggregationService()
-            return aggregation.rebuild(session, granularity=granularity)
+            counter = CitationCountService()
+            return counter.rebuild(session)
 
     def top_citations(self, limit: int = 10, agency_name: str | None = None):
         with self._db.session() as session:
@@ -107,7 +107,7 @@ class CitationDatabaseBuilder:
                 if not agency:
                     raise ValueError(f"Unknown agency: {agency_name}")
                 agency_id = agency.id
-            repo = AggregateRepository(session)
+            repo = CitationCountRepository(session)
             return repo.top_cfr(agency_id=agency_id, limit=limit)
 
     def build_offline_starter_db(self, fixtures_path: Path) -> dict[str, int]:
@@ -136,12 +136,12 @@ class CitationDatabaseBuilder:
         ]
         self.register_sources(sources)
         stats = self.ingest(offline=True, fixtures_path=fixtures_path)
-        self.rebuild_aggregates()
+        self.rebuild_counts()
         return stats
 
     def counts_by_agency(self):
         with self._db.session() as session:
-            repo = AggregateRepository(session)
+            repo = CitationCountRepository(session)
             agencies = AgencyRepository(session)
             result = {}
             for agency in agencies.list_all():

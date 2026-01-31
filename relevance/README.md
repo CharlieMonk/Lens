@@ -5,7 +5,7 @@ Production-grade Python system for identifying which CFR sections are most commo
 ## Features
 - Ingests enforcement actions, litigation releases, and press releases via agency adapters
 - Extracts and normalizes CFR citations from text
-- Stores raw documents, citations, and aggregates in SQLite
+- Stores raw documents, citations, and per-agency citation counts in SQLite
 - Deterministic offline ingestion via HTML fixtures
 - Pluggable adapters to add agencies without touching core logic
 
@@ -27,7 +27,7 @@ from relevance import CitationDatabaseBuilder
 
 builder = CitationDatabaseBuilder("sqlite:///data/relevance.sqlite")
 builder.build_offline_starter_db(Path("relevance/tests/fixtures"))
-builder.rebuild_aggregates()
+builder.rebuild_counts()
 top = builder.top_citations(limit=10)
 ```
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 import relevance.domain_models as models
 from relevance.infrastructure_orm import (
     AgencyModel,
-    AggregateCfrCountModel,
+    CitationCountModel,
     CitationModel,
     DocumentCitationModel,
     DocumentModel,
@@ -151,45 +151,36 @@ class DocumentCitationRepository:
         ).delete()
 
 
-class AggregateRepository:
+class CitationCountRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def clear(self) -> None:
-        self._session.query(AggregateCfrCountModel).delete()
+        self._session.query(CitationCountModel).delete()
 
     def add(
         self,
         agency_id: int,
         normalized_citation: str,
-        period_start: datetime,
-        period_end: datetime,
-        document_count: int,
         occurrence_count: int,
     ) -> None:
-        row = AggregateCfrCountModel(
+        row = CitationCountModel(
             agency_id=agency_id,
             normalized_citation=normalized_citation,
-            period_start=period_start,
-            period_end=period_end,
-            document_count=document_count,
             occurrence_count=occurrence_count,
         )
         self._session.add(row)
 
-    def top_cfr(
-        self, agency_id: int | None, limit: int
-    ) -> list[tuple[str, int, int]]:
+    def top_cfr(self, agency_id: int | None, limit: int) -> list[tuple[str, int]]:
         stmt = select(
-            AggregateCfrCountModel.normalized_citation,
-            func.sum(AggregateCfrCountModel.document_count),
-            func.sum(AggregateCfrCountModel.occurrence_count),
+            CitationCountModel.normalized_citation,
+            func.sum(CitationCountModel.occurrence_count),
         )
         if agency_id is not None:
-            stmt = stmt.where(AggregateCfrCountModel.agency_id == agency_id)
+            stmt = stmt.where(CitationCountModel.agency_id == agency_id)
         stmt = (
-            stmt.group_by(AggregateCfrCountModel.normalized_citation)
-            .order_by(func.sum(AggregateCfrCountModel.occurrence_count).desc())
+            stmt.group_by(CitationCountModel.normalized_citation)
+            .order_by(func.sum(CitationCountModel.occurrence_count).desc())
             .limit(limit)
         )
         return list(self._session.execute(stmt).all())

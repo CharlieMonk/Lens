@@ -98,23 +98,19 @@ class DocumentCitationModel(Base):
     )
 
 
-class AggregateCfrCountModel(Base):
-    __tablename__ = "aggregates_cfr_counts"
+class CitationCountModel(Base):
+    __tablename__ = "citation_counts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     agency_id: Mapped[int] = mapped_column(ForeignKey("agencies.id"), nullable=False)
     normalized_citation: Mapped[str] = mapped_column(String(100), nullable=False)
-    period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    period_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    document_count: Mapped[int] = mapped_column(Integer, nullable=False)
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (
         Index(
-            "ix_agg_agency_citation_period",
+            "ix_citation_counts_agency_citation",
             "agency_id",
             "normalized_citation",
-            "period_start",
         ),
     )
 
