@@ -891,7 +891,14 @@ class ECFRFetcher:
     async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int,
                                   date: str, agency_lookup: dict,
                                   output_subdir: Path = None) -> tuple[bool, str, dict]:
-        """Async fetch a single CFR title from both eCFR and govinfo in parallel.
+        """Async fetch a single CFR title from eCFR (and govinfo for current data).
+
+        Args:
+            session: aiohttp session.
+            title_num: CFR title number.
+            date: Date string (YYYY-MM-DD). Historical dates use eCFR only.
+            agency_lookup: Dict mapping (title, chapter) to agency info.
+            output_subdir: Optional subdirectory for output.
 
         Returns:
             Tuple of (success, message, word_counts).
@@ -904,7 +911,6 @@ class ECFRFetcher:
 
         converter = MarkdownConverter(agency_lookup)
 
-        # Fetch from both sources in parallel
         async def fetch_ecfr():
             url = f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-{title_num}.xml"
             try:
@@ -925,7 +931,7 @@ class ECFRFetcher:
                 pass
             return None
 
-        # Race both fetches
+        # Race both fetches, return first success
         tasks = [asyncio.create_task(fetch_ecfr()), asyncio.create_task(fetch_govinfo())]
         for coro in asyncio.as_completed(tasks):
             result = await coro
@@ -1017,7 +1023,7 @@ class ECFRFetcher:
         return asyncio.run(self.fetch_current_async(clear_cache))
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
-        """Async fetch titles for historical years using CFR annual bulk download.
+        """Async fetch titles for historical years using govinfo CFR annual bulk data.
 
         Args:
             historical_years: List of years (e.g., [2020, 2015]).
@@ -1033,7 +1039,7 @@ class ECFRFetcher:
         converter = MarkdownConverter()
 
         async def fetch_year_title(session, year, title_num):
-            """Fetch all volumes for a title/year combination."""
+            """Fetch volumes for a title/year in parallel."""
             output_subdir = self.output_dir / str(year)
             output_subdir.mkdir(parents=True, exist_ok=True)
             output_file = output_subdir / f"title_{title_num}.md"
@@ -1048,15 +1054,15 @@ class ECFRFetcher:
                 try:
                     async with session.get(url) as resp:
                         if resp.status == 200:
-                            return await resp.read()
+                            return vol, await resp.read()
                 except:
                     pass
-                return None
+                return vol, None
 
             # Fetch all volumes in parallel
-            vol_tasks = [fetch_vol(v) for v in range(1, 51)]
-            vol_results = await asyncio.gather(*vol_tasks)
-            xml_chunks = [r for r in vol_results if r is not None]
+            results = await asyncio.gather(*[fetch_vol(v) for v in range(1, 51)])
+            # Sort by volume number and filter successful ones
+            xml_chunks = [data for vol, data in sorted(results) if data is not None]
 
             if not xml_chunks:
                 return (year, title_num, False, f"no data for {year}", 0)
