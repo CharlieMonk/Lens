@@ -1384,6 +1384,11 @@ class ECFRFetcher:
         if total_words:
             print(f"Total words: {total_words:,}")
 
+        # Compute TF-IDF similarities for newly fetched data
+        if success_count > 0:
+            print("\nComputing TF-IDF similarities...")
+            self.compute_all_similarities(year=0)
+
         return 0 if success_count == len(titles_to_fetch) else 1
 
     def fetch_current(self, clear_cache: bool = False) -> int:
@@ -1487,6 +1492,11 @@ class ECFRFetcher:
                 print(f"Complete: {success_count}/{len(title_nums)} titles")
                 if success_count < len(title_nums):
                     all_success = False
+
+                # Compute TF-IDF similarities for this year's data
+                if success_count > 0:
+                    print(f"\nComputing TF-IDF similarities for {year}...")
+                    self.compute_all_similarities(year=year)
 
         return 0 if all_success else 1
 
