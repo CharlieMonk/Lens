@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-eFCR is a Python tool for fetching and processing Code of Federal Regulations (CFR) data from the eCFR API (ecfr.gov). It downloads XML files for all 50 CFR titles, converts them to YAML, and generates word count statistics.
+eFCR is a Python tool for fetching and processing Code of Federal Regulations (CFR) data from the eCFR API (ecfr.gov). It downloads XML files for all 50 CFR titles, converts them to Markdown, and generates word count statistics.
 
 ## Commands
 
@@ -23,8 +23,8 @@ python fetch_titles.py
 The project consists of a single script (`fetch_titles.py`) that:
 1. Fetches titles metadata from `/api/versioner/v1/titles.json` to get latest issue dates
 2. Downloads full XML for each title using `/api/versioner/v1/full/{date}/title-{n}.xml`
-3. Converts XML to YAML and counts words by hierarchy level (title/chapter/subchapter/part/subpart)
-4. Outputs YAML files and a `word_counts.csv` to `xml_output/`
+3. Converts XML to Markdown and counts words by hierarchy level (title/chapter/subchapter/part/subpart)
+4. Outputs Markdown files and a `word_counts.csv` to `md_output/`
 
 Key constants:
 - `MAX_WORKERS = 5`: Parallel fetch threads

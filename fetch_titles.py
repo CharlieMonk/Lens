@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fetch CFR titles 1-50 from the eCFR API for the latest issue date."""
 
+import re
 import sys
 import time
 from collections import defaultdict
@@ -17,94 +18,145 @@ MAX_WORKERS = 5
 MAX_RETRIES = 7
 RETRY_DELAY = 3  # seconds, doubles each retry
 CLEAR_CACHE = False
-OUTPUT_DIR = Path("xml_output")
+OUTPUT_DIR = Path("md_output")
 METADATA_CACHE = OUTPUT_DIR / "titles_metadata.yaml"
 WORD_COUNTS_CACHE = OUTPUT_DIR / "word_counts_cache.yaml"
 
-# Maps DIV TYPE attributes to hierarchy levels
+# Maps DIV TYPE attributes to hierarchy levels and markdown heading depth
 TYPE_TO_LEVEL = {
     "TITLE": "title",
+    "SUBTITLE": "subtitle",
     "CHAPTER": "chapter",
     "SUBCHAP": "subchapter",
     "PART": "part",
     "SUBPART": "subpart",
+    "SECTION": "section",
+}
+
+# Markdown heading levels for each hierarchy type
+TYPE_TO_HEADING = {
+    "TITLE": 1,
+    "SUBTITLE": 2,
+    "CHAPTER": 2,
+    "SUBCHAP": 3,
+    "PART": 3,
+    "SUBPART": 4,
+    "SECTION": 4,
 }
 
 
-def xml_to_yaml(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
-    """Convert XML content to YAML and write to file.
+def xml_to_markdown(xml_content: bytes, output_file: Path) -> tuple[int, dict]:
+    """Convert XML content to Markdown and write to file.
 
     Returns tuple of (bytes_written, word_counts).
     word_counts is a dict mapping hierarchy keys to word counts.
     """
     root = etree.fromstring(xml_content)
     word_counts = defaultdict(int)
+    lines = []
 
-    # Two-pass approach: first build structure, then count words with ancestry
-    # Pass 1: Build data structure
-    stack = [(root, {})]
-    root_result = stack[0][1]
+    def get_text(elem):
+        """Get all text content from an element, including tail text of children."""
+        texts = []
+        if elem.text:
+            texts.append(elem.text)
+        for child in elem:
+            texts.append(get_text(child))
+            if child.tail:
+                texts.append(child.tail)
+        return ''.join(texts)
 
-    while stack:
-        elem, result = stack.pop()
+    def process_element(elem, context, depth=0):
+        """Recursively process XML elements and generate Markdown."""
+        tag = elem.tag
+        elem_type = elem.attrib.get("TYPE", "")
+        elem_n = elem.attrib.get("N", "")
 
-        if elem.attrib:
-            result["@attributes"] = dict(elem.attrib)
+        # Update hierarchy context
+        new_context = context.copy()
+        if elem_type in TYPE_TO_LEVEL:
+            level = TYPE_TO_LEVEL[elem_type]
+            new_context[level] = elem_n
 
-        children = list(elem)
-        if children:
-            # Use a list to preserve document order of children
-            child_list = []
-            result["children"] = child_list
-
-            # Capture text before first child element
-            if elem.text and elem.text.strip():
-                result["text"] = elem.text.strip()
-
-            for child in children:
-                child_result = {"@tag": child.tag}
-                # Capture tail text (text after this child element)
-                if child.tail and child.tail.strip():
-                    child_result["tail"] = child.tail.strip()
-                child_list.append(child_result)
-                stack.append((child, child_result))
-        else:
-            text = (elem.text or "").strip()
+        # Handle HEAD elements (titles/headings)
+        if tag == "HEAD":
+            text = get_text(elem).strip()
             if text:
-                result["text"] = text
+                # Determine heading level from parent's TYPE
+                parent = elem.getparent()
+                parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
+                heading_level = TYPE_TO_HEADING.get(parent_type, 5)
+                lines.append(f"\n{'#' * heading_level} {text}\n")
+            return
 
-    data = {root.tag: root_result}
+        # Handle paragraph elements
+        if tag == "P":
+            text = get_text(elem).strip()
+            if text:
+                # Count words
+                if new_context:
+                    key = tuple(sorted(new_context.items()))
+                    word_counts[key] += len(text.split())
+                lines.append(f"\n{text}\n")
+            return
+
+        # Handle CITA (citation) elements
+        if tag == "CITA":
+            text = get_text(elem).strip()
+            if text:
+                lines.append(f"\n*{text}*\n")
+            return
+
+        # Handle AUTH (authority) elements
+        if tag == "AUTH":
+            lines.append("\n**Authority:**\n")
+            for child in elem:
+                process_element(child, new_context, depth + 1)
+            return
+
+        # Handle SOURCE elements
+        if tag == "SOURCE":
+            lines.append("\n**Source:**\n")
+            for child in elem:
+                process_element(child, new_context, depth + 1)
+            return
+
+        # Handle FP (flush paragraph) and other text containers
+        if tag in ("FP", "NOTE", "EXTRACT", "GPOTABLE"):
+            text = get_text(elem).strip()
+            if text:
+                if new_context:
+                    key = tuple(sorted(new_context.items()))
+                    word_counts[key] += len(text.split())
+                lines.append(f"\n{text}\n")
+            return
+
+        # Handle DIV elements (structural hierarchy)
+        if tag.startswith("DIV"):
+            for child in elem:
+                process_element(child, new_context, depth + 1)
+            return
+
+        # Handle ECFR root
+        if tag == "ECFR":
+            for child in elem:
+                process_element(child, new_context, depth + 1)
+            return
+
+        # Default: process children
+        for child in elem:
+            process_element(child, new_context, depth + 1)
+
+    # Process the XML tree
+    process_element(root, {})
+
+    # Write Markdown file
+    content = ''.join(lines)
+    # Clean up excessive blank lines
+    content = re.sub(r'\n{3,}', '\n\n', content)
 
     with open(output_file, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-    # Pass 2: Count words by walking tree with parent pointers
-    for elem in root.iter():
-        # Count both elem.text and elem.tail
-        texts_to_count = []
-        if elem.text and elem.text.strip():
-            texts_to_count.append(elem.text.strip())
-        if elem.tail and elem.tail.strip():
-            texts_to_count.append(elem.tail.strip())
-
-        if not texts_to_count:
-            continue
-
-        # Walk up to find hierarchy context
-        context = {}
-        node = elem
-        while node is not None:
-            elem_type = node.attrib.get("TYPE", "")
-            if elem_type in TYPE_TO_LEVEL:
-                level = TYPE_TO_LEVEL[elem_type]
-                if level not in context:
-                    context[level] = node.attrib.get("N", "")
-            node = node.getparent()
-
-        if context:
-            key = tuple(sorted(context.items()))
-            for text in texts_to_count:
-                word_counts[key] += len(text.split())
+        f.write(content)
 
     return output_file.stat().st_size, dict(word_counts)
 
@@ -121,7 +173,7 @@ def clear_cache() -> None:
     """Delete all cached files in the output directory."""
     if not OUTPUT_DIR.exists():
         return
-    for f in OUTPUT_DIR.glob("*.yaml"):
+    for f in OUTPUT_DIR.glob("*.md"):
         f.unlink()
     csv_file = OUTPUT_DIR / "word_counts.csv"
     if csv_file.exists():
@@ -145,53 +197,88 @@ def load_word_counts_cache() -> dict[int, dict]:
     return result
 
 
-def count_words_from_yaml(yaml_path: Path) -> dict:
-    """Count words from a YAML file by walking its structure.
+def count_words_from_markdown(md_path: Path) -> dict:
+    """Count words from a Markdown file by parsing headings for hierarchy.
 
     Returns dict mapping hierarchy keys to word counts.
     """
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
     word_counts = defaultdict(int)
+    context = {}
 
-    def walk_node(node, context):
-        """Recursively walk node, tracking hierarchy context and counting words."""
-        if not isinstance(node, dict):
-            return
+    # Heading patterns to extract hierarchy
+    # # Title N - level 1
+    # ## Subtitle/Chapter - level 2
+    # ### Subchapter/Part - level 3
+    # #### Subpart/Section - level 4
+    heading_pattern = re.compile(r'^(#{1,6})\s+(.+)$')
 
-        # Update context if this is a hierarchy node
-        attrs = node.get("@attributes", {})
-        node_type = attrs.get("TYPE", "")
-        if node_type in TYPE_TO_LEVEL:
-            level = TYPE_TO_LEVEL[node_type]
-            context = context.copy()
-            context[level] = attrs.get("N", "")
+    # Patterns to identify hierarchy elements from heading text
+    title_pattern = re.compile(r'Title\s+(\d+)', re.IGNORECASE)
+    subtitle_pattern = re.compile(r'Subtitle\s+([A-Z])', re.IGNORECASE)
+    chapter_pattern = re.compile(r'Chapter\s+([IVXLCDM]+)', re.IGNORECASE)
+    subchapter_pattern = re.compile(r'Subchapter\s+([A-Z])', re.IGNORECASE)
+    part_pattern = re.compile(r'Part\s+(\d+)', re.IGNORECASE)
+    subpart_pattern = re.compile(r'Subpart\s+([A-Z])', re.IGNORECASE)
+    section_pattern = re.compile(r'§\s*(\d+\.\d+)', re.IGNORECASE)
 
-        # Count words in text and tail
-        if context:
+    current_text = []
+
+    def flush_text():
+        """Count words in accumulated text and reset."""
+        nonlocal current_text
+        if current_text and context:
+            text = ' '.join(current_text)
             key = tuple(sorted(context.items()))
-            if "text" in node:
-                word_counts[key] += len(node["text"].split())
-            if "tail" in node:
-                word_counts[key] += len(node["tail"].split())
+            word_counts[key] += len(text.split())
+        current_text = []
 
-        # Walk children
-        children = node.get("children", [])
-        if isinstance(children, list):
-            for child in children:
-                walk_node(child, context)
-        elif isinstance(children, dict):
-            # Legacy format
-            for value in children.values():
-                items = value if isinstance(value, list) else [value]
-                for item in items:
-                    walk_node(item, context)
+    with open(md_path, 'r') as f:
+        for line in f:
+            line = line.rstrip()
 
-    # Start walking from root
-    root = data.get("ECFR", {})
-    walk_node(root, {})
+            # Check for heading
+            heading_match = heading_pattern.match(line)
+            if heading_match:
+                flush_text()
+                heading_text = heading_match.group(2)
 
+                # Try to identify what kind of heading this is
+                if m := title_pattern.search(heading_text):
+                    context = {'title': m.group(1)}
+                elif m := subtitle_pattern.search(heading_text):
+                    context['subtitle'] = m.group(1)
+                elif m := chapter_pattern.search(heading_text):
+                    context['chapter'] = m.group(1)
+                    # Clear lower levels
+                    for k in ['subchapter', 'part', 'subpart', 'section']:
+                        context.pop(k, None)
+                elif m := subchapter_pattern.search(heading_text):
+                    context['subchapter'] = m.group(1)
+                    for k in ['part', 'subpart', 'section']:
+                        context.pop(k, None)
+                elif m := part_pattern.search(heading_text):
+                    context['part'] = m.group(1)
+                    for k in ['subpart', 'section']:
+                        context.pop(k, None)
+                elif m := subpart_pattern.search(heading_text):
+                    context['subpart'] = m.group(1)
+                    context.pop('section', None)
+                elif m := section_pattern.search(heading_text):
+                    context['section'] = m.group(1)
+                continue
+
+            # Skip empty lines and metadata markers
+            if not line or line.startswith('**Authority:**') or line.startswith('**Source:**'):
+                continue
+
+            # Skip italic citations
+            if line.startswith('*') and line.endswith('*'):
+                continue
+
+            # Accumulate text
+            current_text.append(line)
+
+    flush_text()
     return dict(word_counts)
 
 
@@ -253,7 +340,7 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> tuple[int,
     Returns:
         Tuple of (title_num, success, message, word_counts)
     """
-    output_file = output_dir / f"title_{title_num}.yaml"
+    output_file = output_dir / f"title_{title_num}.md"
 
     # Use cache if valid (word counts handled by caller)
     if is_cache_valid(output_file):
@@ -266,7 +353,7 @@ def fetch_title(title_num: int, fetch_date: str, output_dir: Path) -> tuple[int,
             response = requests.get(url, timeout=300)
             response.raise_for_status()
 
-            size, word_counts = xml_to_yaml(response.content, output_file)
+            size, word_counts = xml_to_markdown(response.content, output_file)
             return (title_num, True, f"{size:,} bytes", word_counts)
 
         except requests.exceptions.HTTPError as e:
@@ -305,7 +392,7 @@ def main() -> int:
     word_counts_cache = load_word_counts_cache()
 
     titles_to_fetch = [(num, date) for num, date in titles_metadata.items() if 1 <= num <= 50]
-    print(f"Fetching {len(titles_to_fetch)} titles in parallel...")
+    print(f"Processing {len(titles_to_fetch)} titles...")
     print(f"Output directory: {OUTPUT_DIR}")
     print("-" * 50)
 
@@ -325,12 +412,12 @@ def main() -> int:
             if success:
                 success_count += 1
                 if msg == "cached":
-                    # Use word counts from cache, or recalculate from YAML if missing
+                    # Use word counts from cache, or parse from Markdown if missing
                     word_counts = word_counts_cache.get(title_num)
                     if not word_counts:
-                        yaml_path = OUTPUT_DIR / f"title_{title_num}.yaml"
-                        print(f"  Recalculating word counts for title {title_num}...")
-                        word_counts = count_words_from_yaml(yaml_path)
+                        md_path = OUTPUT_DIR / f"title_{title_num}.md"
+                        print(f"  Counting words for title {title_num}...")
+                        word_counts = count_words_from_markdown(md_path)
                         word_counts_cache[title_num] = word_counts
                 else:
                     # Save fresh word counts to cache
@@ -365,7 +452,7 @@ def main() -> int:
         total_words = sum(all_word_counts.values())
         print(f"Total words: {total_words:,}")
 
-    # return 0 if success_count == len(titles_to_fetch) else 1
+    return 0 if success_count == len(titles_to_fetch) else 1
 
 
 if __name__ == "__main__":

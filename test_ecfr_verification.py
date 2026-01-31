@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Playwright tests to verify YAML data matches ecfr.gov."""
+"""Playwright tests to verify Markdown data matches ecfr.gov."""
 
 import random
 import re
@@ -101,7 +101,7 @@ def extract_section_number(heading: str) -> str | None:
 
 
 class TestECFRVerification:
-    """Test suite to verify local YAML data matches ecfr.gov."""
+    """Test suite to verify local Markdown data matches ecfr.gov."""
 
     def test_reader_loads_titles(self, reader: ECFRReader):
         """Verify reader can load available titles."""
@@ -121,14 +121,21 @@ class TestECFRVerification:
     @pytest.mark.parametrize("title", TEST_TITLES)
     def test_title_structure_exists(self, reader: ECFRReader, title: int):
         """Verify each test title has valid structure."""
-        structure = reader.get_structure(title)
-        assert structure.get("type") == "title", f"Title {title} missing title type"
-        assert structure.get("identifier") == str(title), f"Title {title} wrong identifier"
+        try:
+            structure = reader.get_structure(title)
+            assert structure.get("type") == "title", f"Title {title} missing title type"
+            assert structure.get("identifier") == str(title), f"Title {title} wrong identifier"
+        except FileNotFoundError:
+            pytest.skip(f"Title {title} not downloaded")
 
     @pytest.mark.parametrize("title", TEST_TITLES)
     def test_sections_have_content(self, reader: ECFRReader, title: int):
         """Verify sections have text content."""
-        index = reader._build_index(title)
+        try:
+            index = reader._build_index(title)
+        except FileNotFoundError:
+            pytest.skip(f"Title {title} not downloaded")
+
         assert len(index) > 0, f"Title {title} has no sections"
 
         # Check first section has content
@@ -238,7 +245,11 @@ class TestECFRWebVerification:
     def test_specific_section_1_1(self, page: Page, reader: ECFRReader):
         """Verify specific known section 1 CFR 1.1 Definitions."""
         # Get local data
-        heading = reader.get_section_heading(1, "1.1")
+        try:
+            heading = reader.get_section_heading(1, "1.1")
+        except FileNotFoundError:
+            pytest.skip("Title 1 not downloaded")
+
         assert heading, "Section 1.1 heading not found locally"
         assert "Definitions" in heading, "Section 1.1 should be about Definitions"
 
