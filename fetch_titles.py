@@ -13,6 +13,9 @@ import aiohttp
 import requests
 from lxml import etree
 
+# Historical years to fetch (in addition to current data)
+HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
+
 
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
@@ -234,6 +237,15 @@ class ECFRDatabase:
         conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM agencies")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count > 0
+
+    def has_year_data(self, year: int) -> bool:
+        """Check if sections table has data for a specific year."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM sections WHERE year = ?", (year,))
         count = cursor.fetchone()[0]
         conn.close()
         return count > 0
@@ -1176,12 +1188,22 @@ class ECFRFetcher:
             except Exception as e:
                 return (year, title_num, False, str(e), 0, [])
 
+        # Filter out years already in the database
+        years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
+        if not years_to_fetch:
+            print("All historical years already in database, skipping fetch")
+            return 0
+
+        skipped = set(historical_years) - set(years_to_fetch)
+        if skipped:
+            print(f"Skipping years already in database: {sorted(skipped)}")
+
         all_success = True
         connector = aiohttp.TCPConnector(limit=50)
         timeout = aiohttp.ClientTimeout(total=300)
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            for year in historical_years:
+            for year in years_to_fetch:
                 output_subdir = self.output_dir / str(year)
                 output_subdir.mkdir(parents=True, exist_ok=True)
                 print(f"\n{'='*50}")
@@ -1220,13 +1242,13 @@ class ECFRFetcher:
         """Async fetch current and historical data in parallel.
 
         Args:
-            historical_years: List of years for historical data (default: [2024, 2020, 2015]).
+            historical_years: List of years for historical data (default: HISTORICAL_YEARS).
 
         Returns:
             Exit code (0 for success, 1 for any failure).
         """
         if historical_years is None:
-            historical_years = [2024, 2020, 2015]
+            historical_years = HISTORICAL_YEARS
 
         # Run both fetches in parallel
         current_result, historical_result = await asyncio.gather(
@@ -1252,13 +1274,12 @@ if __name__ == "__main__":
         exit_code = fetcher.fetch_current()
     elif "--historical" in sys.argv:
         # Fetch only historical data
-        historical_years = [2024, 2020, 2015]
         title_nums = None
         if "--title" in sys.argv:
             idx = sys.argv.index("--title")
             if idx + 1 < len(sys.argv):
                 title_nums = [int(sys.argv[idx + 1])]
-        exit_code = fetcher.fetch_historical(historical_years, title_nums)
+        exit_code = fetcher.fetch_historical(HISTORICAL_YEARS, title_nums)
     else:
         # Fetch both current and historical in parallel
         exit_code = fetcher.fetch_all()
