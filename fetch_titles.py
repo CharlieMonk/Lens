@@ -77,30 +77,66 @@ class ECFRDatabase:
             )
         """)
 
+        # Check if sections table exists and needs migration
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
+        table_exists = cursor.fetchone() is not None
+
+        if table_exists:
+            # Check if year column exists
+            cursor.execute("PRAGMA table_info(sections)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "year" not in columns:
+                # Migrate: add year column by recreating table
+                cursor.execute("ALTER TABLE sections RENAME TO sections_old")
+                cursor.execute("""
+                    CREATE TABLE sections (
+                        year INTEGER NOT NULL DEFAULT 0,
+                        title INTEGER NOT NULL,
+                        subtitle TEXT NOT NULL DEFAULT '',
+                        chapter TEXT NOT NULL DEFAULT '',
+                        subchapter TEXT NOT NULL DEFAULT '',
+                        part TEXT NOT NULL DEFAULT '',
+                        subpart TEXT NOT NULL DEFAULT '',
+                        section TEXT NOT NULL DEFAULT '',
+                        heading TEXT NOT NULL DEFAULT '',
+                        text TEXT NOT NULL DEFAULT '',
+                        word_count INTEGER NOT NULL,
+                        PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section)
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO sections (year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
+                    SELECT 0, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count
+                    FROM sections_old
+                """)
+                cursor.execute("DROP TABLE sections_old")
+                conn.commit()
+        else:
+            cursor.execute("""
+                CREATE TABLE sections (
+                    year INTEGER NOT NULL DEFAULT 0,
+                    title INTEGER NOT NULL,
+                    subtitle TEXT NOT NULL DEFAULT '',
+                    chapter TEXT NOT NULL DEFAULT '',
+                    subchapter TEXT NOT NULL DEFAULT '',
+                    part TEXT NOT NULL DEFAULT '',
+                    subpart TEXT NOT NULL DEFAULT '',
+                    section TEXT NOT NULL DEFAULT '',
+                    heading TEXT NOT NULL DEFAULT '',
+                    text TEXT NOT NULL DEFAULT '',
+                    word_count INTEGER NOT NULL,
+                    PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section)
+                )
+            """)
+
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS sections (
-                title INTEGER NOT NULL,
-                subtitle TEXT NOT NULL DEFAULT '',
-                chapter TEXT NOT NULL DEFAULT '',
-                subchapter TEXT NOT NULL DEFAULT '',
-                part TEXT NOT NULL DEFAULT '',
-                subpart TEXT NOT NULL DEFAULT '',
-                section TEXT NOT NULL DEFAULT '',
-                heading TEXT NOT NULL DEFAULT '',
-                text TEXT NOT NULL DEFAULT '',
-                word_count INTEGER NOT NULL,
-                PRIMARY KEY (title, subtitle, chapter, subchapter, part, subpart, section)
-            )
+            CREATE INDEX IF NOT EXISTS idx_sections_year_title
+            ON sections(year, title)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_sections_title
-            ON sections(title)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_sections_title_section
-            ON sections(title, section)
+            CREATE INDEX IF NOT EXISTS idx_sections_year_title_section
+            ON sections(year, title, section)
         """)
 
         cursor.execute("""
@@ -309,12 +345,13 @@ class ECFRDatabase:
         conn.commit()
         conn.close()
 
-    def save_sections(self, sections: list[dict]) -> None:
+    def save_sections(self, sections: list[dict], year: int = 0) -> None:
         """Save section data to the database.
 
         Args:
             sections: List of dicts with keys: title, subtitle, chapter, subchapter,
                      part, subpart, section, heading, text, word_count.
+            year: Year for historical data (0 = current).
         """
         if not sections:
             return
@@ -325,9 +362,10 @@ class ECFRDatabase:
         for s in sections:
             cursor.execute("""
                 INSERT OR REPLACE INTO sections
-                (title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                year,
                 int(s.get("title", 0)),
                 s.get("subtitle") or "",
                 s.get("chapter") or "",
@@ -662,6 +700,8 @@ class MarkdownConverter:
             # When entering a new section, finalize previous and start new
             if elem_type == "SECTION":
                 finalize_section()
+                # Strip § symbol to match markdown parser format (e.g., "§ 1.1" -> "1.1")
+                section_num = elem_n.lstrip("§ ").strip()
                 current_section[0] = {
                     "title": new_context.get("title") or "",
                     "subtitle": new_context.get("subtitle") or "",
@@ -669,7 +709,7 @@ class MarkdownConverter:
                     "subchapter": new_context.get("subchapter") or "",
                     "part": new_context.get("part") or "",
                     "subpart": new_context.get("subpart") or "",
-                    "section": elem_n,
+                    "section": section_num,
                     "heading": "",
                     "_text_parts": [],
                 }
@@ -820,6 +860,8 @@ class MarkdownConverter:
                     # When entering a new section, finalize previous and start new
                     if elem_type == "SECTION":
                         finalize_section()
+                        # Strip § symbol to match markdown parser format (e.g., "§ 1.1" -> "1.1")
+                        section_num = elem_n.lstrip("§ ").strip()
                         current_section[0] = {
                             "title": new_context.get("title") or "",
                             "subtitle": new_context.get("subtitle") or "",
@@ -827,7 +869,7 @@ class MarkdownConverter:
                             "subchapter": new_context.get("subchapter") or "",
                             "part": new_context.get("part") or "",
                             "subpart": new_context.get("subpart") or "",
-                            "section": elem_n,
+                            "section": section_num,
                             "heading": "",
                             "_text_parts": [],
                         }
@@ -1106,7 +1148,7 @@ class ECFRFetcher:
             output_file = output_subdir / f"title_{title_num}.md"
 
             if self._is_file_fresh(output_file):
-                return (year, title_num, True, "cached", 0)
+                return (year, title_num, True, "cached", 0, [])
 
             base = f"https://www.govinfo.gov/bulkdata/CFR/{year}/title-{title_num}"
 
@@ -1126,13 +1168,13 @@ class ECFRFetcher:
             xml_chunks = [data for vol, data in sorted(results) if data is not None]
 
             if not xml_chunks:
-                return (year, title_num, False, f"no data for {year}", 0)
+                return (year, title_num, False, f"no data for {year}", 0, [])
 
             try:
-                size, _, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
-                return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} vols)", size)
+                size, sections, _ = converter.convert_chunks(xml_chunks, output_file, title_num)
+                return (year, title_num, True, f"{size:,} bytes ({len(xml_chunks)} vols)", size, sections)
             except Exception as e:
-                return (year, title_num, False, str(e), 0)
+                return (year, title_num, False, str(e), 0, [])
 
         all_success = True
         connector = aiohttp.TCPConnector(limit=50)
@@ -1156,11 +1198,13 @@ class ECFRFetcher:
                     if isinstance(result, Exception):
                         print(f"x Error: {result}")
                     else:
-                        yr, title_num, success, msg, _ = result
+                        yr, title_num, success, msg, _, sections = result
                         symbol = "+" if success else "x"
                         print(f"{symbol} Title {title_num}: {msg}")
                         if success:
                             success_count += 1
+                            if sections:
+                                self.db.save_sections(sections, year=yr)
 
                 print(f"Complete: {success_count}/{len(title_nums)} titles")
                 if success_count < len(title_nums):
