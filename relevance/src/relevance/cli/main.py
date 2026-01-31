@@ -82,7 +82,7 @@ def add_source_cmd(
 
 @app.command()
 def ingest(
-    all: bool = typer.Option(True, "--all"),
+    all: bool = typer.Option(True, "--all/--no-all"),
     agency: Optional[str] = typer.Option(None, "--agency"),
     offline: bool = typer.Option(False, "--offline"),
     fixtures: Optional[Path] = typer.Option(None, "--fixtures"),

@@ -25,4 +25,4 @@ def session():
 
 @pytest.fixture()
 def fixtures_path():
-    return Path("tests/fixtures")
+    return Path(__file__).resolve().parent / "fixtures"
