@@ -19,6 +19,42 @@
 
 {% include "components/year_selector.html" %}
 
+<article>
+    <header>
+        <strong>Section Text</strong>
+    </header>
+    <div class="section-text">
+        {{ section.text | safe }}
+    </div>
+    <footer class="section-nav">
+        {% if prev_section %}
+        <a href="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}" role="button" class="outline">
+            &larr; &sect; {{ prev_section }}
+        </a>
+        {% else %}
+        <span></span>
+        {% endif %}
+        {% if next_section %}
+        <a href="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}" role="button" class="outline">
+            &sect; {{ next_section }} &rarr;
+        </a>
+        {% endif %}
+    </footer>
+</article>
+
+<article>
+    <header>
+        <strong>Similar Sections</strong>
+    </header>
+    <div
+        hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
+        hx-trigger="revealed"
+        hx-swap="innerHTML"
+    >
+        <button aria-busy="true" class="outline">Loading similar sections...</button>
+    </div>
+</article>
+
 <div class="grid">
     <article>
         <header>
@@ -47,42 +83,6 @@
         </a>
     </article>
 </div>
-
-<article>
-    <header>
-        <strong>Similar Sections</strong>
-    </header>
-    <div
-        hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
-        hx-trigger="revealed"
-        hx-swap="innerHTML"
-    >
-        <button aria-busy="true" class="outline">Loading similar sections...</button>
-    </div>
-</article>
-
-<article>
-    <header>
-        <strong>Section Text</strong>
-    </header>
-    <div class="section-text">
-        {{ section.text | safe }}
-    </div>
-    <footer class="section-nav">
-        {% if prev_section %}
-        <a href="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}" role="button" class="outline">
-            &larr; &sect; {{ prev_section }}
-        </a>
-        {% else %}
-        <span></span>
-        {% endif %}
-        {% if next_section %}
-        <a href="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}" role="button" class="outline">
-            &sect; {{ next_section }} &rarr;
-        </a>
-        {% endif %}
-    </footer>
-</article>
 
 {% else %}
 <p>Section not found.</p>

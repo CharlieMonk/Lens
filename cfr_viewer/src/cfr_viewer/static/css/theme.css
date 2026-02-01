@@ -129,7 +129,9 @@ details li {
 
 /* Structure tree styling */
 .structure-tree {
-    margin-top: 1rem;
+    list-style: none;
+    padding-left: 0;
+    margin: 1rem 0 0 0;
 }
 
 .structure-tree details {
@@ -142,29 +144,30 @@ details li {
 
 .structure-list {
     list-style: none;
-    padding-left: 1.5rem;
+    padding-left: 0;
     margin: 0;
 }
 
-/* Indentation by depth - progressive indentation for hierarchy */
-.structure-list.depth-0 { padding-left: 0; }
-.structure-list.depth-1 { padding-left: 1.5rem; }
-.structure-list.depth-2 { padding-left: 1.5rem; }
-.structure-list.depth-3 { padding-left: 1.5rem; }
-.structure-list.depth-4 { padding-left: 1.5rem; }
-.structure-list.depth-5 { padding-left: 1.5rem; }
-
-/* Section links */
-.structure-list li {
+/* Structure items with depth-based indentation */
+.structure-item {
     padding: 0.3rem 0;
     border-bottom: 1px solid var(--pico-muted-border-color);
 }
 
-.structure-list li:last-child {
+.structure-item:last-child {
     border-bottom: none;
 }
 
-.structure-list a {
+/* Indentation by depth - progressive indentation for hierarchy */
+.structure-item.depth-0 { margin-left: 0; }
+.structure-item.depth-1 { margin-left: 1.5rem; }
+.structure-item.depth-2 { margin-left: 3rem; }
+.structure-item.depth-3 { margin-left: 4.5rem; }
+.structure-item.depth-4 { margin-left: 6rem; }
+.structure-item.depth-5 { margin-left: 7.5rem; }
+
+/* Section links */
+.structure-item a {
     text-decoration: none;
 }
 
@@ -175,20 +178,28 @@ details summary small {
 }
 
 /* Color coding for hierarchy levels */
-.structure-tree > details > summary strong {
+.structure-item.depth-0 > details > summary strong {
     color: var(--pico-primary);
 }
 
-.structure-list.depth-1 > details > summary strong {
+.structure-item.depth-1 > details > summary strong {
     color: #1565c0;
 }
 
-.structure-list.depth-2 > details > summary strong {
+.structure-item.depth-2 > details > summary strong {
     color: #2e7d32;
 }
 
-.structure-list.depth-3 > details > summary strong {
+.structure-item.depth-3 > details > summary strong {
     color: #6a1b9a;
+}
+
+.structure-item.depth-4 > details > summary strong {
+    color: #e65100;
+}
+
+.structure-item.depth-5 > details > summary strong {
+    color: #00695c;
 }
 
 /* Footer styling */
