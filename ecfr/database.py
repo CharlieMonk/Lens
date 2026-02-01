@@ -1,17 +1,20 @@
 """SQLite database operations for eCFR data."""
 
 import sqlite3
+import struct
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
 
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
+    def __init__(self, db_path: str | Path = "ecfr/ecfr_data/ecfr.db"):
+        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -93,6 +96,18 @@ class ECFRDatabase:
             )
         """)
 
+        # Create section embeddings table for vector similarity search
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS section_embeddings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                year INTEGER NOT NULL,
+                title INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                UNIQUE(year, title, section)
+            )
+        """)
+
     def _migrate_sections_table(self, cursor: sqlite3.Cursor, conn: sqlite3.Connection) -> None:
         """Handle sections table creation and migration."""
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
@@ -143,6 +158,7 @@ class ECFRDatabase:
             ("idx_cfr_agency", "cfr_references(agency_slug)"),
             ("idx_word_counts_agency", "agency_word_counts(agency_slug)"),
             ("idx_similarities_source", "section_similarities(year, title, section)"),
+            ("idx_embeddings_year_title", "section_embeddings(year, title)"),
         ]
         for name, columns in indexes:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {columns}")
@@ -360,15 +376,27 @@ class ECFRDatabase:
 
     # Similarity methods
 
-    def compute_similarities(self, title: int, year: int = 0, top_n: int = 5, max_sections: int = 2000) -> int:
-        """Compute TF-IDF cosine similarities for sections within a title.
+    def _get_embedding_model(self):
+        """Lazily load the sentence transformer model."""
+        if not hasattr(self, '_embedding_model'):
+            from sentence_transformers import SentenceTransformer
+            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        return self._embedding_model
 
-        Returns number of similarity pairs stored, or -1 if skipped.
+    def _embedding_to_blob(self, embedding: np.ndarray) -> bytes:
+        """Convert numpy array to binary blob."""
+        return struct.pack(f'{len(embedding)}f', *embedding.astype(np.float32))
+
+    def _blob_to_embedding(self, blob: bytes) -> np.ndarray:
+        """Convert binary blob back to numpy array."""
+        n_floats = len(blob) // 4
+        return np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
+
+    def compute_similarities(self, title: int, year: int = 0, top_n: int = 5) -> int:
+        """Compute vector embeddings and store in database for similarity search.
+
+        Returns number of embeddings stored.
         """
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import linear_kernel
-        import numpy as np
-
         with self._connection() as conn:
             cursor = conn.cursor()
 
@@ -381,55 +409,32 @@ class ECFRDatabase:
             if len(rows) < 2:
                 return 0
 
-            if len(rows) > max_sections:
-                return -1  # Signal skipped
-
             sections = [row[0] for row in rows]
             texts = [row[1] for row in rows]
 
-            vectorizer = TfidfVectorizer(
-                max_features=1000,
-                stop_words='english',
-                min_df=2,
-                max_df=0.95
-            )
+            # Generate embeddings using sentence-transformers
+            model = self._get_embedding_model()
+            # Truncate long texts to avoid memory issues
+            truncated_texts = [t[:10000] if len(t) > 10000 else t for t in texts]
+            embeddings = model.encode(truncated_texts, show_progress_bar=False, normalize_embeddings=True)
 
-            try:
-                tfidf_matrix = vectorizer.fit_transform(texts)
-            except ValueError:
-                return 0
-
+            # Clear old embeddings for this title/year
             cursor.execute("""
-                DELETE FROM section_similarities
-                WHERE year = ? AND title = ?
+                DELETE FROM section_embeddings WHERE year = ? AND title = ?
             """, (year, title))
+            conn.commit()
 
+            # Insert new embeddings
             count = 0
-            batch_size = 500
-            n_sections = len(sections)
+            for section, embedding in zip(sections, embeddings):
+                vec_binary = self._embedding_to_blob(embedding)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding)
+                    VALUES (?, ?, ?, ?)
+                """, (year, title, section, vec_binary))
+                count += 1
 
-            for batch_start in range(0, n_sections, batch_size):
-                batch_end = min(batch_start + batch_size, n_sections)
-                batch_vectors = tfidf_matrix[batch_start:batch_end]
-                similarities = linear_kernel(batch_vectors, tfidf_matrix)
-
-                for i, row_idx in enumerate(range(batch_start, batch_end)):
-                    section = sections[row_idx]
-                    sim_scores = similarities[i].copy()
-                    sim_scores[row_idx] = -1  # Exclude self
-
-                    top_indices = np.argsort(sim_scores)[-top_n:][::-1]
-
-                    for j in top_indices:
-                        if sim_scores[j] > 0.1:
-                            cursor.execute("""
-                                INSERT OR REPLACE INTO section_similarities
-                                (year, title, section, similar_title, similar_section, similarity)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (year, title, section, title, sections[j], float(sim_scores[j])))
-                            count += 1
-
-                conn.commit()
+            conn.commit()
 
         return count
 
@@ -686,31 +691,51 @@ class ECFRDatabase:
         limit: int = 10,
         min_similarity: float = 0.1,
     ) -> list[dict]:
-        """Find sections similar to a given section based on TF-IDF cosine similarity."""
+        """Find sections similar to a given section using vector similarity search."""
         with self._connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                SELECT ss.similar_title, ss.similar_section, ss.similarity, s.heading
-                FROM section_similarities ss
-                LEFT JOIN sections s
-                    ON ss.year = s.year
-                    AND ss.similar_title = s.title
-                    AND ss.similar_section = s.section
-                WHERE ss.year = ? AND ss.title = ? AND ss.section = ?
-                    AND ss.similarity >= ?
-                ORDER BY ss.similarity DESC
-                LIMIT ?
-            ''', (year, title, section, min_similarity, limit))
 
-            return [
-                {
-                    "title": row[0],
-                    "section": row[1],
-                    "similarity": row[2],
-                    "heading": row[3],
-                }
-                for row in cursor.fetchall()
-            ]
+            # Get the embedding for the query section
+            cursor.execute("""
+                SELECT embedding FROM section_embeddings
+                WHERE year = ? AND title = ? AND section = ?
+            """, (year, title, section))
+            row = cursor.fetchone()
+            if not row:
+                return []
+
+            query_embedding = self._blob_to_embedding(row[0])
+
+            # Get all embeddings for this year (for cross-title search) or just this title
+            cursor.execute("""
+                SELECT se.title, se.section, se.embedding, s.heading
+                FROM section_embeddings se
+                LEFT JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
+                WHERE se.year = ?
+            """, (year,))
+
+            results = []
+            for row in cursor.fetchall():
+                sim_title, sim_section, embedding_blob, heading = row
+                # Skip self
+                if sim_title == title and sim_section == section:
+                    continue
+
+                embedding = self._blob_to_embedding(embedding_blob)
+                # Cosine similarity (embeddings are already normalized)
+                similarity = float(np.dot(query_embedding, embedding))
+
+                if similarity >= min_similarity:
+                    results.append({
+                        "title": sim_title,
+                        "section": sim_section,
+                        "similarity": similarity,
+                        "heading": heading,
+                    })
+
+            # Sort by similarity descending and limit
+            results.sort(key=lambda x: x["similarity"], reverse=True)
+            return results[:limit]
 
     def get_most_similar_pairs(
         self,
@@ -842,3 +867,32 @@ class ECFRDatabase:
                 "avg_similarity": row[5],
                 "max_similarity": row[6],
             }
+
+    # Aliases for backwards compatibility with ECFRReader interface
+
+    def list_titles(self, year: int = 0) -> list[int]:
+        """Alias for list_section_titles."""
+        return self.list_section_titles(year)
+
+    def get_word_counts(
+        self,
+        title: int,
+        chapter: str = None,
+        subchapter: str = None,
+        part: str = None,
+        subpart: str = None,
+        year: int = 0,
+    ) -> dict:
+        """Alias for get_section_word_counts."""
+        return self.get_section_word_counts(
+            title=title,
+            chapter=chapter,
+            subchapter=subchapter,
+            part=part,
+            subpart=subpart,
+            year=year,
+        )
+
+    def get_total_words(self, title: int, year: int = 0) -> int:
+        """Alias for get_total_section_words."""
+        return self.get_total_section_words(title, year=year)

@@ -1,12 +1,11 @@
-"""Tests for ecfr/reader.py."""
+"""Tests for ecfr/database.py reader interface (backwards compatible with ECFRReader)."""
 
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from ecfr.database import ECFRDatabase
-from ecfr.reader import ECFRReader
+from ecfr import ECFRDatabase, ECFRReader
 
 
 @pytest.fixture
@@ -58,16 +57,16 @@ def temp_db_with_data():
         db.save_sections(sections, year=0)
         db.compute_similarities(title=1, year=0)
 
-        yield ECFRReader(db_path=str(db_path))
+        yield ECFRDatabase(str(db_path))
 
 
 class TestECFRReaderInit:
-    """Tests for reader initialization."""
+    """Tests for database/reader initialization."""
 
     def test_default_path(self):
         """Default path is ecfr/ecfr_data/ecfr.db."""
-        reader = ECFRReader()
-        assert "ecfr.db" in str(reader._db.db_path)
+        db = ECFRDatabase()
+        assert "ecfr.db" in str(db.db_path)
 
     def test_custom_path(self):
         """Custom path is accepted."""
@@ -75,8 +74,12 @@ class TestECFRReaderInit:
             db_path = Path(tmpdir) / "custom.db"
             ECFRDatabase(db_path)  # Create the database
 
-            reader = ECFRReader(db_path=str(db_path))
-            assert reader._db.db_path == db_path
+            db = ECFRDatabase(str(db_path))
+            assert db.db_path == db_path
+
+    def test_ecfr_reader_alias(self):
+        """ECFRReader is an alias for ECFRDatabase."""
+        assert ECFRReader is ECFRDatabase
 
 
 class TestECFRReaderListMethods:
@@ -284,14 +287,3 @@ class TestECFRReaderSimilarity:
         assert "titles_with_similarities" in stats
         assert "distribution" in stats
         assert "avg_similarity" in stats
-
-
-class TestECFRReaderDelegation:
-    """Tests to verify reader delegates to database."""
-
-    def test_reader_uses_database(self, temp_db_with_data):
-        """Reader methods call database methods."""
-        # This is implicitly tested by all other tests,
-        # but we can verify the internal structure
-        assert hasattr(temp_db_with_data, '_db')
-        assert isinstance(temp_db_with_data._db, ECFRDatabase)

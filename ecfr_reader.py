@@ -1,5 +1,8 @@
-"""Backwards compatibility shim - use ecfr.ECFRReader instead."""
+"""Backwards compatibility shim - use ecfr.ECFRDatabase instead."""
 
-from ecfr.reader import ECFRReader
+from ecfr import ECFRDatabase
 
-__all__ = ["ECFRReader"]
+# Backwards compatibility alias
+ECFRReader = ECFRDatabase
+
+__all__ = ["ECFRReader", "ECFRDatabase"]
