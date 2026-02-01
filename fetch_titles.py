@@ -14,7 +14,7 @@ import time
 from ecfr import ECFRFetcher, HISTORICAL_YEARS
 
 # Re-export classes for backwards compatibility
-from ecfr import ECFRClient, ECFRDatabase, MarkdownConverter
+from ecfr import ECFRClient, ECFRDatabase, XMLExtractor
 
 
 def main():
