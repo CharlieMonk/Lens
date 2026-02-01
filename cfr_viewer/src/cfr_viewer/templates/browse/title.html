@@ -31,7 +31,7 @@
             <span class="reserved-label">
                 {% if node.type == 'subtitle' %}{{ node.identifier }}
                 {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
                 {% elif node.type == 'part' %}Part {{ node.identifier }}
                 {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
                 {% endif %}
@@ -45,7 +45,7 @@
                     <strong>
                         {% if node.type == 'subtitle' %}{{ node.identifier }}
                         {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                        {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                        {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
                         {% elif node.type == 'part' %}Part {{ node.identifier }}
                         {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
                         {% endif %}
