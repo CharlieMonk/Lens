@@ -465,38 +465,31 @@ class ECFRDatabase:
         return results
 
     def get_structure(self, title: int, year: int = 0) -> dict:
-        """Return hierarchy tree for a title with section headings."""
+        """Return full hierarchy tree for a title: Subtitle → Chapter → Subchapter → Part → Subpart → Section."""
         rows = self._query(
-            "SELECT part, section, heading FROM sections WHERE year = ? AND title = ?",
+            "SELECT subtitle, chapter, subchapter, part, subpart, section, heading FROM sections WHERE year = ? AND title = ?",
             (year, title)
         )
         if not rows:
             return {}
 
-        parts = {}
-        for part, section, heading in rows:
-            if not part:
-                continue
-            if part not in parts:
-                parts[part] = {"type": "part", "identifier": part, "children": []}
-            if section:
-                parts[part]["children"].append({
-                    "type": "section",
-                    "identifier": section,
-                    "heading": heading or "",
-                })
+        import re
 
-        # Sort parts numerically (handle mixed numeric/string identifiers)
-        def part_sort_key(p):
+        def sort_key(identifier):
+            """Sort key that handles mixed numeric/alpha identifiers."""
+            if not identifier:
+                return (2, 0, "")
             try:
-                return (0, int(p["identifier"]))
+                return (0, int(identifier), "")
             except ValueError:
-                return (1, p["identifier"])
+                # Handle cases like "15a", "16A" - extract leading number
+                match = re.match(r'^(\d+)', identifier)
+                if match:
+                    return (0, int(match.group(1)), identifier)
+                return (1, 0, identifier)
 
-        sorted_parts = sorted(parts.values(), key=part_sort_key)
-
-        # Sort sections within each part (handle mixed numeric/alpha identifiers)
         def section_sort_key(s):
+            """Sort sections like 1.1, 1.2, 1.10, 2.1."""
             result = []
             for p in s["identifier"].split("."):
                 try:
@@ -505,11 +498,174 @@ class ECFRDatabase:
                     result.append((1, 0, p))
             return result
 
-        for part in sorted_parts:
-            part["children"].sort(key=section_sort_key)
-            part["section_count"] = len(part["children"])
+        # Build nested structure: subtitles → chapters → subchapters → parts → subparts → sections
+        subtitles = {}
 
-        return {"type": "title", "identifier": str(title), "children": sorted_parts}
+        for subtitle, chapter, subchapter, part, subpart, section, heading in rows:
+            sub_key = subtitle or ""
+            ch_key = chapter or ""
+            subch_key = subchapter or ""
+            part_key = part or ""
+            subpart_key = subpart or ""
+
+            # Initialize subtitle
+            if sub_key not in subtitles:
+                subtitles[sub_key] = {
+                    "type": "subtitle",
+                    "identifier": subtitle or "",
+                    "chapters": {}
+                }
+
+            # Initialize chapter within subtitle
+            chapters = subtitles[sub_key]["chapters"]
+            if ch_key not in chapters:
+                chapters[ch_key] = {
+                    "type": "chapter",
+                    "identifier": chapter or "",
+                    "subchapters": {}
+                }
+
+            # Initialize subchapter within chapter
+            subchapters = chapters[ch_key]["subchapters"]
+            if subch_key not in subchapters:
+                subchapters[subch_key] = {
+                    "type": "subchapter",
+                    "identifier": subchapter or "",
+                    "parts": {}
+                }
+
+            # Initialize part within subchapter
+            parts = subchapters[subch_key]["parts"]
+            if part_key not in parts:
+                parts[part_key] = {
+                    "type": "part",
+                    "identifier": part or "",
+                    "subparts": {}
+                }
+
+            # Initialize subpart within part
+            subparts = parts[part_key]["subparts"]
+            if subpart_key not in subparts:
+                subparts[subpart_key] = {
+                    "type": "subpart",
+                    "identifier": subpart or "",
+                    "sections": []
+                }
+
+            # Add section
+            if section:
+                subparts[subpart_key]["sections"].append({
+                    "type": "section",
+                    "identifier": section,
+                    "heading": heading or "",
+                })
+
+        def build_part_children(part):
+            """Build children list for a part (subparts and sections)."""
+            part_children = []
+            part_section_count = 0
+            for subpart_key in sorted(part["subparts"].keys(), key=sort_key):
+                subpart = part["subparts"][subpart_key]
+                sections = sorted(subpart["sections"], key=section_sort_key)
+                subpart_section_count = len(sections)
+                part_section_count += subpart_section_count
+
+                if subpart["identifier"]:
+                    part_children.append({
+                        "type": "subpart",
+                        "identifier": subpart["identifier"],
+                        "children": sections,
+                        "section_count": subpart_section_count,
+                    })
+                else:
+                    part_children.extend(sections)
+            return part_children, part_section_count
+
+        def build_subchapter_children(subch):
+            """Build children list for a subchapter (parts)."""
+            subch_children = []
+            subch_section_count = 0
+            for part_key in sorted(subch["parts"].keys(), key=sort_key):
+                part = subch["parts"][part_key]
+                part_children, part_section_count = build_part_children(part)
+                if part["identifier"]:
+                    subch_children.append({
+                        "type": "part",
+                        "identifier": part["identifier"],
+                        "children": part_children,
+                        "section_count": part_section_count,
+                    })
+                    subch_section_count += part_section_count
+            return subch_children, subch_section_count
+
+        def build_chapter_children(ch):
+            """Build children list for a chapter (subchapters and parts)."""
+            ch_children = []
+            ch_section_count = 0
+            for subch_key in sorted(ch["subchapters"].keys(), key=sort_key):
+                subch = ch["subchapters"][subch_key]
+                subch_children, subch_section_count = build_subchapter_children(subch)
+
+                if subch["identifier"]:
+                    ch_children.append({
+                        "type": "subchapter",
+                        "identifier": subch["identifier"],
+                        "children": subch_children,
+                        "section_count": subch_section_count,
+                    })
+                    ch_section_count += subch_section_count
+                else:
+                    ch_children.extend(subch_children)
+                    ch_section_count += subch_section_count
+            return ch_children, ch_section_count
+
+        def build_subtitle_children(sub):
+            """Build children list for a subtitle (chapters)."""
+            sub_children = []
+            sub_section_count = 0
+            for ch_key in sorted(sub["chapters"].keys(), key=sort_key):
+                ch = sub["chapters"][ch_key]
+                ch_children, ch_section_count = build_chapter_children(ch)
+
+                if ch["identifier"]:
+                    sub_children.append({
+                        "type": "chapter",
+                        "identifier": ch["identifier"],
+                        "children": ch_children,
+                        "section_count": ch_section_count,
+                    })
+                    sub_section_count += ch_section_count
+                else:
+                    sub_children.extend(ch_children)
+                    sub_section_count += ch_section_count
+            return sub_children, sub_section_count
+
+        # Build the final structure
+        result_children = []
+        total_sections = 0
+
+        for sub_key in sorted(subtitles.keys(), key=sort_key):
+            sub = subtitles[sub_key]
+            sub_children, sub_section_count = build_subtitle_children(sub)
+
+            if sub["identifier"]:
+                result_children.append({
+                    "type": "subtitle",
+                    "identifier": sub["identifier"],
+                    "children": sub_children,
+                    "section_count": sub_section_count,
+                })
+                total_sections += sub_section_count
+            else:
+                result_children.extend(sub_children)
+                total_sections += sub_section_count
+
+        return {
+            "type": "title",
+            "identifier": str(title),
+            "children": result_children,
+            "section_count": total_sections,
+        }
 
     def get_word_counts(
         self,

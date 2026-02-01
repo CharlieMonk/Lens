@@ -127,44 +127,66 @@ details li {
     padding: 0.25rem 0;
 }
 
-/* Section list in title structure */
-.section-list {
-    list-style: none;
-    padding-left: 1rem;
+/* Structure tree styling */
+.structure-tree {
+    margin-top: 1rem;
 }
 
-.section-list li {
-    padding: 0.4rem 0;
+.structure-tree details {
+    margin-bottom: 0.25rem;
+}
+
+.structure-tree details[open] > summary {
+    margin-bottom: 0.25rem;
+}
+
+.structure-list {
+    list-style: none;
+    padding-left: 1.5rem;
+    margin: 0;
+}
+
+/* Indentation by depth */
+.structure-list.depth-0 { padding-left: 0; }
+.structure-list.depth-1 { padding-left: 1.25rem; }
+.structure-list.depth-2 { padding-left: 1.25rem; }
+.structure-list.depth-3 { padding-left: 1.25rem; }
+
+/* Section links */
+.structure-list li {
+    padding: 0.3rem 0;
     border-bottom: 1px solid var(--pico-muted-border-color);
 }
 
-.section-list li:last-child {
+.structure-list li:last-child {
     border-bottom: none;
 }
 
-.section-list a {
-    display: flex;
-    gap: 0.75rem;
+.structure-list a {
     text-decoration: none;
 }
 
-.section-list a strong {
-    white-space: nowrap;
-}
-
-.section-list a .secondary {
-    color: var(--pico-muted-color);
-    font-weight: normal;
-}
-
-.section-list a:hover .secondary {
-    color: var(--pico-primary-hover);
-}
-
-/* Part summary styling */
+/* Summary styling */
 details summary small {
     font-weight: normal;
     margin-left: 0.5rem;
+}
+
+/* Color coding for hierarchy levels */
+.structure-tree > details > summary strong {
+    color: var(--pico-primary);
+}
+
+.structure-list.depth-1 > details > summary strong {
+    color: #1565c0;
+}
+
+.structure-list.depth-2 > details > summary strong {
+    color: #2e7d32;
+}
+
+.structure-list.depth-3 > details > summary strong {
+    color: #6a1b9a;
 }
 
 /* Footer styling */

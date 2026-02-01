@@ -17,32 +17,46 @@
 
 {% include "components/year_selector.html" %}
 
+{# Recursive macro to render the hierarchy #}
+{% macro render_node(node, depth=0) %}
+    {% if node.type == 'section' %}
+        <li>
+            <a href="{{ url_for('browse.section', title_num=title_num, section=node.identifier, year=year) }}">
+                {% if node.heading %}{{ node.heading }}{% else %}&sect; {{ node.identifier }}{% endif %}
+            </a>
+        </li>
+    {% elif node.type in ['subtitle', 'chapter', 'subchapter', 'part', 'subpart'] %}
+        <details {% if depth == 0 %}open{% endif %}>
+            <summary>
+                <strong>
+                    {% if node.type == 'subtitle' %}{{ node.identifier }}
+                    {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
+                    {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                    {% elif node.type == 'part' %}Part {{ node.identifier }}
+                    {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
+                    {% endif %}
+                </strong>
+                <small class="secondary">({{ node.section_count }} section{{ 's' if node.section_count != 1 else '' }})</small>
+            </summary>
+            <ul class="structure-list depth-{{ depth }}">
+                {% for child in node.children %}
+                    {{ render_node(child, depth + 1) }}
+                {% endfor %}
+            </ul>
+        </details>
+    {% endif %}
+{% endmacro %}
+
 {% if structure and structure.children %}
 <article>
     <h2>Structure</h2>
-    <p class="secondary">{{ structure.children | length }} parts</p>
+    <p class="secondary">{{ structure.section_count }} sections</p>
 
-    {% for part in structure.children %}
-    <details>
-        <summary>
-            <strong>Part {{ part.identifier }}</strong>
-            <small class="secondary">({{ part.section_count }} section{{ 's' if part.section_count != 1 else '' }})</small>
-        </summary>
-        <ul class="section-list">
-            {% for section in part.children %}
-            <li>
-                <a href="{{ url_for('browse.section', title_num=title_num, section=section.identifier, year=year) }}">
-                    {% if section.heading %}
-                        {{ section.heading }}
-                    {% else %}
-                        &sect; {{ section.identifier }}
-                    {% endif %}
-                </a>
-            </li>
-            {% endfor %}
-        </ul>
-    </details>
-    {% endfor %}
+    <div class="structure-tree">
+        {% for node in structure.children %}
+            {{ render_node(node, 0) }}
+        {% endfor %}
+    </div>
 </article>
 {% else %}
 <p>No structure data available for this title.</p>
