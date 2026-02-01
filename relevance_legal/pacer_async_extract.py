@@ -52,32 +52,38 @@ class CourtListenerAsyncClient:
 
         backoff = 1
         while True:
-            async with self._request_sem:
-                async with self._session.get(url, params=params) as resp:
-                    if resp.status in (429, 500, 502, 503, 504):
-                        retry_after = resp.headers.get("Retry-After")
-                        wait_time = None
-                        if retry_after and retry_after.isdigit():
-                            wait_time = int(retry_after)
-                        else:
-                            try:
-                                detail = await resp.json()
-                                if isinstance(detail, dict) and "detail" in detail:
-                                    text = str(detail["detail"])
-                                    # e.g., "Expected available in 834 seconds."
-                                    for token in text.split():
-                                        if token.isdigit():
-                                            wait_time = int(token)
-                                            break
-                            except Exception:
-                                pass
-                        if wait_time is None:
-                            wait_time = backoff
-                            backoff = min(backoff * 2, 30)
-                        await asyncio.sleep(wait_time)
-                        continue
-                    resp.raise_for_status()
-                    return await resp.json()
+            try:
+                async with self._request_sem:
+                    async with self._session.get(url, params=params) as resp:
+                        if resp.status in (429, 500, 502, 503, 504):
+                            retry_after = resp.headers.get("Retry-After")
+                            wait_time = None
+                            if retry_after and retry_after.isdigit():
+                                wait_time = int(retry_after)
+                            else:
+                                try:
+                                    detail = await resp.json()
+                                    if isinstance(detail, dict) and "detail" in detail:
+                                        text = str(detail["detail"])
+                                        # e.g., "Expected available in 834 seconds."
+                                        for token in text.split():
+                                            if token.isdigit():
+                                                wait_time = int(token)
+                                                break
+                                except Exception:
+                                    pass
+                            if wait_time is None:
+                                wait_time = backoff
+                                backoff = min(backoff * 2, 30)
+                            await asyncio.sleep(wait_time)
+                            continue
+                        resp.raise_for_status()
+                        return await resp.json()
+            except (asyncio.TimeoutError, aiohttp.ClientError) as exc:
+                wait_time = backoff
+                backoff = min(backoff * 2, 30)
+                print(f"request error ({type(exc).__name__}): {exc}; retrying in {wait_time}s", file=sys.stderr)
+                await asyncio.sleep(wait_time)
 
     async def search_opinions(self, query: str, type_code: str = "o") -> List[SearchResult]:
         url = f"{self.base_url}/search/"
