@@ -17,6 +17,7 @@ class ECFRDatabase:
     def __init__(self, db_path: str | Path = "ecfr/ecfr_data/ecfr.db"):
         self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._tfidf_cache = {}  # Cache for TF-IDF matrices: (title, chapter) -> {matrix, sections, headings}
         self._init_schema()
 
     @contextmanager
@@ -1113,7 +1114,8 @@ class ECFRDatabase:
         """Find sections similar to a given section within the same chapter.
 
         Uses TF-IDF for fast similarity computation. Searches all sections in
-        the same chapter (which may span multiple parts).
+        the same chapter (which may span multiple parts). TF-IDF matrices are
+        cached per (title, chapter) for faster repeated lookups.
 
         For historical years, uses current year (year=0) data. Returns empty
         if the section doesn't exist in the current year.
@@ -1122,7 +1124,6 @@ class ECFRDatabase:
             Tuple of (similar_sections_list, max_similarity).
             max_similarity is the highest similarity score, or None if no similar sections.
         """
-        from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
 
         # Always use current year (year=0) for similarity
@@ -1138,36 +1139,51 @@ class ECFRDatabase:
             return [], None
 
         chapter = query_row[0]
+        cache_key = (title, chapter)
 
-        # Get all sections in the same chapter
-        rows = self._query("""
-            SELECT section, heading, text
-            FROM sections
-            WHERE year = ? AND title = ? AND chapter = ? AND text != ''
-        """, (query_year, title, chapter))
+        # Check cache or compute TF-IDF matrix
+        if cache_key not in self._tfidf_cache:
+            from sklearn.feature_extraction.text import TfidfVectorizer
 
-        if len(rows) < 2:
+            rows = self._query("""
+                SELECT section, heading, text
+                FROM sections
+                WHERE year = ? AND title = ? AND chapter = ? AND text != ''
+            """, (query_year, title, chapter))
+
+            if len(rows) < 2:
+                return [], None
+
+            sections = []
+            headings = {}
+            texts = []
+
+            for sec, heading, text in rows:
+                sections.append(sec)
+                headings[sec] = heading
+                texts.append(text)
+
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+            tfidf_matrix = vectorizer.fit_transform(texts)
+
+            self._tfidf_cache[cache_key] = {
+                "matrix": tfidf_matrix,
+                "sections": sections,
+                "headings": headings,
+            }
+
+        cached = self._tfidf_cache[cache_key]
+        sections = cached["sections"]
+        headings = cached["headings"]
+        tfidf_matrix = cached["matrix"]
+
+        # Find query section index
+        try:
+            query_idx = sections.index(section)
+        except ValueError:
             return [], None
 
-        # Build section data
-        sections = []
-        headings = {}
-        texts = []
-        query_idx = None
-
-        for i, (sec, heading, text) in enumerate(rows):
-            sections.append(sec)
-            headings[sec] = heading
-            texts.append(text)
-            if sec == section:
-                query_idx = i
-
-        if query_idx is None:
-            return [], None
-
-        # Compute TF-IDF and similarities
-        vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
-        tfidf_matrix = vectorizer.fit_transform(texts)
+        # Compute similarities
         similarities = cosine_similarity(tfidf_matrix[query_idx:query_idx+1], tfidf_matrix)[0]
 
         # Build results
