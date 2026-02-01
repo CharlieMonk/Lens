@@ -28,7 +28,7 @@
             <a href="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}"
                hx-get="{{ url_for('api.section_content', title_num=title_num, section=prev_section, year=year) }}"
                hx-target="#section-content"
-               hx-swap="innerHTML show:#section-layout:top"
+               hx-swap="innerHTML"
                hx-push-url="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}"
                role="button" class="outline">
                 &larr; &sect; {{ prev_section }}
@@ -40,7 +40,7 @@
             <a href="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}"
                hx-get="{{ url_for('api.section_content', title_num=title_num, section=next_section, year=year) }}"
                hx-target="#section-content"
-               hx-swap="innerHTML show:#section-layout:top"
+               hx-swap="innerHTML"
                hx-push-url="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}"
                role="button" class="outline">
                 &sect; {{ next_section }} &rarr;
