@@ -56,7 +56,7 @@
 
     <article class="similar-sections">
         <header>
-            <strong>Similar Sections</strong>
+            <strong>Similar Sections in Chapter</strong>
         </header>
         <div
             hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
@@ -67,24 +67,6 @@
         </div>
     </article>
 </div>
-
-<article>
-    <header>
-        <strong>Statistics</strong>
-    </header>
-    <dl>
-        <dt>Word Count</dt>
-        <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
-        {% if section.part %}
-        <dt>Part</dt>
-        <dd>{{ section.part }}</dd>
-        {% endif %}
-        {% if section.chapter %}
-        <dt>Chapter</dt>
-        <dd>{{ section.chapter }}</dd>
-        {% endif %}
-    </dl>
-</article>
 
 {% else %}
 <p>Section not found.</p>

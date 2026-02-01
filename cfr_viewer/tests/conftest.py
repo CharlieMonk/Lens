@@ -110,11 +110,11 @@ def test_db():
 
     cursor.execute("""
         INSERT INTO sections (year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
-        VALUES (0, 1, '', '', '', '1', '', '1.1', 'Purpose', 'This part establishes general provisions.', 6)
+        VALUES (0, 1, '', '', '', '1', '', '1.1', 'Purpose', 'This part establishes general provisions for administrative procedures and regulatory compliance.', 11)
     """)
     cursor.execute("""
         INSERT INTO sections (year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count)
-        VALUES (0, 1, '', '', '', '1', '', '1.2', 'Definitions', 'Terms used in this chapter.', 5)
+        VALUES (0, 1, '', '', '', '1', '', '1.2', 'Definitions', 'Terms used in this part for administrative procedures and regulatory standards.', 11)
     """)
 
     cursor.execute("""

@@ -31,7 +31,7 @@
             <span class="reserved-label">
                 {% if node.type == 'subtitle' %}{{ node.identifier }}
                 {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
                 {% elif node.type == 'part' %}Part {{ node.identifier }}
                 {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
                 {% endif %}
@@ -39,13 +39,13 @@
             <span class="reserved-tag">[Reserved]</span>
         </li>
         {% else %}
-        <li class="structure-item depth-{{ depth }}">
+        <li class="structure-item depth-{{ depth }}"{% if node.type == 'chapter' %} id="chapter-{{ node.identifier }}"{% endif %}>
             <details {% if depth == 0 %}open{% endif %}>
                 <summary>
                     <strong>
                         {% if node.type == 'subtitle' %}{{ node.identifier }}
                         {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                        {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                        {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
                         {% elif node.type == 'part' %}Part {{ node.identifier }}
                         {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
                         {% endif %}

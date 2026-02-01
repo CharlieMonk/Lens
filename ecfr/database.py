@@ -1,15 +1,10 @@
 """SQLite database operations for eCFR data."""
 
-import hashlib
 import sqlite3
-import struct
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-
-import numpy as np
-
 
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
@@ -22,6 +17,7 @@ class ECFRDatabase:
     def __init__(self, db_path: str | Path = "ecfr/ecfr_data/ecfr.db"):
         self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._tfidf_cache = {}  # Cache for TF-IDF matrices: (title, chapter) -> {matrix, sections, headings}
         self._init_schema()
 
     @contextmanager
@@ -66,7 +62,6 @@ class ECFRDatabase:
             cursor = conn.cursor()
             self._create_tables(cursor)
             self._migrate_sections_table(cursor, conn)
-            self._migrate_embeddings_table(cursor)
             self._create_indexes(cursor)
             conn.commit()
 
@@ -119,18 +114,6 @@ class ECFRDatabase:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS section_embeddings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                year INTEGER NOT NULL,
-                title INTEGER NOT NULL,
-                section TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                text_hash TEXT,
-                UNIQUE(year, title, section)
-            )
-        """)
-
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS title_structures (
                 title INTEGER NOT NULL,
                 year INTEGER NOT NULL,
@@ -160,17 +143,6 @@ class ECFRDatabase:
         else:
             self._create_sections_table(cursor)
 
-    def _migrate_embeddings_table(self, cursor: sqlite3.Cursor) -> None:
-        """Add text_hash column to section_embeddings if missing."""
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='section_embeddings'")
-        if cursor.fetchone() is None:
-            return
-
-        cursor.execute("PRAGMA table_info(section_embeddings)")
-        columns = {row[1] for row in cursor.fetchall()}
-        if "text_hash" not in columns:
-            cursor.execute("ALTER TABLE section_embeddings ADD COLUMN text_hash TEXT")
-
     def _create_sections_table(self, cursor: sqlite3.Cursor) -> None:
         """Create the sections table."""
         cursor.execute("""
@@ -198,7 +170,6 @@ class ECFRDatabase:
             ("idx_cfr_title_chapter", "cfr_references(title, chapter)"),
             ("idx_cfr_agency", "cfr_references(agency_slug)"),
             ("idx_word_counts_agency", "agency_word_counts(agency_slug)"),
-            ("idx_embeddings_year_title", "section_embeddings(year, title)"),
         ]
         for name, columns in indexes:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {columns}")
@@ -288,7 +259,6 @@ class ECFRDatabase:
     def delete_title_sections(self, title: int, year: int = 0) -> int:
         """Delete all sections for a specific title and year.
 
-        Also deletes associated embeddings.
         Returns number of sections deleted.
         """
         count = self._query_one(
@@ -296,17 +266,10 @@ class ECFRDatabase:
             (year, title)
         )[0]
 
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM sections WHERE year = ? AND title = ?",
-                (year, title)
-            )
-            cursor.execute(
-                "DELETE FROM section_embeddings WHERE year = ? AND title = ?",
-                (year, title)
-            )
-            conn.commit()
+        self._execute(
+            "DELETE FROM sections WHERE year = ? AND title = ?",
+            (year, title)
+        )
 
         return count
 
@@ -423,6 +386,34 @@ class ECFRDatabase:
                 totals[parent_slug] = totals.get(parent_slug, 0) + direct_counts[child_slug]
 
         return totals
+
+    def get_agency_chapters(self, agency_slug: str) -> list[dict]:
+        """Get CFR chapters associated with an agency.
+
+        Returns list of dicts with title, chapter, and title name.
+        """
+        rows = self._query("""
+            SELECT r.title, COALESCE(r.chapter, r.subtitle, r.subchapter) as chapter, t.name
+            FROM cfr_references r
+            JOIN titles t ON r.title = t.number
+            WHERE r.agency_slug = ?
+            ORDER BY r.title, chapter
+        """, (agency_slug,))
+
+        return [
+            {"title": row[0], "chapter": row[1], "title_name": row[2]}
+            for row in rows if row[1]
+        ]
+
+    def get_agency(self, slug: str) -> dict | None:
+        """Get agency details by slug."""
+        row = self._query_one(
+            "SELECT slug, name, short_name FROM agencies WHERE slug = ?",
+            (slug,)
+        )
+        if row:
+            return {"slug": row[0], "name": row[1], "short_name": row[2]}
+        return None
 
     # Sections - Write
 
@@ -866,10 +857,18 @@ class ECFRDatabase:
                 return 0
 
         def build_part_children(part, sub_key, ch_key, subch_key):
-            """Build children list for a part (subparts and sections)."""
-            part_children = []
+            """Build children list for a part (subparts and sections).
+
+            Orphaned sections (no subpart) are interleaved with named subparts
+            based on section numbers. Named subparts maintain alphabetical order.
+            """
             part_section_count = 0
             part_word_count = 0
+
+            # Collect named subparts and orphaned sections separately
+            named_subparts = []
+            orphaned_sections = []
+
             for subpart_key in sorted(part["subparts"].keys(), key=sort_key):
                 subpart = part["subparts"][subpart_key]
                 sections = sorted(subpart["sections"], key=section_sort_key)
@@ -879,15 +878,46 @@ class ECFRDatabase:
                 part_word_count += subpart_wc
 
                 if subpart["identifier"]:
-                    part_children.append({
+                    named_subparts.append({
                         "type": "subpart",
                         "identifier": subpart["identifier"],
                         "children": sections,
                         "section_count": subpart_section_count,
                         "word_count": subpart_wc,
+                        "_min_section_key": section_sort_key(sections[0]) if sections else None,
                     })
                 else:
-                    part_children.extend(sections)
+                    orphaned_sections.extend(sections)
+
+            # Interleave orphaned sections with named subparts
+            if not named_subparts:
+                part_children = orphaned_sections
+            elif not orphaned_sections:
+                # Remove internal sort keys
+                for sp in named_subparts:
+                    sp.pop("_min_section_key", None)
+                part_children = named_subparts
+            else:
+                # Place orphaned sections before the first subpart whose
+                # min section number is greater than the orphan's section number
+                part_children = []
+                orphan_idx = 0
+
+                for sp in named_subparts:
+                    sp_min = sp.pop("_min_section_key", None)
+                    # Add orphans that come before this subpart
+                    while orphan_idx < len(orphaned_sections):
+                        orphan_key = section_sort_key(orphaned_sections[orphan_idx])
+                        if sp_min is not None and orphan_key < sp_min:
+                            part_children.append(orphaned_sections[orphan_idx])
+                            orphan_idx += 1
+                        else:
+                            break
+                    part_children.append(sp)
+
+                # Add remaining orphans at the end
+                part_children.extend(orphaned_sections[orphan_idx:])
+
             return part_children, part_section_count, part_word_count
 
         def build_subchapter_children(subch, sub_key, ch_key):
@@ -1071,165 +1101,7 @@ class ECFRDatabase:
 
         return result
 
-    # Embeddings and Similarity
-
-    def has_embeddings(self, title: int = None, year: int = 0) -> bool:
-        """Check if embeddings exist for a given year and optionally title."""
-        if title is not None:
-            return self._query_one(
-                "SELECT COUNT(*) FROM section_embeddings WHERE year = ? AND title = ?",
-                (year, title)
-            )[0] > 0
-        return self._query_one(
-            "SELECT COUNT(*) FROM section_embeddings WHERE year = ?",
-            (year,)
-        )[0] > 0
-
-    def _get_embedding_model(self):
-        """Lazily load the sentence transformer model."""
-        if not hasattr(self, '_embedding_model'):
-            from sentence_transformers import SentenceTransformer
-            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return self._embedding_model
-
-    def _embedding_to_blob(self, embedding: np.ndarray) -> bytes:
-        """Convert numpy array to binary blob."""
-        return struct.pack(f'{len(embedding)}f', *embedding.astype(np.float32))
-
-    def _blob_to_embedding(self, blob: bytes) -> np.ndarray:
-        """Convert binary blob back to numpy array."""
-        n_floats = len(blob) // 4
-        return np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
-
-    def _get_text_embedding_lookup(self) -> dict[str, np.ndarray]:
-        """Build a lookup of truncated text -> embedding from all existing embeddings.
-
-        Used to avoid recomputing embeddings for identical text across the database.
-        """
-        rows = self._query("""
-            SELECT s.text, se.embedding
-            FROM section_embeddings se
-            JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
-            WHERE s.text != ''
-        """)
-
-        lookup = {}
-        for text, embedding_blob in rows:
-            truncated = text[:10000]
-            if truncated not in lookup:
-                lookup[truncated] = self._blob_to_embedding(embedding_blob)
-        return lookup
-
-    @staticmethod
-    def _compute_text_hash(text: str) -> str:
-        """Compute a hash of the text content for change detection."""
-        return hashlib.md5(text[:10000].encode('utf-8', errors='replace')).hexdigest()
-
-    def _get_sections_needing_embeddings(self, title: int, year: int = 0) -> list[tuple[str, str]]:
-        """Get sections that need embeddings computed.
-
-        Includes sections that:
-        - Don't have embeddings yet
-        - Have embeddings but text has changed (text_hash mismatch)
-
-        Returns list of (section, text) tuples.
-        """
-        # Get sections without embeddings
-        missing = self._query("""
-            SELECT s.section, s.text
-            FROM sections s
-            LEFT JOIN section_embeddings se
-                ON s.year = se.year AND s.title = se.title AND s.section = se.section
-            WHERE s.year = ? AND s.title = ? AND s.text != '' AND se.id IS NULL
-        """, (year, title))
-
-        # Get sections with stale embeddings (text changed since embedding was computed)
-        stale = self._query("""
-            SELECT s.section, s.text
-            FROM sections s
-            JOIN section_embeddings se
-                ON s.year = se.year AND s.title = se.title AND s.section = se.section
-            WHERE s.year = ? AND s.title = ? AND s.text != ''
-                AND (se.text_hash IS NULL OR se.text_hash != ?)
-        """, (year, title, ''))  # Placeholder - we'll filter in Python
-
-        # Filter stale in Python since we need to compute hash
-        stale_filtered = []
-        for section, text in stale:
-            current_hash = self._compute_text_hash(text)
-            stored_hash = self._query_one("""
-                SELECT text_hash FROM section_embeddings
-                WHERE year = ? AND title = ? AND section = ?
-            """, (year, title, section))
-            if not stored_hash or stored_hash[0] != current_hash:
-                stale_filtered.append((section, text))
-
-        return list(missing) + stale_filtered
-
-    def _get_sections_without_embeddings(self, title: int, year: int = 0) -> list[tuple[str, str]]:
-        """Get sections that don't have embeddings yet (legacy method).
-
-        Returns list of (section, text) tuples.
-        """
-        return self._get_sections_needing_embeddings(title, year)
-
-    def compute_similarities(self, title: int, year: int = 0, top_n: int = 5) -> int:
-        """Compute vector embeddings for sections missing them.
-
-        Only computes embeddings for sections that don't already have one.
-        Reuses existing embeddings for identical text values to avoid recomputation.
-
-        Returns number of new embeddings stored.
-        """
-        # Get only sections that need embeddings
-        rows = self._get_sections_without_embeddings(title, year)
-        if not rows:
-            return 0
-
-        sections = [row[0] for row in rows]
-        texts = [row[1][:10000] for row in rows]  # Truncate to avoid memory issues
-
-        # Build lookup of existing embeddings by text content
-        text_to_embedding = self._get_text_embedding_lookup()
-
-        # Separate texts that need computation from those we can reuse
-        texts_to_encode = []
-        text_indices = []
-
-        for i, text in enumerate(texts):
-            if text not in text_to_embedding:
-                texts_to_encode.append(text)
-                text_indices.append(i)
-
-        # Compute embeddings only for texts not in lookup
-        embeddings = [None] * len(texts)
-
-        if texts_to_encode:
-            model = self._get_embedding_model()
-            new_embeddings = model.encode(texts_to_encode, show_progress_bar=False, normalize_embeddings=True)
-
-            # Place new embeddings in their positions and add to lookup
-            for idx, embedding in zip(text_indices, new_embeddings):
-                embeddings[idx] = embedding
-                text_to_embedding[texts[idx]] = embedding
-
-        # Fill in reused embeddings from lookup
-        for i, text in enumerate(texts):
-            if embeddings[i] is None:
-                embeddings[i] = text_to_embedding[text]
-
-        # Insert embeddings with text_hash for change tracking
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            for i, (section, embedding) in enumerate(zip(sections, embeddings)):
-                text_hash = self._compute_text_hash(texts[i])
-                cursor.execute(
-                    "INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding, text_hash) VALUES (?, ?, ?, ?, ?)",
-                    (year, title, section, self._embedding_to_blob(embedding), text_hash)
-                )
-            conn.commit()
-
-        return len(sections)
+    # Similarity Search (TF-IDF based, computed on-demand per chapter)
 
     def get_similar_sections(
         self,
@@ -1238,37 +1110,95 @@ class ECFRDatabase:
         year: int = 0,
         limit: int = 10,
         min_similarity: float = 0.1,
-    ) -> list[dict]:
-        """Find sections similar to a given section using vector similarity search."""
-        row = self._query_one(
-            "SELECT embedding FROM section_embeddings WHERE year = ? AND title = ? AND section = ?",
-            (year, title, section)
-        )
-        if not row:
-            return []
+    ) -> tuple[list[dict], float | None]:
+        """Find sections similar to a given section within the same chapter.
 
-        query_embedding = self._blob_to_embedding(row[0])
+        Uses TF-IDF for fast similarity computation. Searches all sections in
+        the same chapter (which may span multiple parts). TF-IDF matrices are
+        cached per (title, chapter) for faster repeated lookups.
 
-        rows = self._query("""
-            SELECT se.title, se.section, se.embedding, s.heading
-            FROM section_embeddings se
-            LEFT JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
-            WHERE se.year = ?
-        """, (year,))
+        For historical years, uses current year (year=0) data. Returns empty
+        if the section doesn't exist in the current year.
 
+        Returns:
+            Tuple of (similar_sections_list, max_similarity).
+            max_similarity is the highest similarity score, or None if no similar sections.
+        """
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        # Always use current year (year=0) for similarity
+        query_year = 0
+
+        # Get the query section's chapter from current year
+        query_row = self._query_one("""
+            SELECT chapter FROM sections
+            WHERE year = ? AND title = ? AND section = ?
+        """, (query_year, title, section))
+
+        if not query_row:
+            return [], None
+
+        chapter = query_row[0]
+        cache_key = (title, chapter)
+
+        # Check cache or compute TF-IDF matrix
+        if cache_key not in self._tfidf_cache:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            rows = self._query("""
+                SELECT section, heading, text
+                FROM sections
+                WHERE year = ? AND title = ? AND chapter = ? AND text != ''
+            """, (query_year, title, chapter))
+
+            if len(rows) < 2:
+                return [], None
+
+            sections = []
+            headings = {}
+            texts = []
+
+            for sec, heading, text in rows:
+                sections.append(sec)
+                headings[sec] = heading
+                texts.append(text)
+
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+            tfidf_matrix = vectorizer.fit_transform(texts)
+
+            self._tfidf_cache[cache_key] = {
+                "matrix": tfidf_matrix,
+                "sections": sections,
+                "headings": headings,
+            }
+
+        cached = self._tfidf_cache[cache_key]
+        sections = cached["sections"]
+        headings = cached["headings"]
+        tfidf_matrix = cached["matrix"]
+
+        # Find query section index
+        try:
+            query_idx = sections.index(section)
+        except ValueError:
+            return [], None
+
+        # Compute similarities
+        similarities = cosine_similarity(tfidf_matrix[query_idx:query_idx+1], tfidf_matrix)[0]
+
+        # Build results
         results = []
-        for sim_title, sim_section, embedding_blob, heading in rows:
-            if sim_title == title and sim_section == section:
+        for i, (sec, sim) in enumerate(zip(sections, similarities)):
+            if sec == section:
                 continue
-
-            similarity = float(np.dot(query_embedding, self._blob_to_embedding(embedding_blob)))
-            if similarity >= min_similarity:
+            if sim >= min_similarity:
                 results.append({
-                    "title": sim_title,
-                    "section": sim_section,
-                    "similarity": similarity,
-                    "heading": heading,
+                    "title": title,
+                    "section": sec,
+                    "similarity": float(sim),
+                    "heading": headings[sec],
                 })
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
-        return results[:limit]
+        max_similarity = results[0]["similarity"] if results else None
+        return results[:limit], max_similarity

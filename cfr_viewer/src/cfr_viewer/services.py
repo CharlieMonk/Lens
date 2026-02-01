@@ -1,16 +1,13 @@
 """Service layer providing ECFRDatabase access for Flask views."""
 
-from flask import current_app, g
+from flask import current_app
 
 from ecfr.database import ECFRDatabase
 
 
 def get_database() -> ECFRDatabase:
-    """Get or create ECFRDatabase for the current request."""
-    if "ecfr_database" not in g:
-        db_path = current_app.config.get("ECFR_DB_PATH", "ecfr/ecfr_data/ecfr.db")
-        g.ecfr_database = ECFRDatabase(db_path)
-    return g.ecfr_database
+    """Get the app-level ECFRDatabase instance."""
+    return current_app.ecfr_database
 
 
 def list_titles_with_metadata(year: int = 0) -> list[dict]:

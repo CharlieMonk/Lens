@@ -34,27 +34,27 @@ class TestBrowseRoutes:
         assert b"not found" in response.data.lower() or b"Section" in response.data
 
 
-class TestRankingsRoutes:
-    """Test rankings routes."""
+class TestStatisticsRoutes:
+    """Test statistics routes."""
 
-    def test_rankings_index(self, client):
-        """Test rankings dashboard."""
-        response = client.get("/rankings/")
+    def test_statistics_index(self, client):
+        """Test statistics dashboard."""
+        response = client.get("/statistics/")
         assert response.status_code == 200
-        assert b"Rankings" in response.data
+        assert b"Statistics" in response.data
         assert b"Agency" in response.data
         assert b"Title" in response.data
 
-    def test_agencies_ranking(self, client):
+    def test_agencies_statistics(self, client):
         """Test agencies by word count page."""
-        response = client.get("/rankings/agencies")
+        response = client.get("/statistics/agencies")
         assert response.status_code == 200
         assert b"Agencies" in response.data
         assert b"Word Count" in response.data
 
-    def test_titles_ranking(self, client):
+    def test_titles_statistics(self, client):
         """Test titles by word count page."""
-        response = client.get("/rankings/titles")
+        response = client.get("/statistics/titles")
         assert response.status_code == 200
         assert b"Titles" in response.data
 

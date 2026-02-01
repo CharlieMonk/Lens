@@ -21,7 +21,7 @@ User Story 5: Compare Historical Versions
   As a regulatory affairs specialist, I want to compare a section across years
   so I can track how regulations have changed.
 
-User Story 6: View Rankings
+User Story 6: View Statistics
   As a government watchdog, I want to see which agencies have the most words
   in the CFR so I can understand regulatory burden.
 """
@@ -104,8 +104,8 @@ class TestUserStory1_BrowseTitles:
         browse_link = page.locator("nav a", has_text="Browse")
         expect(browse_link).to_be_visible()
 
-        rankings_link = page.locator("nav a", has_text="Rankings")
-        expect(rankings_link).to_be_visible()
+        statistics_link = page.locator("nav a", has_text="Statistics")
+        expect(statistics_link).to_be_visible()
 
 
 class TestUserStory2_NavigateToTitle:
@@ -363,43 +363,43 @@ class TestUserStory5_CompareVersions:
                     expect(compare_btn).to_be_visible()
 
 
-class TestUserStory6_ViewRankings:
+class TestUserStory6_ViewStatistics:
     """
-    User Story 6: View Rankings
+    User Story 6: View Statistics
     As a government watchdog, I want to see which agencies have the most words
     in the CFR so I can understand regulatory burden.
 
     Steps:
-    1. Click Rankings in navigation
-    2. Verify rankings dashboard loads
-    3. Click on Agency Rankings
+    1. Click Statistics in navigation
+    2. Verify statistics dashboard loads
+    3. Click on Agency Statistics
     4. Verify agencies are listed with word counts
-    5. Go back and click Title Rankings
+    5. Go back and click Title Statistics
     6. Verify titles are sorted by word count
     """
 
-    def test_rankings_navigation(self, page: Page):
-        """Steps 1-2: Navigate to rankings dashboard."""
+    def test_statistics_navigation(self, page: Page):
+        """Steps 1-2: Navigate to statistics dashboard."""
         page.goto(BASE_URL)
 
-        rankings_link = page.locator("nav a", has_text="Rankings")
-        rankings_link.click()
+        statistics_link = page.locator("nav a", has_text="Statistics")
+        statistics_link.click()
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06_rankings_dashboard.png", full_page=True)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06_statistics_dashboard.png", full_page=True)
 
-        expect(page).to_have_url(re.compile(r".*/rankings.*"))
-        expect(page.locator("h1")).to_contain_text("Rankings")
+        expect(page).to_have_url(re.compile(r".*/statistics.*"))
+        expect(page.locator("h1")).to_contain_text("Statistics")
 
-    def test_agency_rankings(self, page: Page):
-        """Steps 3-4: View agency rankings."""
-        page.goto(f"{BASE_URL}/rankings/")
+    def test_agency_statistics(self, page: Page):
+        """Steps 3-4: View agency statistics."""
+        page.goto(f"{BASE_URL}/statistics/")
 
-        agency_link = page.locator("a", has_text="View Agency Rankings")
+        agency_link = page.locator("a", has_text="View Agency Statistics")
         agency_link.click()
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06b_agency_rankings.png", full_page=True)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06b_agency_statistics.png", full_page=True)
 
-        expect(page).to_have_url(re.compile(r".*/rankings/agencies.*"))
+        expect(page).to_have_url(re.compile(r".*/statistics/agencies.*"))
 
         # Check table exists
         table = page.locator("table")
@@ -412,16 +412,16 @@ class TestUserStory6_ViewRankings:
         assert "Agency" in header_texts
         assert "Word Count" in header_texts
 
-    def test_title_rankings(self, page: Page):
-        """Steps 5-6: View title rankings."""
-        page.goto(f"{BASE_URL}/rankings/")
+    def test_title_statistics(self, page: Page):
+        """Steps 5-6: View title statistics."""
+        page.goto(f"{BASE_URL}/statistics/")
 
-        title_link = page.locator("a", has_text="View Title Rankings")
+        title_link = page.locator("a", has_text="View Title Statistics")
         title_link.click()
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_title_rankings.png", full_page=True)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_title_statistics.png", full_page=True)
 
-        expect(page).to_have_url(re.compile(r".*/rankings/titles.*"))
+        expect(page).to_have_url(re.compile(r".*/statistics/titles.*"))
 
         # Check table exists
         table = page.locator("table")

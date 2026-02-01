@@ -23,7 +23,6 @@ pip install -e ".[dev]"             # Include dev dependencies
 python fetch_titles.py              # Fetch current + historical (default)
 python fetch_titles.py --current    # Fetch only current data
 python fetch_titles.py --historical # Fetch only historical years
-python fetch_titles.py --similarities  # Compute vector embeddings for similarity search
 
 # Run web viewer
 cfr-viewer                          # Starts Flask at localhost:5000
@@ -42,7 +41,7 @@ pytest test_ecfr_verification.py    # Playwright verification tests
 
 Four classes handle data fetching:
 
-- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, word counts, and vector embeddings for similarity search. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections).
+- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, and word counts. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections). Similarity search uses on-demand embedding computation.
 - **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
 - **XMLExtractor**: Extracts section data directly from eCFR/govinfo XML. Tracks word counts and extracts section data (title/chapter/part/section/text).
 - **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
@@ -105,7 +104,7 @@ Main tables in `ecfr/ecfr_data/ecfr.db`:
 - `cfr_references` - Maps agencies to CFR chapters
 - `sections` - Full section text with hierarchy (year, title, chapter, part, section)
 - `agency_word_counts` - Denormalized word counts per agency-title-chapter
-- `section_embeddings` - Vector embeddings for similarity search
+- `title_structures` - Cached structure metadata from eCFR API
 
 ## Testing
 
