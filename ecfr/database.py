@@ -419,6 +419,9 @@ class ECFRDatabase:
             "SELECT DISTINCT title FROM sections WHERE year = ? ORDER BY title", (year,)
         )]
 
+    # Alias for backwards compatibility
+    list_section_titles = list_titles
+
     def get_section(self, title: int, section: str, year: int = 0) -> dict | None:
         """Get full section data."""
         row = self._query_one(f'''
@@ -532,9 +535,12 @@ class ECFRDatabase:
 
         return results
 
-    def _convert_api_structure(self, api_node: dict) -> dict:
+    def _convert_api_structure(self, api_node: dict, title: int, year: int = 0) -> dict:
         """Convert eCFR API structure format to our display format."""
         import re
+
+        # Get word counts from database
+        wc_data = self.get_structure_word_counts(title, year)
 
         def roman_to_int(s):
             """Convert Roman numeral to integer."""
@@ -576,18 +582,51 @@ class ECFRDatabase:
                 return 1
             return sum(count_sections(child) for child in node.get("children", []))
 
-        def convert_node(node):
+        def get_wc(path):
+            """Look up word count from pre-computed data based on path."""
+            try:
+                sub_key = path.get("subtitle", "")
+                ch_key = path.get("chapter")
+                subch_key = path.get("subchapter")
+                part_key = path.get("part")
+                subpart_key = path.get("subpart")
+
+                data = wc_data["subtitles"].get(sub_key, {})
+                if ch_key is None:
+                    return data.get("total", 0)
+                data = data.get("chapters", {}).get(ch_key, {})
+                if subch_key is None:
+                    return data.get("total", 0)
+                data = data.get("subchapters", {}).get(subch_key, {})
+                if part_key is None:
+                    return data.get("total", 0)
+                data = data.get("parts", {}).get(part_key, {})
+                if subpart_key is None:
+                    return data.get("total", 0)
+                return data.get("subparts", {}).get(subpart_key, {}).get("total", 0)
+            except (KeyError, TypeError):
+                return 0
+
+        def convert_node(node, path=None):
             """Recursively convert a node from API format to display format."""
+            if path is None:
+                path = {}
+
             node_type = node.get("type", "")
             identifier = node.get("identifier", "")
             reserved = node.get("reserved", False)
             children = node.get("children", [])
             label_desc = node.get("label_description", "")
 
+            # Update path for word count lookup
+            new_path = dict(path)
+            if node_type in ["subtitle", "chapter", "subchapter", "part", "subpart"]:
+                new_path[node_type] = identifier or ""
+
             # Convert children recursively
             converted_children = []
             for child in sorted(children, key=sort_key):
-                converted_children.append(convert_node(child))
+                converted_children.append(convert_node(child, new_path))
 
             result = {
                 "type": node_type,
@@ -597,20 +636,29 @@ class ECFRDatabase:
                 "reserved": reserved,
             }
 
+            # Look up word count from database based on path
+            if node_type in ["subtitle", "chapter", "subchapter", "part", "subpart"]:
+                result["word_count"] = get_wc(new_path)
+            else:
+                result["word_count"] = 0
+
             # Add heading for sections
             if node_type == "section" and label_desc:
                 result["heading"] = label_desc
 
             return result
 
-        return convert_node(api_node)
+        converted = convert_node(api_node)
+        # Set total word count from database
+        converted["word_count"] = wc_data.get("total", 0)
+        return converted
 
     def get_structure(self, title: int, year: int = 0) -> dict:
         """Return full hierarchy tree for a title: Subtitle → Chapter → Subchapter → Part → Subpart → Section."""
         # Check if we have structure metadata (includes reserved elements)
         metadata = self.get_title_structure_metadata(title, year)
         if metadata:
-            return self._convert_api_structure(metadata)
+            return self._convert_api_structure(metadata, title, year)
 
         rows = self._query(
             "SELECT subtitle, chapter, subchapter, part, subpart, section, heading FROM sections WHERE year = ? AND title = ?",
@@ -730,15 +778,40 @@ class ECFRDatabase:
                     "heading": heading or "",
                 })
 
-        def build_part_children(part):
+        # Get word counts from database
+        wc_data = self.get_structure_word_counts(title, year)
+
+        def get_wc(sub_key, ch_key=None, subch_key=None, part_key=None, subpart_key=None):
+            """Look up word count from pre-computed data."""
+            try:
+                data = wc_data["subtitles"].get(sub_key, {})
+                if ch_key is None:
+                    return data.get("total", 0)
+                data = data.get("chapters", {}).get(ch_key, {})
+                if subch_key is None:
+                    return data.get("total", 0)
+                data = data.get("subchapters", {}).get(subch_key, {})
+                if part_key is None:
+                    return data.get("total", 0)
+                data = data.get("parts", {}).get(part_key, {})
+                if subpart_key is None:
+                    return data.get("total", 0)
+                return data.get("subparts", {}).get(subpart_key, {}).get("total", 0)
+            except (KeyError, TypeError):
+                return 0
+
+        def build_part_children(part, sub_key, ch_key, subch_key):
             """Build children list for a part (subparts and sections)."""
             part_children = []
             part_section_count = 0
+            part_word_count = 0
             for subpart_key in sorted(part["subparts"].keys(), key=sort_key):
                 subpart = part["subparts"][subpart_key]
                 sections = sorted(subpart["sections"], key=section_sort_key)
                 subpart_section_count = len(sections)
                 part_section_count += subpart_section_count
+                subpart_wc = get_wc(sub_key, ch_key, subch_key, part["identifier"] or "", subpart["identifier"] or "")
+                part_word_count += subpart_wc
 
                 if subpart["identifier"]:
                     part_children.append({
@@ -746,35 +819,40 @@ class ECFRDatabase:
                         "identifier": subpart["identifier"],
                         "children": sections,
                         "section_count": subpart_section_count,
+                        "word_count": subpart_wc,
                     })
                 else:
                     part_children.extend(sections)
-            return part_children, part_section_count
+            return part_children, part_section_count, part_word_count
 
-        def build_subchapter_children(subch):
+        def build_subchapter_children(subch, sub_key, ch_key):
             """Build children list for a subchapter (parts)."""
             subch_children = []
             subch_section_count = 0
+            subch_word_count = 0
             for part_key in sorted(subch["parts"].keys(), key=sort_key):
                 part = subch["parts"][part_key]
-                part_children, part_section_count = build_part_children(part)
+                part_children, part_section_count, part_wc = build_part_children(part, sub_key, ch_key, subch["identifier"] or "")
                 if part["identifier"]:
                     subch_children.append({
                         "type": "part",
                         "identifier": part["identifier"],
                         "children": part_children,
                         "section_count": part_section_count,
+                        "word_count": part_wc,
                     })
                     subch_section_count += part_section_count
-            return subch_children, subch_section_count
+                    subch_word_count += part_wc
+            return subch_children, subch_section_count, subch_word_count
 
-        def build_chapter_children(ch):
+        def build_chapter_children(ch, sub_key):
             """Build children list for a chapter (subchapters and parts)."""
             ch_children = []
             ch_section_count = 0
+            ch_word_count = 0
             for subch_key in sorted(ch["subchapters"].keys(), key=sort_key):
                 subch = ch["subchapters"][subch_key]
-                subch_children, subch_section_count = build_subchapter_children(subch)
+                subch_children, subch_section_count, subch_wc = build_subchapter_children(subch, sub_key, ch["identifier"] or "")
 
                 if subch["identifier"]:
                     ch_children.append({
@@ -782,20 +860,24 @@ class ECFRDatabase:
                         "identifier": subch["identifier"],
                         "children": subch_children,
                         "section_count": subch_section_count,
+                        "word_count": subch_wc,
                     })
                     ch_section_count += subch_section_count
+                    ch_word_count += subch_wc
                 else:
                     ch_children.extend(subch_children)
                     ch_section_count += subch_section_count
-            return ch_children, ch_section_count
+                    ch_word_count += subch_wc
+            return ch_children, ch_section_count, ch_word_count
 
         def build_subtitle_children(sub):
             """Build children list for a subtitle (chapters)."""
             sub_children = []
             sub_section_count = 0
+            sub_word_count = 0
             for ch_key in sorted(sub["chapters"].keys(), key=sort_key):
                 ch = sub["chapters"][ch_key]
-                ch_children, ch_section_count = build_chapter_children(ch)
+                ch_children, ch_section_count, ch_wc = build_chapter_children(ch, sub["identifier"] or "")
 
                 if ch["identifier"]:
                     sub_children.append({
@@ -803,20 +885,24 @@ class ECFRDatabase:
                         "identifier": ch["identifier"],
                         "children": ch_children,
                         "section_count": ch_section_count,
+                        "word_count": ch_wc,
                     })
                     sub_section_count += ch_section_count
+                    sub_word_count += ch_wc
                 else:
                     sub_children.extend(ch_children)
                     sub_section_count += ch_section_count
-            return sub_children, sub_section_count
+                    sub_word_count += ch_wc
+            return sub_children, sub_section_count, sub_word_count
 
         # Build the final structure
         result_children = []
         total_sections = 0
+        total_words = 0
 
         for sub_key in sorted(subtitles.keys(), key=sort_key):
             sub = subtitles[sub_key]
-            sub_children, sub_section_count = build_subtitle_children(sub)
+            sub_children, sub_section_count, sub_wc = build_subtitle_children(sub)
 
             if sub["identifier"]:
                 result_children.append({
@@ -824,17 +910,21 @@ class ECFRDatabase:
                     "identifier": sub["identifier"],
                     "children": sub_children,
                     "section_count": sub_section_count,
+                    "word_count": sub_wc,
                 })
                 total_sections += sub_section_count
+                total_words += sub_wc
             else:
                 result_children.extend(sub_children)
                 total_sections += sub_section_count
+                total_words += sub_wc
 
         return {
             "type": "title",
             "identifier": str(title),
             "children": result_children,
             "section_count": total_sections,
+            "word_count": total_words,
         }
 
     def get_word_counts(
@@ -866,7 +956,69 @@ class ECFRDatabase:
         """Get total word count for a title."""
         return self.get_word_counts(title, year=year)["total"]
 
+    def get_structure_word_counts(self, title: int, year: int = 0) -> dict:
+        """Get word counts aggregated by hierarchy level for structure display.
+
+        Returns nested dict: subtitle -> chapter -> subchapter -> part -> subpart -> word_count
+        """
+        rows = self._query("""
+            SELECT subtitle, chapter, subchapter, part, subpart, SUM(word_count) as total
+            FROM sections
+            WHERE year = ? AND title = ?
+            GROUP BY subtitle, chapter, subchapter, part, subpart
+        """, (year, title))
+
+        # Build nested aggregations
+        result = {"total": 0, "subtitles": {}}
+
+        for subtitle, chapter, subchapter, part, subpart, word_count in rows:
+            result["total"] += word_count
+
+            sub_key = subtitle or ""
+            ch_key = chapter or ""
+            subch_key = subchapter or ""
+            part_key = part or ""
+            subpart_key = subpart or ""
+
+            if sub_key not in result["subtitles"]:
+                result["subtitles"][sub_key] = {"total": 0, "chapters": {}}
+            result["subtitles"][sub_key]["total"] += word_count
+
+            chapters = result["subtitles"][sub_key]["chapters"]
+            if ch_key not in chapters:
+                chapters[ch_key] = {"total": 0, "subchapters": {}}
+            chapters[ch_key]["total"] += word_count
+
+            subchapters = chapters[ch_key]["subchapters"]
+            if subch_key not in subchapters:
+                subchapters[subch_key] = {"total": 0, "parts": {}}
+            subchapters[subch_key]["total"] += word_count
+
+            parts = subchapters[subch_key]["parts"]
+            if part_key not in parts:
+                parts[part_key] = {"total": 0, "subparts": {}}
+            parts[part_key]["total"] += word_count
+
+            subparts = parts[part_key]["subparts"]
+            if subpart_key not in subparts:
+                subparts[subpart_key] = {"total": 0}
+            subparts[subpart_key]["total"] += word_count
+
+        return result
+
     # Embeddings and Similarity
+
+    def has_embeddings(self, title: int = None, year: int = 0) -> bool:
+        """Check if embeddings exist for a given year and optionally title."""
+        if title is not None:
+            return self._query_one(
+                "SELECT COUNT(*) FROM section_embeddings WHERE year = ? AND title = ?",
+                (year, title)
+            )[0] > 0
+        return self._query_one(
+            "SELECT COUNT(*) FROM section_embeddings WHERE year = ?",
+            (year,)
+        )[0] > 0
 
     def _get_embedding_model(self):
         """Lazily load the sentence transformer model."""
@@ -884,8 +1036,29 @@ class ECFRDatabase:
         n_floats = len(blob) // 4
         return np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
 
+    def _get_text_embedding_lookup(self) -> dict[str, np.ndarray]:
+        """Build a lookup of truncated text -> embedding from all existing embeddings.
+
+        Used to avoid recomputing embeddings for identical text across the database.
+        """
+        rows = self._query("""
+            SELECT s.text, se.embedding
+            FROM section_embeddings se
+            JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
+            WHERE s.text != ''
+        """)
+
+        lookup = {}
+        for text, embedding_blob in rows:
+            truncated = text[:10000]
+            if truncated not in lookup:
+                lookup[truncated] = self._blob_to_embedding(embedding_blob)
+        return lookup
+
     def compute_similarities(self, title: int, year: int = 0, top_n: int = 5) -> int:
         """Compute vector embeddings and store in database for similarity search.
+
+        Reuses existing embeddings for identical text values to avoid recomputation.
 
         Returns number of embeddings stored.
         """
@@ -899,8 +1072,37 @@ class ECFRDatabase:
         sections = [row[0] for row in rows]
         texts = [row[1][:10000] for row in rows]  # Truncate to avoid memory issues
 
-        model = self._get_embedding_model()
-        embeddings = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+        # Build lookup of existing embeddings by text content
+        text_to_embedding = self._get_text_embedding_lookup()
+
+        # Separate texts that need computation from those we can reuse
+        texts_to_encode = []
+        text_indices = []
+        reused_count = 0
+
+        for i, text in enumerate(texts):
+            if text not in text_to_embedding:
+                texts_to_encode.append(text)
+                text_indices.append(i)
+            else:
+                reused_count += 1
+
+        # Compute embeddings only for new texts
+        embeddings = [None] * len(texts)
+
+        if texts_to_encode:
+            model = self._get_embedding_model()
+            new_embeddings = model.encode(texts_to_encode, show_progress_bar=False, normalize_embeddings=True)
+
+            # Place new embeddings in their positions and add to lookup
+            for idx, embedding in zip(text_indices, new_embeddings):
+                embeddings[idx] = embedding
+                text_to_embedding[texts[idx]] = embedding
+
+        # Fill in reused embeddings
+        for i, text in enumerate(texts):
+            if embeddings[i] is None:
+                embeddings[i] = text_to_embedding[text]
 
         with self._connection() as conn:
             cursor = conn.cursor()

@@ -50,7 +50,7 @@
                         {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
                         {% endif %}
                     </strong>
-                    <small class="secondary">({{ node.section_count }} section{{ 's' if node.section_count != 1 else '' }})</small>
+                    <small class="secondary">({{ "{:,}".format(node.word_count or 0) }} words)</small>
                 </summary>
                 <ul class="structure-list">
                     {% for child in node.children %}

@@ -94,26 +94,40 @@ nav strong a {
     border-radius: var(--pico-border-radius);
 }
 
-/* Diff container styling */
+/* Diff container styling - unified diff format */
 .diff-container {
-    overflow-x: auto;
-}
-
-.diff-container table {
     font-family: monospace;
     font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
-.diff-container .diff_add {
+.diff-container .diff-header {
+    color: var(--pico-muted-color);
+    font-weight: bold;
+}
+
+.diff-container .diff-hunk {
+    color: #6a1b9a;
+    background-color: #f3e5f5;
+    margin: 0.5rem 0;
+    padding: 0.25rem;
+}
+
+.diff-container .diff-add {
     background-color: #c8e6c9;
+    color: #1b5e20;
 }
 
-.diff-container .diff_sub {
+.diff-container .diff-sub {
     background-color: #ffcdd2;
+    color: #b71c1c;
 }
 
-.diff-container .diff_chg {
-    background-color: #fff9c4;
+.diff-container .diff-context {
+    color: var(--pico-color);
 }
 
 /* Breadcrumb styling */
