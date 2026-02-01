@@ -1,24 +1,61 @@
 {% if similar %}
-<table>
+<table class="sortable">
     <thead>
         <tr>
-            <th scope="col">Citation</th>
-            <th scope="col" class="numeric">Similarity</th>
+            <th scope="col" data-sort="string" class="sortable-header">Citation</th>
+            <th scope="col" data-sort="number" class="numeric sortable-header">Similarity</th>
         </tr>
     </thead>
     <tbody>
         {% for s in similar %}
         <tr>
-            <td>
+            <td data-value="{{ s.title }} CFR {{ s.section }}">
                 <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}">
                     {{ s.title }} CFR &sect; {{ s.section }}
                 </a>
             </td>
-            <td class="numeric">{{ "%.1f" | format(s.similarity * 100) }}%</td>
+            <td class="numeric" data-value="{{ s.similarity }}">{{ "%.1f" | format(s.similarity * 100) }}%</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+<script>
+(function() {
+    const table = document.currentScript.previousElementSibling;
+    const headers = table.querySelectorAll('th.sortable-header');
+
+    headers.forEach((header, index) => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', () => {
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const sortType = header.dataset.sort;
+            const isAsc = header.classList.contains('sort-asc');
+
+            // Clear sort classes from all headers
+            headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+
+            // Set new sort direction
+            header.classList.add(isAsc ? 'sort-desc' : 'sort-asc');
+
+            rows.sort((a, b) => {
+                const aVal = a.cells[index].dataset.value || a.cells[index].textContent;
+                const bVal = b.cells[index].dataset.value || b.cells[index].textContent;
+
+                let cmp;
+                if (sortType === 'number') {
+                    cmp = parseFloat(aVal) - parseFloat(bVal);
+                } else {
+                    cmp = aVal.localeCompare(bVal);
+                }
+                return isAsc ? -cmp : cmp;
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        });
+    });
+})();
+</script>
 {% else %}
 <p>No similar sections found.</p>
 {% endif %}

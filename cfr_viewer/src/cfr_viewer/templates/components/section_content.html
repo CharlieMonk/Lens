@@ -9,7 +9,7 @@
 
 {% if section %}
 <hgroup>
-    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading }}{% endif %}</h1>
+    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}</h1>
     <p>Title {{ title_num }}: {{ title_name }}</p>
 </hgroup>
 

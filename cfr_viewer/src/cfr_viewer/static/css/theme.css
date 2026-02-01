@@ -72,8 +72,6 @@ nav strong a {
 
 /* Section text container */
 .section-text {
-    max-height: 60vh;
-    overflow-y: auto;
     padding: 1rem;
     background: var(--pico-card-background-color);
     border-radius: var(--pico-border-radius);
@@ -258,4 +256,29 @@ footer {
 .reserved-tag {
     font-size: 0.85rem;
     color: var(--pico-muted-color);
+}
+
+/* Sortable table headers */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable-header:hover {
+    background: var(--pico-card-sectionning-background-color);
+}
+
+.sortable-header::after {
+    content: " ⇅";
+    opacity: 0.3;
+}
+
+.sortable-header.sort-asc::after {
+    content: " ↑";
+    opacity: 1;
+}
+
+.sortable-header.sort-desc::after {
+    content: " ↓";
+    opacity: 1;
 }
