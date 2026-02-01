@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-eFCR is a Python tool for fetching and processing Code of Federal Regulations (CFR) data from ecfr.gov. It has two main components:
+eCFR is a Python tool for fetching and processing Code of Federal Regulations (CFR) data from ecfr.gov. It has three main components:
 
 1. **CFR Data Fetcher** (`fetch_titles.py`) - Downloads and processes all 50 CFR titles from eCFR and govinfo bulk data
-2. **Enforcement Relevance** (`relevance/`) - Identifies most-enforced CFR sections by ingesting agency enforcement actions
+2. **CFR Web Viewer** (`cfr_viewer/`) - Flask web application for browsing CFR data
+3. **Enforcement Relevance** (`relevance/`) - Identifies most-enforced CFR sections by ingesting agency enforcement actions
 
 ## Commands
 
@@ -22,10 +23,15 @@ pip install -e ".[dev]"             # Include dev dependencies
 python fetch_titles.py              # Fetch current + historical (default)
 python fetch_titles.py --current    # Fetch only current data
 python fetch_titles.py --historical # Fetch only historical years
-python fetch_titles.py --similarities  # Compute TF-IDF similarities
+python fetch_titles.py --similarities  # Compute vector embeddings for similarity search
+
+# Run web viewer
+cfr-viewer                          # Starts Flask at localhost:5000
 
 # Run tests
 pytest                              # All tests
+pytest tests/                       # Core ecfr tests
+pytest cfr_viewer/tests/            # Web viewer tests
 pytest relevance/tests/             # Relevance tests only
 pytest test_ecfr_verification.py    # Playwright verification tests
 ```
@@ -36,7 +42,7 @@ pytest test_ecfr_verification.py    # Playwright verification tests
 
 Four classes handle data fetching:
 
-- **ECFRDatabase**: SQLite persistence for titles, agencies, sections, word counts, and TF-IDF similarities. Stores in `ecfr/ecfr_data/ecfr.db`.
+- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, word counts, and vector embeddings for similarity search. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections).
 - **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
 - **XMLExtractor**: Extracts section data directly from eCFR/govinfo XML. Tracks word counts and extracts section data (title/chapter/part/section/text).
 - **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
@@ -47,13 +53,15 @@ Data flow:
 3. Race eCFR and govinfo endpoints for each title XML
 4. Extract sections from XML and save to SQLite
 
-### CFR Reader (`ecfr_reader.py`)
+### CFR Web Viewer (`cfr_viewer/`)
 
-Query interface for the SQLite database:
-- `navigate(title, section, year)` - Navigate to specific CFR location
-- `search(query, title, year)` - Full-text search across sections
-- `get_structure(title)` - Hierarchy tree (parts/sections)
-- `get_section(title, section)` - Full section data with text
+Flask application for browsing CFR data:
+- `app.py` - Flask app factory, registers blueprints
+- `services.py` - Service layer wrapping ECFRDatabase
+- `routes_browse.py` - Browse views: titles index, title structure, section detail
+- `routes_rankings.py` - Word count rankings by agencies and titles
+- `routes_compare.py` - Compare sections functionality
+- `routes_api.py` - HTMX partials for similar sections
 
 ### Relevance Subproject (`relevance/src/relevance/`)
 
@@ -96,10 +104,13 @@ Main tables in `ecfr/ecfr_data/ecfr.db`:
 - `agencies` - Agency names and relationships
 - `cfr_references` - Maps agencies to CFR chapters
 - `sections` - Full section text with hierarchy (year, title, chapter, part, section)
-- `section_similarities` - TF-IDF cosine similarities between sections
+- `agency_word_counts` - Denormalized word counts per agency-title-chapter
+- `section_embeddings` - Vector embeddings for similarity search
 
 ## Testing
 
 The project uses pytest with Playwright for verification tests:
+- `tests/` - Unit tests for ecfr package (client, database, extractor, fetcher)
+- `cfr_viewer/tests/` - Web viewer route tests
 - `test_ecfr_verification.py` - Compares local data against ecfr.gov website
 - `relevance/tests/` - Unit and integration tests using offline fixtures
