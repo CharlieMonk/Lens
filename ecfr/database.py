@@ -8,6 +8,18 @@ from pathlib import Path
 
 import numpy as np
 
+# Module-level singleton for the embedding model (loaded once, persists across requests)
+_embedding_model = None
+
+
+def preload_embedding_model():
+    """Preload the embedding model at startup to avoid first-request delay."""
+    global _embedding_model
+    if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
+        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    return _embedding_model
+
 
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
@@ -1106,11 +1118,12 @@ class ECFRDatabase:
     # Similarity Search (on-demand embeddings with caching)
 
     def _get_embedding_model(self):
-        """Lazily load the sentence transformer model."""
-        if not hasattr(self, '_embedding_model'):
+        """Get the sentence transformer model (module-level singleton)."""
+        global _embedding_model
+        if _embedding_model is None:
             from sentence_transformers import SentenceTransformer
-            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return self._embedding_model
+            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        return _embedding_model
 
     def _ensure_embeddings_table(self) -> None:
         """Ensure section_embeddings table exists for caching."""
