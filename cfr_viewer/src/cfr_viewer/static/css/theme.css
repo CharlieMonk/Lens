@@ -127,6 +127,46 @@ details li {
     padding: 0.25rem 0;
 }
 
+/* Section list in title structure */
+.section-list {
+    list-style: none;
+    padding-left: 1rem;
+}
+
+.section-list li {
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.section-list li:last-child {
+    border-bottom: none;
+}
+
+.section-list a {
+    display: flex;
+    gap: 0.75rem;
+    text-decoration: none;
+}
+
+.section-list a strong {
+    white-space: nowrap;
+}
+
+.section-list a .secondary {
+    color: var(--pico-muted-color);
+    font-weight: normal;
+}
+
+.section-list a:hover .secondary {
+    color: var(--pico-primary-hover);
+}
+
+/* Part summary styling */
+details summary small {
+    font-weight: normal;
+    margin-left: 0.5rem;
+}
+
 /* Footer styling */
 footer {
     margin-top: 2rem;

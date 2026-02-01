@@ -465,25 +465,51 @@ class ECFRDatabase:
         return results
 
     def get_structure(self, title: int, year: int = 0) -> dict:
-        """Return hierarchy tree for a title."""
+        """Return hierarchy tree for a title with section headings."""
         rows = self._query(
-            "SELECT DISTINCT part, section FROM sections WHERE year = ? AND title = ? ORDER BY part, section",
+            "SELECT part, section, heading FROM sections WHERE year = ? AND title = ?",
             (year, title)
         )
         if not rows:
             return {}
 
-        result = {"type": "title", "identifier": str(title), "children": []}
         parts = {}
-
-        for part, section in rows:
-            if part and part not in parts:
+        for part, section, heading in rows:
+            if not part:
+                continue
+            if part not in parts:
                 parts[part] = {"type": "part", "identifier": part, "children": []}
-                result["children"].append(parts[part])
-            if part and section:
-                parts[part]["children"].append({"type": "section", "identifier": section})
+            if section:
+                parts[part]["children"].append({
+                    "type": "section",
+                    "identifier": section,
+                    "heading": heading or "",
+                })
 
-        return result
+        # Sort parts numerically (handle mixed numeric/string identifiers)
+        def part_sort_key(p):
+            try:
+                return (0, int(p["identifier"]))
+            except ValueError:
+                return (1, p["identifier"])
+
+        sorted_parts = sorted(parts.values(), key=part_sort_key)
+
+        # Sort sections within each part (handle mixed numeric/alpha identifiers)
+        def section_sort_key(s):
+            result = []
+            for p in s["identifier"].split("."):
+                try:
+                    result.append((0, int(p), ""))
+                except ValueError:
+                    result.append((1, 0, p))
+            return result
+
+        for part in sorted_parts:
+            part["children"].sort(key=section_sort_key)
+            part["section_count"] = len(part["children"])
+
+        return {"type": "title", "identifier": str(title), "children": sorted_parts}
 
     def get_word_counts(
         self,

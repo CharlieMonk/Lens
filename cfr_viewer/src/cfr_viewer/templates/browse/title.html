@@ -20,14 +20,23 @@
 {% if structure and structure.children %}
 <article>
     <h2>Structure</h2>
+    <p class="secondary">{{ structure.children | length }} parts</p>
+
     {% for part in structure.children %}
     <details>
-        <summary>Part {{ part.identifier }}</summary>
-        <ul>
+        <summary>
+            <strong>Part {{ part.identifier }}</strong>
+            <small class="secondary">({{ part.section_count }} section{{ 's' if part.section_count != 1 else '' }})</small>
+        </summary>
+        <ul class="section-list">
             {% for section in part.children %}
             <li>
                 <a href="{{ url_for('browse.section', title_num=title_num, section=section.identifier, year=year) }}">
-                    &sect; {{ section.identifier }}
+                    {% if section.heading %}
+                        {{ section.heading }}
+                    {% else %}
+                        &sect; {{ section.identifier }}
+                    {% endif %}
                 </a>
             </li>
             {% endfor %}
