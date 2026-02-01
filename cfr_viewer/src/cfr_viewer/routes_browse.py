@@ -46,12 +46,15 @@ def section(title_num: int, section: str):
     years = db.list_years()
     section_data = db.get_section(title_num, section, year)
     title_meta = db.get_titles().get(title_num, {})
+    prev_section, next_section = db.get_adjacent_sections(title_num, section, year)
 
     return render_template(
         "browse/section.html",
         title_num=title_num,
         title_name=title_meta.get("name", f"Title {title_num}"),
         section=section_data,
+        prev_section=prev_section,
+        next_section=next_section,
         year=year,
         years=years,
     )

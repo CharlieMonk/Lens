@@ -401,6 +401,38 @@ class ECFRDatabase:
         s = self.get_section(title, section, year)
         return s["text"] if s else None
 
+    def get_adjacent_sections(self, title: int, section: str, year: int = 0) -> tuple[str | None, str | None]:
+        """Get previous and next section identifiers for navigation."""
+        # Get all sections for this title, sorted
+        rows = self._query(
+            "SELECT section FROM sections WHERE year = ? AND title = ? ORDER BY section",
+            (year, title)
+        )
+        if not rows:
+            return None, None
+
+        sections = [r[0] for r in rows]
+
+        # Sort sections numerically (1.1, 1.2, 1.10, 2.1, etc.)
+        def section_sort_key(s):
+            result = []
+            for p in s.split("."):
+                try:
+                    result.append((0, int(p), ""))
+                except ValueError:
+                    result.append((1, 0, p))
+            return result
+
+        sections.sort(key=section_sort_key)
+
+        try:
+            idx = sections.index(section)
+            prev_section = sections[idx - 1] if idx > 0 else None
+            next_section = sections[idx + 1] if idx < len(sections) - 1 else None
+            return prev_section, next_section
+        except ValueError:
+            return None, None
+
     def get_sections(self, title: int, chapter: str = None, part: str = None, year: int = 0) -> list[dict]:
         """Get all sections for a title."""
         query = f"SELECT {', '.join(self.SECTION_COLUMNS)} FROM sections WHERE year = ? AND title = ?"
@@ -475,18 +507,42 @@ class ECFRDatabase:
 
         import re
 
+        def roman_to_int(s):
+            """Convert Roman numeral to integer."""
+            roman_values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+            s = s.upper()
+            if not all(c in roman_values for c in s):
+                return None
+            total = 0
+            prev = 0
+            for c in reversed(s):
+                val = roman_values[c]
+                if val < prev:
+                    total -= val
+                else:
+                    total += val
+                prev = val
+            return total
+
         def sort_key(identifier):
-            """Sort key that handles mixed numeric/alpha identifiers."""
+            """Sort key that handles numeric, Roman numeral, and alpha identifiers."""
             if not identifier:
                 return (2, 0, "")
+            # Try as integer first
             try:
                 return (0, int(identifier), "")
             except ValueError:
-                # Handle cases like "15a", "16A" - extract leading number
-                match = re.match(r'^(\d+)', identifier)
-                if match:
-                    return (0, int(match.group(1)), identifier)
-                return (1, 0, identifier)
+                pass
+            # Try as Roman numeral
+            roman_val = roman_to_int(identifier)
+            if roman_val is not None:
+                return (0, roman_val, "")
+            # Handle cases like "15a", "16A" - extract leading number
+            match = re.match(r'^(\d+)', identifier)
+            if match:
+                return (0, int(match.group(1)), identifier)
+            # Alphabetic sorting for letters (A, B, C...)
+            return (1, 0, identifier)
 
         def section_sort_key(s):
             """Sort sections like 1.1, 1.2, 1.10, 2.1."""

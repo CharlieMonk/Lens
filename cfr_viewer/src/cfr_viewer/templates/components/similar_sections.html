@@ -1,23 +1,24 @@
 {% if similar %}
-<div class="similar-sections-list">
-    {% for s in similar %}
-    <details class="similar-section-item">
-        <summary>
-            <span class="citation">{{ s.title }} CFR &sect; {{ s.section }}</span>
-            <span class="similarity">{{ "%.1f" | format(s.similarity * 100) }}%</span>
-        </summary>
-        <div class="similar-section-details">
-            <p>
+<table>
+    <thead>
+        <tr>
+            <th scope="col">Citation</th>
+            <th scope="col" class="numeric">Similarity</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in similar %}
+        <tr>
+            <td>
                 <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}">
                     {{ s.title }} CFR &sect; {{ s.section }}
                 </a>
-            </p>
-            {% if s.heading %}<p class="heading">{{ s.heading }}</p>{% endif %}
-            <p class="similarity-detail">Similarity: {{ "%.1f" | format(s.similarity * 100) }}%</p>
-        </div>
-    </details>
-    {% endfor %}
-</div>
+            </td>
+            <td class="numeric">{{ "%.1f" | format(s.similarity * 100) }}%</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% else %}
 <p>No similar sections found.</p>
 {% endif %}
