@@ -68,16 +68,6 @@
     </article>
 </div>
 
-<article>
-    <header>
-        <strong>Statistics</strong>
-    </header>
-    <dl>
-        <dt>Word Count</dt>
-        <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
-    </dl>
-</article>
-
 {% else %}
 <p>Section not found.</p>
 {% endif %}
