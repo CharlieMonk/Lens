@@ -10,7 +10,7 @@
         {% for s in similar %}
         <tr>
             <td data-value="{{ s.title }} CFR {{ s.section }}">
-                <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}">
+                <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}#section-heading">
                     {{ s.title }} CFR &sect; {{ s.section }}
                 </a>
             </td>

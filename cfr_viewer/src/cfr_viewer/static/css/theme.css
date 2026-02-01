@@ -48,6 +48,23 @@ nav strong a {
     width: auto;
 }
 
+/* Section controls - year selector and compare button */
+.section-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.section-controls .year-selector {
+    margin-bottom: 0;
+}
+
+.section-controls a[role="button"] {
+    margin: 0;
+    white-space: nowrap;
+}
+
 /* Section page layout - text and similar sections side by side */
 .section-layout {
     display: grid;

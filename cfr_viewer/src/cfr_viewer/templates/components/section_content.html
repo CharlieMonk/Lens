@@ -8,12 +8,17 @@
 </nav>
 
 {% if section %}
-<hgroup>
+<hgroup id="section-heading">
     <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}</h1>
     <p>Title {{ title_num }}: {{ title_name }}</p>
 </hgroup>
 
-{% include "components/year_selector.html" %}
+<div class="section-controls">
+    {% include "components/year_selector.html" %}
+    <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="outline secondary">
+        Compare Years
+    </a>
+</div>
 
 <div id="section-layout" class="section-layout">
     <article>
@@ -63,34 +68,23 @@
     </article>
 </div>
 
-<div class="grid">
-    <article>
-        <header>
-            <strong>Statistics</strong>
-        </header>
-        <dl>
-            <dt>Word Count</dt>
-            <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
-            {% if section.part %}
-            <dt>Part</dt>
-            <dd>{{ section.part }}</dd>
-            {% endif %}
-            {% if section.chapter %}
-            <dt>Chapter</dt>
-            <dd>{{ section.chapter }}</dd>
-            {% endif %}
-        </dl>
-    </article>
-
-    <article>
-        <header>
-            <strong>Actions</strong>
-        </header>
-        <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="secondary">
-            Compare Years
-        </a>
-    </article>
-</div>
+<article>
+    <header>
+        <strong>Statistics</strong>
+    </header>
+    <dl>
+        <dt>Word Count</dt>
+        <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
+        {% if section.part %}
+        <dt>Part</dt>
+        <dd>{{ section.part }}</dd>
+        {% endif %}
+        {% if section.chapter %}
+        <dt>Chapter</dt>
+        <dd>{{ section.chapter }}</dd>
+        {% endif %}
+    </dl>
+</article>
 
 {% else %}
 <p>Section not found.</p>
