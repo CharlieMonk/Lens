@@ -48,6 +48,28 @@ nav strong a {
     width: auto;
 }
 
+/* Section page layout - text and similar sections side by side */
+.section-layout {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: start;
+}
+
+.section-layout .similar-sections {
+    width: 280px;
+    min-width: 200px;
+}
+
+@media (max-width: 768px) {
+    .section-layout {
+        grid-template-columns: 1fr;
+    }
+    .section-layout .similar-sections {
+        width: 100%;
+    }
+}
+
 /* Section text container */
 .section-text {
     max-height: 60vh;
