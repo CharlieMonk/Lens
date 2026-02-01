@@ -75,14 +75,6 @@
     <dl>
         <dt>Word Count</dt>
         <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
-        {% if section.part %}
-        <dt>Part</dt>
-        <dd>{{ section.part }}</dd>
-        {% endif %}
-        {% if section.chapter %}
-        <dt>Chapter</dt>
-        <dd>{{ section.chapter }}</dd>
-        {% endif %}
     </dl>
 </article>
 

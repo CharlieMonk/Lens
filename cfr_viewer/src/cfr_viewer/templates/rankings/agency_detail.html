@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}{{ agency.name if agency else "Agency Not Found" }} - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('rankings.index') }}">Rankings</a></li>
+        <li><a href="{{ url_for('rankings.agencies') }}">Agencies</a></li>
+        <li>{{ agency.name if agency else "Not Found" }}</li>
+    </ul>
+</nav>
+
+{% if agency %}
+<hgroup>
+    <h1>{{ agency.name }}</h1>
+    {% if agency.short_name %}
+    <p>{{ agency.short_name }}</p>
+    {% endif %}
+</hgroup>
+
+<h2>CFR Chapters</h2>
+
+{% if chapters %}
+<ul>
+    {% for ch in chapters %}
+    <li>
+        <a href="{{ url_for('browse.title', title_num=ch.title) }}">Title {{ ch.title }}: {{ ch.title_name }}</a>,
+        Chapter {{ ch.chapter }}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No CFR chapters associated with this agency.</p>
+{% endif %}
+
+{% else %}
+<h1>Agency Not Found</h1>
+<p>The requested agency could not be found.</p>
+{% endif %}
+{% endblock %}

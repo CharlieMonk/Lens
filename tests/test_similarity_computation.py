@@ -76,10 +76,11 @@ class TestOnDemandSimilarity:
         """Test finding similar sections for a given section."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", limit=5)
+        similar, max_similarity = temp_db.get_similar_sections(title=1, section="1.1", limit=5)
 
         assert isinstance(similar, list)
         assert len(similar) > 0
+        assert max_similarity is not None
         for item in similar:
             assert "title" in item
             assert "section" in item
@@ -90,7 +91,7 @@ class TestOnDemandSimilarity:
         """Test that query section is not in results."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", limit=10)
+        similar, _ = temp_db.get_similar_sections(title=1, section="1.1", limit=10)
 
         sections = [(item["title"], item["section"]) for item in similar]
         assert (1, "1.1") not in sections
@@ -99,7 +100,7 @@ class TestOnDemandSimilarity:
         """Test that limit is respected."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", limit=2)
+        similar, _ = temp_db.get_similar_sections(title=1, section="1.1", limit=2)
 
         assert len(similar) <= 2
 
@@ -107,7 +108,7 @@ class TestOnDemandSimilarity:
         """Test filtering by minimum similarity."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(
+        similar, _ = temp_db.get_similar_sections(
             title=1, section="1.1", min_similarity=0.5, limit=10
         )
 
@@ -118,40 +119,43 @@ class TestOnDemandSimilarity:
         """Test that missing section returns empty list."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=99, section="999.999", limit=5)
+        similar, max_similarity = temp_db.get_similar_sections(title=99, section="999.999", limit=5)
 
         assert similar == []
+        assert max_similarity is None
 
     def test_get_similar_sections_sorted_by_similarity(self, temp_db, sample_sections):
         """Test that results are sorted by similarity descending."""
         temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", limit=10)
+        similar, _ = temp_db.get_similar_sections(title=1, section="1.1", limit=10)
 
         if len(similar) > 1:
             similarities = [item["similarity"] for item in similar]
             assert similarities == sorted(similarities, reverse=True)
 
-    def test_get_similar_sections_historical_year(self, temp_db, sample_sections):
-        """Test similarity works for historical years."""
-        temp_db.save_sections(sample_sections, year=2020)
+    def test_get_similar_sections_historical_uses_current_embeddings(self, temp_db, sample_sections):
+        """Test that historical years use current year embeddings."""
+        # Save sections to current year only
+        temp_db.save_sections(sample_sections, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", year=2020, limit=5)
+        # Historical year query should work if section exists in current year
+        similar, max_similarity = temp_db.get_similar_sections(title=1, section="1.1", year=2020, limit=5)
 
         assert isinstance(similar, list)
         assert len(similar) > 0
+        assert max_similarity is not None
 
-    def test_get_similar_sections_different_years_isolated(self, temp_db, sample_sections):
-        """Test that sections from different years are isolated."""
-        temp_db.save_sections(sample_sections, year=0)
+    def test_get_similar_sections_historical_empty_if_not_in_current(self, temp_db, sample_sections):
+        """Test that historical year returns empty if section not in current year."""
+        # Save sections to historical year only
         temp_db.save_sections(sample_sections, year=2020)
 
-        similar_current = temp_db.get_similar_sections(title=1, section="1.1", year=0, limit=10)
-        similar_2020 = temp_db.get_similar_sections(title=1, section="1.1", year=2020, limit=10)
+        # Query for historical year should be empty since section doesn't exist in year=0
+        similar, max_similarity = temp_db.get_similar_sections(title=1, section="1.1", year=2020, limit=5)
 
-        # Results should be similar but computed independently
-        assert len(similar_current) > 0
-        assert len(similar_2020) > 0
+        assert similar == []
+        assert max_similarity is None
 
 
 if __name__ == "__main__":

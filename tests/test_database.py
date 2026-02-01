@@ -372,8 +372,9 @@ class TestECFRDatabaseSimilarities:
         """Get similar sections (computed on-demand)."""
         temp_db.save_sections(sections_for_similarity, year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", year=0)
+        similar, max_similarity = temp_db.get_similar_sections(title=1, section="1.1", year=0)
         assert len(similar) > 0
+        assert max_similarity is not None
 
     def test_get_similar_sections_single(self, temp_db):
         """Single section returns empty similar list."""
@@ -381,8 +382,9 @@ class TestECFRDatabaseSimilarities:
             "title": 1, "section": "1.1", "text": "Only one section."
         }], year=0)
 
-        similar = temp_db.get_similar_sections(title=1, section="1.1", year=0)
+        similar, max_similarity = temp_db.get_similar_sections(title=1, section="1.1", year=0)
         assert similar == []
+        assert max_similarity is None
 
 
 class TestECFRDatabaseUtils:

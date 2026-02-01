@@ -1,4 +1,7 @@
 {% if similar %}
+{% if distinctness is not none %}
+<p><strong>Distinctness:</strong> {{ "%.1f" | format(distinctness * 100) }}%</p>
+{% endif %}
 <table class="sortable">
     <thead>
         <tr>
@@ -19,6 +22,9 @@
         {% endfor %}
     </tbody>
 </table>
-{% else %}
+{% elif distinctness is not none %}
+<p><strong>Distinctness:</strong> 100%</p>
 <p>No similar sections found.</p>
+{% else %}
+<p>Section not in current year data.</p>
 {% endif %}

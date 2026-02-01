@@ -227,7 +227,7 @@ class TestECFRReaderSimilarity:
 
     def test_get_similar_sections(self, temp_db_with_data):
         """Get similar sections."""
-        similar = temp_db_with_data.get_similar_sections(title=1, section="1.1")
+        similar, max_similarity = temp_db_with_data.get_similar_sections(title=1, section="1.1")
 
         assert isinstance(similar, list)
         for item in similar:
@@ -237,13 +237,13 @@ class TestECFRReaderSimilarity:
 
     def test_get_similar_sections_with_limit(self, temp_db_with_data):
         """Limit number of similar sections."""
-        similar = temp_db_with_data.get_similar_sections(title=1, section="1.1", limit=1)
+        similar, _ = temp_db_with_data.get_similar_sections(title=1, section="1.1", limit=1)
 
         assert len(similar) <= 1
 
     def test_get_similar_sections_min_similarity(self, temp_db_with_data):
         """Filter by minimum similarity."""
-        similar = temp_db_with_data.get_similar_sections(
+        similar, _ = temp_db_with_data.get_similar_sections(
             title=1, section="1.1", min_similarity=0.9
         )
 

@@ -25,8 +25,8 @@
         {% for agency in agencies %}
         <tr>
             <td data-value="{{ loop.index }}">{{ loop.index }}</td>
-            <td>{{ agency.name }}</td>
-            <td>{{ agency.abbreviation }}</td>
+            <td><a href="{{ url_for('rankings.agency_detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
+            <td><a href="{{ url_for('rankings.agency_detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
             <td class="numeric" data-value="{{ agency.word_count }}">{{ "{:,}".format(agency.word_count) }}</td>
         </tr>
         {% else %}

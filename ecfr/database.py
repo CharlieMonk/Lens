@@ -389,6 +389,34 @@ class ECFRDatabase:
 
         return totals
 
+    def get_agency_chapters(self, agency_slug: str) -> list[dict]:
+        """Get CFR chapters associated with an agency.
+
+        Returns list of dicts with title, chapter, and title name.
+        """
+        rows = self._query("""
+            SELECT r.title, COALESCE(r.chapter, r.subtitle, r.subchapter) as chapter, t.name
+            FROM cfr_references r
+            JOIN titles t ON r.title = t.number
+            WHERE r.agency_slug = ?
+            ORDER BY r.title, chapter
+        """, (agency_slug,))
+
+        return [
+            {"title": row[0], "chapter": row[1], "title_name": row[2]}
+            for row in rows if row[1]
+        ]
+
+    def get_agency(self, slug: str) -> dict | None:
+        """Get agency details by slug."""
+        row = self._query_one(
+            "SELECT slug, name, short_name FROM agencies WHERE slug = ?",
+            (slug,)
+        )
+        if row:
+            return {"slug": row[0], "name": row[1], "short_name": row[2]}
+        return None
+
     # Sections - Write
 
     def has_year_data(self, year: int) -> bool:
@@ -1129,34 +1157,45 @@ class ECFRDatabase:
         year: int = 0,
         limit: int = 10,
         min_similarity: float = 0.1,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], float | None]:
         """Find sections similar to a given section within the same part.
 
         Uses cached embeddings when available, computes and caches on first request.
         Limits search to the same part for performance.
+
+        For historical years, uses current year (year=0) embeddings. Returns empty
+        if the section doesn't exist in the current year.
+
+        Returns:
+            Tuple of (similar_sections_list, max_similarity).
+            max_similarity is the highest similarity score, or None if no similar sections.
         """
         self._ensure_embeddings_table()
 
-        # Get the query section's part
+        # Always use current year (year=0) for embeddings
+        embedding_year = 0
+
+        # Get the query section's part from current year
         query_row = self._query_one("""
             SELECT part FROM sections
             WHERE year = ? AND title = ? AND section = ?
-        """, (year, title, section))
+        """, (embedding_year, title, section))
 
         if not query_row:
-            return []
+            # Section doesn't exist in current year
+            return [], None
 
         part = query_row[0]
 
-        # Get all sections in the same part
+        # Get all sections in the same part from current year
         rows = self._query("""
             SELECT section, heading, text
             FROM sections
             WHERE year = ? AND title = ? AND part = ? AND text != ''
-        """, (year, title, part))
+        """, (embedding_year, title, part))
 
         if not rows:
-            return []
+            return [], None
 
         # Build section data lookup
         section_data = {}
@@ -1164,10 +1203,10 @@ class ECFRDatabase:
             section_data[sec] = {"heading": heading, "text": text[:10000]}
 
         if section not in section_data:
-            return []
+            return [], None
 
-        # Get cached embeddings for this title
-        cached = self._get_cached_embeddings(year, title)
+        # Get cached embeddings for this title (always current year)
+        cached = self._get_cached_embeddings(embedding_year, title)
 
         # Find sections needing embeddings (only for this part)
         missing = [s for s in section_data if s not in cached]
@@ -1179,7 +1218,7 @@ class ECFRDatabase:
 
             # Cache the new embeddings
             to_cache = {s: emb for s, emb in zip(missing, new_embeddings)}
-            self._cache_embeddings(year, title, to_cache)
+            self._cache_embeddings(embedding_year, title, to_cache)
             cached.update(to_cache)
 
         # Get query embedding
@@ -1200,4 +1239,5 @@ class ECFRDatabase:
                 })
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
-        return results[:limit]
+        max_similarity = results[0]["similarity"] if results else None
+        return results[:limit], max_similarity

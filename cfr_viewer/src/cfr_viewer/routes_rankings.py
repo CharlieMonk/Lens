@@ -25,11 +25,12 @@ def agencies():
         for row in db._query("SELECT slug, name, short_name FROM agencies")
     }
 
-    # Build list with name, abbreviation, and word count
+    # Build list with slug, name, abbreviation, and word count
     agencies_list = []
     for slug, word_count in agency_counts.items():
         details = agency_details.get(slug, {})
         agencies_list.append({
+            "slug": slug,
             "name": details.get("name", slug),
             "abbreviation": details.get("short_name") or "",
             "word_count": word_count,
@@ -39,6 +40,20 @@ def agencies():
     agencies_list.sort(key=lambda x: x["word_count"], reverse=True)
 
     return render_template("rankings/agencies.html", agencies=agencies_list)
+
+
+@rankings_bp.route("/agencies/<slug>")
+def agency_detail(slug: str):
+    """Agency detail page showing CFR chapters."""
+    db = get_database()
+    agency = db.get_agency(slug)
+
+    if not agency:
+        return render_template("rankings/agency_detail.html", agency=None, chapters=[])
+
+    chapters = db.get_agency_chapters(slug)
+
+    return render_template("rankings/agency_detail.html", agency=agency, chapters=chapters)
 
 
 @rankings_bp.route("/titles")

@@ -14,11 +14,13 @@ def similar_sections(title_num: int, section: str):
     year = request.args.get("year", 0, type=int)
     limit = request.args.get("limit", 10, type=int)
 
-    similar = db.get_similar_sections(title_num, section, year, limit)
+    similar, max_similarity = db.get_similar_sections(title_num, section, year, limit)
+    distinctness = 1 - max_similarity if max_similarity is not None else None
 
     return render_template(
         "components/similar_sections.html",
         similar=similar,
+        distinctness=distinctness,
         source_title=title_num,
         source_section=section,
         year=year,
