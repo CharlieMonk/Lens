@@ -129,7 +129,7 @@ class TestECFRDatabaseInit:
         conn.close()
 
         expected = {"titles", "agencies", "cfr_references", "agency_word_counts",
-                    "sections", "section_embeddings"}
+                    "sections", "title_structures"}
         assert expected.issubset(tables)
 
     def test_creates_indexes(self, temp_db):
@@ -141,7 +141,6 @@ class TestECFRDatabaseInit:
         conn.close()
 
         assert "idx_sections_year_title" in indexes
-        assert "idx_embeddings_year_title" in indexes
 
 
 class TestECFRDatabaseTitles:
@@ -369,29 +368,21 @@ class TestECFRDatabaseSimilarities:
             },
         ]
 
-    def test_compute_similarities(self, temp_db, sections_for_similarity):
-        """Compute similarities for a title."""
+    def test_get_similar_sections(self, temp_db, sections_for_similarity):
+        """Get similar sections (computed on-demand)."""
         temp_db.save_sections(sections_for_similarity, year=0)
-        count = temp_db.compute_similarities(title=1, year=0)
 
-        assert count > 0
+        similar = temp_db.get_similar_sections(title=1, section="1.1", year=0)
+        assert len(similar) > 0
 
-    def test_compute_similarities_single_section(self, temp_db):
-        """Single section still gets an embedding for cross-title similarity."""
+    def test_get_similar_sections_single(self, temp_db):
+        """Single section returns empty similar list."""
         temp_db.save_sections([{
             "title": 1, "section": "1.1", "text": "Only one section."
         }], year=0)
 
-        count = temp_db.compute_similarities(title=1, year=0)
-        assert count == 1
-
-    def test_get_similar_sections(self, temp_db, sections_for_similarity):
-        """Get similar sections."""
-        temp_db.save_sections(sections_for_similarity, year=0)
-        temp_db.compute_similarities(title=1, year=0)
-
         similar = temp_db.get_similar_sections(title=1, section="1.1", year=0)
-        assert len(similar) > 0
+        assert similar == []
 
 
 class TestECFRDatabaseUtils:

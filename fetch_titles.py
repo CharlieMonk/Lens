@@ -5,7 +5,6 @@ Usage:
     python fetch_titles.py              # Fetch current + historical data
     python fetch_titles.py --current    # Fetch only current data
     python fetch_titles.py --historical # Fetch only historical data
-    python fetch_titles.py --similarities [--year YEAR]  # Compute TF-IDF similarities
 """
 
 import sys
@@ -31,18 +30,6 @@ def main():
             if idx + 1 < len(sys.argv):
                 title_nums = [int(sys.argv[idx + 1])]
         exit_code = fetcher.fetch_historical(HISTORICAL_YEARS, title_nums)
-
-    elif "--similarities" in sys.argv:
-        year = 0
-        if "--year" in sys.argv:
-            idx = sys.argv.index("--year")
-            if idx + 1 < len(sys.argv):
-                year = int(sys.argv[idx + 1])
-        results = fetcher.compute_all_similarities(year=year)
-        total = sum(v for v in results.values() if v >= 0)
-        skipped = sum(1 for v in results.values() if v < 0)
-        print(f"\nTotal: {total:,} similarity pairs, {skipped} titles skipped")
-        exit_code = 0
 
     else:
         exit_code = fetcher.fetch_all()

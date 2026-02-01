@@ -158,26 +158,6 @@ class TestECFRFetcherAsync:
             assert callable(fetcher.fetch_historical_async)
 
 
-class TestECFRFetcherSimilarities:
-    """Tests for similarity computation."""
-
-    def test_compute_all_similarities(self):
-        """Compute similarities for all titles."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = ECFRFetcher(output_dir=Path(tmpdir))
-
-            # Add some test sections
-            sections = [
-                {"title": 1, "section": "1.1", "text": "Federal regulations apply to agencies."},
-                {"title": 1, "section": "1.2", "text": "Federal regulations apply to departments."},
-            ]
-            fetcher.db.save_sections(sections, year=0)
-
-            results = fetcher.compute_all_similarities(year=0)
-
-            assert 1 in results
-
-
 class TestECFRFetcherHistorical:
     """Tests for historical fetching."""
 

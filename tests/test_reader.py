@@ -55,7 +55,6 @@ def temp_db_with_data():
             },
         ]
         db.save_sections(sections, year=0)
-        db.compute_similarities(title=1, year=0)
 
         yield ECFRDatabase(str(db_path))
 

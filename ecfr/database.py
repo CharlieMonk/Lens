@@ -1,8 +1,6 @@
 """SQLite database operations for eCFR data."""
 
-import hashlib
 import sqlite3
-import struct
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
@@ -66,7 +64,6 @@ class ECFRDatabase:
             cursor = conn.cursor()
             self._create_tables(cursor)
             self._migrate_sections_table(cursor, conn)
-            self._migrate_embeddings_table(cursor)
             self._create_indexes(cursor)
             conn.commit()
 
@@ -119,18 +116,6 @@ class ECFRDatabase:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS section_embeddings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                year INTEGER NOT NULL,
-                title INTEGER NOT NULL,
-                section TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                text_hash TEXT,
-                UNIQUE(year, title, section)
-            )
-        """)
-
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS title_structures (
                 title INTEGER NOT NULL,
                 year INTEGER NOT NULL,
@@ -160,17 +145,6 @@ class ECFRDatabase:
         else:
             self._create_sections_table(cursor)
 
-    def _migrate_embeddings_table(self, cursor: sqlite3.Cursor) -> None:
-        """Add text_hash column to section_embeddings if missing."""
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='section_embeddings'")
-        if cursor.fetchone() is None:
-            return
-
-        cursor.execute("PRAGMA table_info(section_embeddings)")
-        columns = {row[1] for row in cursor.fetchall()}
-        if "text_hash" not in columns:
-            cursor.execute("ALTER TABLE section_embeddings ADD COLUMN text_hash TEXT")
-
     def _create_sections_table(self, cursor: sqlite3.Cursor) -> None:
         """Create the sections table."""
         cursor.execute("""
@@ -198,7 +172,6 @@ class ECFRDatabase:
             ("idx_cfr_title_chapter", "cfr_references(title, chapter)"),
             ("idx_cfr_agency", "cfr_references(agency_slug)"),
             ("idx_word_counts_agency", "agency_word_counts(agency_slug)"),
-            ("idx_embeddings_year_title", "section_embeddings(year, title)"),
         ]
         for name, columns in indexes:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {columns}")
@@ -288,7 +261,6 @@ class ECFRDatabase:
     def delete_title_sections(self, title: int, year: int = 0) -> int:
         """Delete all sections for a specific title and year.
 
-        Also deletes associated embeddings.
         Returns number of sections deleted.
         """
         count = self._query_one(
@@ -296,17 +268,10 @@ class ECFRDatabase:
             (year, title)
         )[0]
 
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM sections WHERE year = ? AND title = ?",
-                (year, title)
-            )
-            cursor.execute(
-                "DELETE FROM section_embeddings WHERE year = ? AND title = ?",
-                (year, title)
-            )
-            conn.commit()
+        self._execute(
+            "DELETE FROM sections WHERE year = ? AND title = ?",
+            (year, title)
+        )
 
         return count
 
@@ -1071,19 +1036,7 @@ class ECFRDatabase:
 
         return result
 
-    # Embeddings and Similarity
-
-    def has_embeddings(self, title: int = None, year: int = 0) -> bool:
-        """Check if embeddings exist for a given year and optionally title."""
-        if title is not None:
-            return self._query_one(
-                "SELECT COUNT(*) FROM section_embeddings WHERE year = ? AND title = ?",
-                (year, title)
-            )[0] > 0
-        return self._query_one(
-            "SELECT COUNT(*) FROM section_embeddings WHERE year = ?",
-            (year,)
-        )[0] > 0
+    # Similarity Search (on-demand embeddings with caching)
 
     def _get_embedding_model(self):
         """Lazily load the sentence transformer model."""
@@ -1092,144 +1045,43 @@ class ECFRDatabase:
             self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         return self._embedding_model
 
-    def _embedding_to_blob(self, embedding: np.ndarray) -> bytes:
-        """Convert numpy array to binary blob."""
-        return struct.pack(f'{len(embedding)}f', *embedding.astype(np.float32))
-
-    def _blob_to_embedding(self, blob: bytes) -> np.ndarray:
-        """Convert binary blob back to numpy array."""
-        n_floats = len(blob) // 4
-        return np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
-
-    def _get_text_embedding_lookup(self) -> dict[str, np.ndarray]:
-        """Build a lookup of truncated text -> embedding from all existing embeddings.
-
-        Used to avoid recomputing embeddings for identical text across the database.
-        """
-        rows = self._query("""
-            SELECT s.text, se.embedding
-            FROM section_embeddings se
-            JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
-            WHERE s.text != ''
+    def _ensure_embeddings_table(self) -> None:
+        """Ensure section_embeddings table exists for caching."""
+        self._execute("""
+            CREATE TABLE IF NOT EXISTS section_embeddings (
+                year INTEGER NOT NULL,
+                title INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                PRIMARY KEY (year, title, section)
+            )
         """)
 
-        lookup = {}
-        for text, embedding_blob in rows:
-            truncated = text[:10000]
-            if truncated not in lookup:
-                lookup[truncated] = self._blob_to_embedding(embedding_blob)
-        return lookup
+    def _get_cached_embeddings(self, year: int, title: int) -> dict[str, np.ndarray]:
+        """Get all cached embeddings for a title."""
+        import struct
+        rows = self._query(
+            "SELECT section, embedding FROM section_embeddings WHERE year = ? AND title = ?",
+            (year, title)
+        )
+        result = {}
+        for section, blob in rows:
+            n_floats = len(blob) // 4
+            result[section] = np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
+        return result
 
-    @staticmethod
-    def _compute_text_hash(text: str) -> str:
-        """Compute a hash of the text content for change detection."""
-        return hashlib.md5(text[:10000].encode('utf-8', errors='replace')).hexdigest()
-
-    def _get_sections_needing_embeddings(self, title: int, year: int = 0) -> list[tuple[str, str]]:
-        """Get sections that need embeddings computed.
-
-        Includes sections that:
-        - Don't have embeddings yet
-        - Have embeddings but text has changed (text_hash mismatch)
-
-        Returns list of (section, text) tuples.
-        """
-        # Get sections without embeddings
-        missing = self._query("""
-            SELECT s.section, s.text
-            FROM sections s
-            LEFT JOIN section_embeddings se
-                ON s.year = se.year AND s.title = se.title AND s.section = se.section
-            WHERE s.year = ? AND s.title = ? AND s.text != '' AND se.id IS NULL
-        """, (year, title))
-
-        # Get sections with stale embeddings (text changed since embedding was computed)
-        stale = self._query("""
-            SELECT s.section, s.text
-            FROM sections s
-            JOIN section_embeddings se
-                ON s.year = se.year AND s.title = se.title AND s.section = se.section
-            WHERE s.year = ? AND s.title = ? AND s.text != ''
-                AND (se.text_hash IS NULL OR se.text_hash != ?)
-        """, (year, title, ''))  # Placeholder - we'll filter in Python
-
-        # Filter stale in Python since we need to compute hash
-        stale_filtered = []
-        for section, text in stale:
-            current_hash = self._compute_text_hash(text)
-            stored_hash = self._query_one("""
-                SELECT text_hash FROM section_embeddings
-                WHERE year = ? AND title = ? AND section = ?
-            """, (year, title, section))
-            if not stored_hash or stored_hash[0] != current_hash:
-                stale_filtered.append((section, text))
-
-        return list(missing) + stale_filtered
-
-    def _get_sections_without_embeddings(self, title: int, year: int = 0) -> list[tuple[str, str]]:
-        """Get sections that don't have embeddings yet (legacy method).
-
-        Returns list of (section, text) tuples.
-        """
-        return self._get_sections_needing_embeddings(title, year)
-
-    def compute_similarities(self, title: int, year: int = 0, top_n: int = 5) -> int:
-        """Compute vector embeddings for sections missing them.
-
-        Only computes embeddings for sections that don't already have one.
-        Reuses existing embeddings for identical text values to avoid recomputation.
-
-        Returns number of new embeddings stored.
-        """
-        # Get only sections that need embeddings
-        rows = self._get_sections_without_embeddings(title, year)
-        if not rows:
-            return 0
-
-        sections = [row[0] for row in rows]
-        texts = [row[1][:10000] for row in rows]  # Truncate to avoid memory issues
-
-        # Build lookup of existing embeddings by text content
-        text_to_embedding = self._get_text_embedding_lookup()
-
-        # Separate texts that need computation from those we can reuse
-        texts_to_encode = []
-        text_indices = []
-
-        for i, text in enumerate(texts):
-            if text not in text_to_embedding:
-                texts_to_encode.append(text)
-                text_indices.append(i)
-
-        # Compute embeddings only for texts not in lookup
-        embeddings = [None] * len(texts)
-
-        if texts_to_encode:
-            model = self._get_embedding_model()
-            new_embeddings = model.encode(texts_to_encode, show_progress_bar=False, normalize_embeddings=True)
-
-            # Place new embeddings in their positions and add to lookup
-            for idx, embedding in zip(text_indices, new_embeddings):
-                embeddings[idx] = embedding
-                text_to_embedding[texts[idx]] = embedding
-
-        # Fill in reused embeddings from lookup
-        for i, text in enumerate(texts):
-            if embeddings[i] is None:
-                embeddings[i] = text_to_embedding[text]
-
-        # Insert embeddings with text_hash for change tracking
+    def _cache_embeddings(self, year: int, title: int, embeddings: dict[str, np.ndarray]) -> None:
+        """Cache embeddings for sections."""
+        import struct
         with self._connection() as conn:
             cursor = conn.cursor()
-            for i, (section, embedding) in enumerate(zip(sections, embeddings)):
-                text_hash = self._compute_text_hash(texts[i])
+            for section, embedding in embeddings.items():
+                blob = struct.pack(f'{len(embedding)}f', *embedding.astype(np.float32))
                 cursor.execute(
-                    "INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding, text_hash) VALUES (?, ?, ?, ?, ?)",
-                    (year, title, section, self._embedding_to_blob(embedding), text_hash)
+                    "INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding) VALUES (?, ?, ?, ?)",
+                    (year, title, section, blob)
                 )
             conn.commit()
-
-        return len(sections)
 
     def get_similar_sections(
         self,
@@ -1239,35 +1091,73 @@ class ECFRDatabase:
         limit: int = 10,
         min_similarity: float = 0.1,
     ) -> list[dict]:
-        """Find sections similar to a given section using vector similarity search."""
-        row = self._query_one(
-            "SELECT embedding FROM section_embeddings WHERE year = ? AND title = ? AND section = ?",
-            (year, title, section)
-        )
-        if not row:
+        """Find sections similar to a given section within the same part.
+
+        Uses cached embeddings when available, computes and caches on first request.
+        Limits search to the same part for performance.
+        """
+        self._ensure_embeddings_table()
+
+        # Get the query section's part
+        query_row = self._query_one("""
+            SELECT part FROM sections
+            WHERE year = ? AND title = ? AND section = ?
+        """, (year, title, section))
+
+        if not query_row:
             return []
 
-        query_embedding = self._blob_to_embedding(row[0])
+        part = query_row[0]
 
+        # Get all sections in the same part
         rows = self._query("""
-            SELECT se.title, se.section, se.embedding, s.heading
-            FROM section_embeddings se
-            LEFT JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
-            WHERE se.year = ?
-        """, (year,))
+            SELECT section, heading, text
+            FROM sections
+            WHERE year = ? AND title = ? AND part = ? AND text != ''
+        """, (year, title, part))
 
+        if not rows:
+            return []
+
+        # Build section data lookup
+        section_data = {}
+        for sec, heading, text in rows:
+            section_data[sec] = {"heading": heading, "text": text[:10000]}
+
+        if section not in section_data:
+            return []
+
+        # Get cached embeddings for this title
+        cached = self._get_cached_embeddings(year, title)
+
+        # Find sections needing embeddings (only for this part)
+        missing = [s for s in section_data if s not in cached]
+
+        if missing:
+            model = self._get_embedding_model()
+            texts = [section_data[s]["text"] for s in missing]
+            new_embeddings = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+
+            # Cache the new embeddings
+            to_cache = {s: emb for s, emb in zip(missing, new_embeddings)}
+            self._cache_embeddings(year, title, to_cache)
+            cached.update(to_cache)
+
+        # Get query embedding
+        query_embedding = cached[section]
+
+        # Compute similarities
         results = []
-        for sim_title, sim_section, embedding_blob, heading in rows:
-            if sim_title == title and sim_section == section:
+        for sec, data in section_data.items():
+            if sec == section:
                 continue
-
-            similarity = float(np.dot(query_embedding, self._blob_to_embedding(embedding_blob)))
+            similarity = float(np.dot(query_embedding, cached[sec]))
             if similarity >= min_similarity:
                 results.append({
-                    "title": sim_title,
-                    "section": sim_section,
+                    "title": title,
+                    "section": sec,
                     "similarity": similarity,
-                    "heading": heading,
+                    "heading": data["heading"],
                 })
 
         results.sort(key=lambda x: x["similarity"], reverse=True)

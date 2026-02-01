@@ -151,10 +151,6 @@ class ECFRFetcher:
         if total_words:
             print(f"Total words: {total_words:,}")
 
-        if success_count > 0:
-            print("\nComputing embeddings...")
-            self.compute_all_similarities(year=0)
-
         return 0 if success_count == len(titles_to_fetch) else 1
 
     def fetch_current(self, clear_cache: bool = False) -> int:
@@ -220,10 +216,6 @@ class ECFRFetcher:
                 if success_count < len(title_nums):
                     all_success = False
 
-                if success_count > 0:
-                    print(f"\nComputing embeddings for {year}...")
-                    self.compute_all_similarities(year=year)
-
         return 0 if all_success else 1
 
     def fetch_historical(self, historical_years: list[int], title_nums: list[int] = None) -> int:
@@ -247,43 +239,6 @@ class ECFRFetcher:
     def fetch_all(self, historical_years: list[int] = None) -> int:
         """Sync wrapper for fetch_all_async."""
         return asyncio.run(self.fetch_all_async(historical_years))
-
-    def compute_all_similarities(self, year: int = 0) -> dict[int, int]:
-        """Compute vector embeddings for all titles in the database.
-
-        Returns:
-            Dict mapping title number to embedding count.
-        """
-        titles = self.db.list_section_titles(year)
-
-        results = {}
-        for title in titles:
-            print(f"Computing embeddings for Title {title}...", end=" ", flush=True)
-            count = self.db.compute_similarities(title, year=year)
-            print(f"{count} embeddings")
-            results[title] = count
-
-        return results
-
-    def ensure_embeddings(self, year: int = 0) -> dict[int, int]:
-        """Ensure embeddings exist for all sections in the database for a given year.
-
-        Only computes embeddings for sections that don't already have them.
-        Reuses embeddings for identical text across sections.
-
-        Returns:
-            Dict mapping title number to count of new embeddings computed.
-        """
-        titles = self.db.list_section_titles(year)
-
-        results = {}
-        for title in titles:
-            count = self.db.compute_similarities(title, year=year)
-            if count > 0:
-                print(f"  Title {title}: {count} new embeddings")
-                results[title] = count
-
-        return results
 
     async def update_stale_titles_async(self, stale_titles: list[int], agency_lookup: dict = None) -> dict[int, str]:
         """Update specific titles that have been identified as stale.
@@ -337,7 +292,7 @@ class ECFRFetcher:
         """Sync wrapper for update_stale_titles_async."""
         return asyncio.run(self.update_stale_titles_async(stale_titles, agency_lookup))
 
-    def sync(self, compute_embeddings: bool = True) -> dict:
+    def sync(self) -> dict:
         """Synchronize database with latest eCFR data.
 
         This is the main entry point for keeping the database up-to-date.
@@ -345,13 +300,9 @@ class ECFRFetcher:
         1. Fetch latest titles metadata from API
         2. Identify titles that have been updated
         3. Re-fetch those titles
-        4. Compute missing/stale embeddings
-
-        Args:
-            compute_embeddings: Whether to compute embeddings after syncing.
 
         Returns:
-            Dict with sync results including updated titles and embedding counts.
+            Dict with sync results including updated titles.
         """
         print("=" * 50)
         print("eCFR Database Sync")
@@ -360,7 +311,6 @@ class ECFRFetcher:
         results = {
             "stale_titles": [],
             "updated_titles": {},
-            "embeddings_computed": {},
             "errors": [],
         }
 
@@ -415,15 +365,6 @@ class ECFRFetcher:
         else:
             print("   All titles have section data")
 
-        # Step 5: Compute missing embeddings
-        if compute_embeddings:
-            print("\n4. Computing missing embeddings...")
-            embedding_results = self.ensure_embeddings(year=0)
-            results["embeddings_computed"] = embedding_results
-
-            if not embedding_results:
-                print("   All sections have embeddings")
-
         print("\n" + "=" * 50)
         print("Sync complete")
         print("=" * 50)
@@ -434,12 +375,11 @@ class ECFRFetcher:
 def main(historical_years: list[int] = None) -> int:
     """Populate the database with all necessary CFR data.
 
-    Checks if data already exists before fetching/computing:
+    Checks if data already exists before fetching:
     - Titles metadata
     - Agencies metadata
     - Current sections (year=0)
     - Historical sections (for each year in historical_years)
-    - Embeddings for all sections (only computes missing ones)
 
     Args:
         historical_years: List of historical years to include.
@@ -497,19 +437,6 @@ def main(historical_years: list[int] = None) -> int:
         else:
             print(f"Historical sections ({year}): fetching...")
             fetcher.fetch_historical([year])
-
-    # Ensure embeddings for all sections (only computes missing ones)
-    print("\n" + "=" * 50)
-    print("Ensuring embeddings for all sections...")
-    print("=" * 50)
-
-    all_years = [0] + historical_years
-    for year in all_years:
-        year_label = "current" if year == 0 else str(year)
-        print(f"Checking embeddings ({year_label})...")
-        results = fetcher.ensure_embeddings(year=year)
-        if not results:
-            print(f"  All sections already have embeddings")
 
     print("\n" + "=" * 50)
     print("Database population complete")
