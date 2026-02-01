@@ -20,6 +20,17 @@ nav {
     padding: 0.5rem 0;
 }
 
+/* Reduce space between nav and main content */
+main.container {
+    padding-top: 0;
+}
+
+main.container > hgroup:first-child,
+main.container > h1:first-child,
+main.container > nav:first-child {
+    margin-top: 0;
+}
+
 nav strong a {
     color: var(--pico-primary);
     text-decoration: none;
