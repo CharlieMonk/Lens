@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Flask
 
-from ecfr.database import ECFRDatabase, preload_embedding_model
+from ecfr.database import ECFRDatabase
 from .routes_browse import browse_bp
 from .routes_rankings import rankings_bp
 from .routes_compare import compare_bp
@@ -42,8 +42,5 @@ def create_app(db_path: str | None = None):
     app.register_blueprint(rankings_bp, url_prefix="/rankings")
     app.register_blueprint(compare_bp, url_prefix="/compare")
     app.register_blueprint(api_bp, url_prefix="/api")
-
-    # Preload embedding model at startup
-    preload_embedding_model()
 
     return app

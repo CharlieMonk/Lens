@@ -6,21 +6,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
-# Module-level singleton for the embedding model (loaded once, persists across requests)
-_embedding_model = None
-
-
-def preload_embedding_model():
-    """Preload the embedding model at startup to avoid first-request delay."""
-    global _embedding_model
-    if _embedding_model is None:
-        from sentence_transformers import SentenceTransformer
-        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _embedding_model
-
-
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
 
@@ -1115,53 +1100,7 @@ class ECFRDatabase:
 
         return result
 
-    # Similarity Search (on-demand embeddings with caching)
-
-    def _get_embedding_model(self):
-        """Get the sentence transformer model (module-level singleton)."""
-        global _embedding_model
-        if _embedding_model is None:
-            from sentence_transformers import SentenceTransformer
-            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return _embedding_model
-
-    def _ensure_embeddings_table(self) -> None:
-        """Ensure section_embeddings table exists for caching."""
-        self._execute("""
-            CREATE TABLE IF NOT EXISTS section_embeddings (
-                year INTEGER NOT NULL,
-                title INTEGER NOT NULL,
-                section TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                PRIMARY KEY (year, title, section)
-            )
-        """)
-
-    def _get_cached_embeddings(self, year: int, title: int) -> dict[str, np.ndarray]:
-        """Get all cached embeddings for a title."""
-        import struct
-        rows = self._query(
-            "SELECT section, embedding FROM section_embeddings WHERE year = ? AND title = ?",
-            (year, title)
-        )
-        result = {}
-        for section, blob in rows:
-            n_floats = len(blob) // 4
-            result[section] = np.array(struct.unpack(f'{n_floats}f', blob), dtype=np.float32)
-        return result
-
-    def _cache_embeddings(self, year: int, title: int, embeddings: dict[str, np.ndarray]) -> None:
-        """Cache embeddings for sections."""
-        import struct
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            for section, embedding in embeddings.items():
-                blob = struct.pack(f'{len(embedding)}f', *embedding.astype(np.float32))
-                cursor.execute(
-                    "INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding) VALUES (?, ?, ?, ?)",
-                    (year, title, section, blob)
-                )
-            conn.commit()
+    # Similarity Search (TF-IDF based, computed on-demand per chapter)
 
     def get_similar_sections(
         self,
@@ -1171,84 +1110,77 @@ class ECFRDatabase:
         limit: int = 10,
         min_similarity: float = 0.1,
     ) -> tuple[list[dict], float | None]:
-        """Find sections similar to a given section within the same part.
+        """Find sections similar to a given section within the same chapter.
 
-        Uses cached embeddings when available, computes and caches on first request.
-        Limits search to the same part for performance.
+        Uses TF-IDF for fast similarity computation. Searches all sections in
+        the same chapter (which may span multiple parts).
 
-        For historical years, uses current year (year=0) embeddings. Returns empty
+        For historical years, uses current year (year=0) data. Returns empty
         if the section doesn't exist in the current year.
 
         Returns:
             Tuple of (similar_sections_list, max_similarity).
             max_similarity is the highest similarity score, or None if no similar sections.
         """
-        self._ensure_embeddings_table()
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
 
-        # Always use current year (year=0) for embeddings
-        embedding_year = 0
+        # Always use current year (year=0) for similarity
+        query_year = 0
 
-        # Get the query section's part from current year
+        # Get the query section's chapter from current year
         query_row = self._query_one("""
-            SELECT part FROM sections
+            SELECT chapter FROM sections
             WHERE year = ? AND title = ? AND section = ?
-        """, (embedding_year, title, section))
+        """, (query_year, title, section))
 
         if not query_row:
-            # Section doesn't exist in current year
             return [], None
 
-        part = query_row[0]
+        chapter = query_row[0]
 
-        # Get all sections in the same part from current year
+        # Get all sections in the same chapter
         rows = self._query("""
             SELECT section, heading, text
             FROM sections
-            WHERE year = ? AND title = ? AND part = ? AND text != ''
-        """, (embedding_year, title, part))
+            WHERE year = ? AND title = ? AND chapter = ? AND text != ''
+        """, (query_year, title, chapter))
 
-        if not rows:
+        if len(rows) < 2:
             return [], None
 
-        # Build section data lookup
-        section_data = {}
-        for sec, heading, text in rows:
-            section_data[sec] = {"heading": heading, "text": text[:10000]}
+        # Build section data
+        sections = []
+        headings = {}
+        texts = []
+        query_idx = None
 
-        if section not in section_data:
+        for i, (sec, heading, text) in enumerate(rows):
+            sections.append(sec)
+            headings[sec] = heading
+            texts.append(text)
+            if sec == section:
+                query_idx = i
+
+        if query_idx is None:
             return [], None
 
-        # Get cached embeddings for this title (always current year)
-        cached = self._get_cached_embeddings(embedding_year, title)
+        # Compute TF-IDF and similarities
+        vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        similarities = cosine_similarity(tfidf_matrix[query_idx:query_idx+1], tfidf_matrix)[0]
 
-        # Find sections needing embeddings (only for this part)
-        missing = [s for s in section_data if s not in cached]
-
-        if missing:
-            model = self._get_embedding_model()
-            texts = [section_data[s]["text"] for s in missing]
-            new_embeddings = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
-
-            # Cache the new embeddings
-            to_cache = {s: emb for s, emb in zip(missing, new_embeddings)}
-            self._cache_embeddings(embedding_year, title, to_cache)
-            cached.update(to_cache)
-
-        # Get query embedding
-        query_embedding = cached[section]
-
-        # Compute similarities
+        # Build results
         results = []
-        for sec, data in section_data.items():
+        for i, (sec, sim) in enumerate(zip(sections, similarities)):
             if sec == section:
                 continue
-            similarity = float(np.dot(query_embedding, cached[sec]))
-            if similarity >= min_similarity:
+            if sim >= min_similarity:
                 results.append({
                     "title": title,
                     "section": sec,
-                    "similarity": similarity,
-                    "heading": data["heading"],
+                    "similarity": float(sim),
+                    "heading": headings[sec],
                 })
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
