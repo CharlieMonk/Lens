@@ -14,22 +14,22 @@
 
 {% include "components/year_selector.html" %}
 
-<table>
+<table class="sortable">
     <thead>
         <tr>
-            <th scope="col">Rank</th>
-            <th scope="col">Title</th>
-            <th scope="col">Name</th>
-            <th scope="col" class="numeric">Word Count</th>
+            <th scope="col" data-sort="number">Rank</th>
+            <th scope="col" data-sort="number">Title</th>
+            <th scope="col" data-sort="string">Name</th>
+            <th scope="col" class="numeric" data-sort="number">Word Count</th>
         </tr>
     </thead>
     <tbody>
         {% for title in titles %}
         <tr>
-            <td>{{ loop.index }}</td>
-            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
+            <td data-value="{{ loop.index }}">{{ loop.index }}</td>
+            <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
-            <td class="numeric">{{ "{:,}".format(title.word_count) }}</td>
+            <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
         </tr>
         {% else %}
         <tr>
