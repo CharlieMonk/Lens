@@ -39,7 +39,7 @@
             <span class="reserved-tag">[Reserved]</span>
         </li>
         {% else %}
-        <li class="structure-item depth-{{ depth }}">
+        <li class="structure-item depth-{{ depth }}"{% if node.type == 'chapter' %} id="chapter-{{ node.identifier }}"{% endif %}>
             <details {% if depth == 0 %}open{% endif %}>
                 <summary>
                     <strong>

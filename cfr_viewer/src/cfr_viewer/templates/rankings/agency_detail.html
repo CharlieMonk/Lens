@@ -25,8 +25,8 @@
 <ul>
     {% for ch in chapters %}
     <li>
-        <a href="{{ url_for('browse.title', title_num=ch.title) }}">Title {{ ch.title }}: {{ ch.title_name }}</a>,
-        Chapter {{ ch.chapter }}
+        <a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">Title {{ ch.title }}, Chapter {{ ch.chapter }}</a>
+        {% if ch.title_name %}<small>— {{ ch.title_name }}</small>{% endif %}
     </li>
     {% endfor %}
 </ul>
