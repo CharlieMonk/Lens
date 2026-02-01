@@ -196,3 +196,48 @@ footer {
     border-top: 1px solid var(--pico-muted-border-color);
     text-align: center;
 }
+
+/* Similar sections list */
+.similar-sections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.similar-section-item summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+}
+
+.similar-section-item summary .citation {
+    font-weight: 500;
+}
+
+.similar-section-item summary .similarity {
+    color: var(--pico-muted-color);
+    font-size: 0.9rem;
+}
+
+.similar-section-details {
+    padding: 0.75rem 1rem;
+    margin-left: 0.5rem;
+    border-left: 3px solid var(--pico-primary);
+    background: var(--pico-card-sectionning-background-color);
+    border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0;
+}
+
+.similar-section-details p {
+    margin: 0.25rem 0;
+}
+
+.similar-section-details .heading {
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+.similar-section-details .similarity-detail {
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+}
