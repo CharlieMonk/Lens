@@ -13,6 +13,11 @@ import numpy as np
 class ECFRDatabase:
     """Handles all SQLite database operations for eCFR data."""
 
+    SECTION_COLUMNS = (
+        "year", "title", "subtitle", "chapter", "subchapter",
+        "part", "subpart", "section", "heading", "text", "word_count"
+    )
+
     def __init__(self, db_path: str | Path = "ecfr/ecfr_data/ecfr.db"):
         self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,6 +31,33 @@ class ECFRDatabase:
             yield conn
         finally:
             conn.close()
+
+    def _query(self, sql: str, params: tuple = ()) -> list:
+        """Execute a query and return all results."""
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+
+    def _query_one(self, sql: str, params: tuple = ()):
+        """Execute a query and return first result."""
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchone()
+
+    def _execute(self, sql: str, params: tuple = ()) -> None:
+        """Execute a statement and commit."""
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            conn.commit()
+
+    def _row_to_section(self, row: tuple) -> dict:
+        """Convert a database row to a section dict."""
+        return dict(zip(self.SECTION_COLUMNS, row))
+
+    # Schema initialization
 
     def _init_schema(self) -> None:
         """Initialize the database schema."""
@@ -85,19 +117,6 @@ class ECFRDatabase:
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS section_similarities (
-                year INTEGER NOT NULL,
-                title INTEGER NOT NULL,
-                section TEXT NOT NULL,
-                similar_title INTEGER NOT NULL,
-                similar_section TEXT NOT NULL,
-                similarity REAL NOT NULL,
-                PRIMARY KEY (year, title, section, similar_title, similar_section)
-            )
-        """)
-
-        # Create section embeddings table for vector similarity search
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS section_embeddings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 year INTEGER NOT NULL,
@@ -117,7 +136,6 @@ class ECFRDatabase:
             cursor.execute("PRAGMA table_info(sections)")
             columns = {row[1] for row in cursor.fetchall()}
             if "year" not in columns:
-                # Migrate: add year column by recreating table
                 cursor.execute("ALTER TABLE sections RENAME TO sections_old")
                 self._create_sections_table(cursor)
                 cursor.execute("""
@@ -157,11 +175,12 @@ class ECFRDatabase:
             ("idx_cfr_title_chapter", "cfr_references(title, chapter)"),
             ("idx_cfr_agency", "cfr_references(agency_slug)"),
             ("idx_word_counts_agency", "agency_word_counts(agency_slug)"),
-            ("idx_similarities_source", "section_similarities(year, title, section)"),
             ("idx_embeddings_year_title", "section_embeddings(year, title)"),
         ]
         for name, columns in indexes:
             cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {columns}")
+
+    # Utility methods
 
     def is_fresh(self) -> bool:
         """Check if the database was modified today."""
@@ -175,33 +194,28 @@ class ECFRDatabase:
         if self.db_path.exists():
             self.db_path.unlink()
 
-    # Titles methods
+    # Titles
 
     def get_titles(self) -> dict[int, dict]:
         """Get all titles from the database."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT number, name, latest_amended_on, latest_issue_date, up_to_date_as_of, reserved
-                FROM titles
-            """)
-            return {
-                row[0]: {
-                    "name": row[1],
-                    "latest_amended_on": row[2],
-                    "latest_issue_date": row[3],
-                    "up_to_date_as_of": row[4],
-                    "reserved": bool(row[5]),
-                }
-                for row in cursor.fetchall()
+        rows = self._query("""
+            SELECT number, name, latest_amended_on, latest_issue_date, up_to_date_as_of, reserved
+            FROM titles
+        """)
+        return {
+            row[0]: {
+                "name": row[1],
+                "latest_amended_on": row[2],
+                "latest_issue_date": row[3],
+                "up_to_date_as_of": row[4],
+                "reserved": bool(row[5]),
             }
+            for row in rows
+        }
 
     def has_titles(self) -> bool:
         """Check if titles table has data."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM titles")
-            return cursor.fetchone()[0] > 0
+        return self._query_one("SELECT COUNT(*) FROM titles")[0] > 0
 
     def save_titles(self, titles: list[dict]) -> None:
         """Save titles to the database, replacing existing data."""
@@ -222,21 +236,11 @@ class ECFRDatabase:
                 ))
             conn.commit()
 
-    # Agencies methods
+    # Agencies
 
     def has_agencies(self) -> bool:
         """Check if agencies table has data."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM agencies")
-            return cursor.fetchone()[0] > 0
-
-    def has_year_data(self, year: int) -> bool:
-        """Check if sections table has data for a specific year."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM sections WHERE year = ?", (year,))
-            return cursor.fetchone()[0] > 0
+        return self._query_one("SELECT COUNT(*) FROM agencies")[0] > 0
 
     def save_agencies(self, agencies: list[dict]) -> None:
         """Save agencies and their CFR references to the database."""
@@ -276,35 +280,54 @@ class ECFRDatabase:
     def build_agency_lookup(self) -> dict:
         """Build a lookup table mapping CFR references to agency info."""
         lookup = defaultdict(list)
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT
-                    r.title,
-                    COALESCE(r.chapter, r.subtitle, r.subchapter) as chapter,
-                    a.slug as agency_slug,
-                    a.name as agency_name,
-                    a.parent_slug,
-                    p.name as parent_name
-                FROM cfr_references r
-                JOIN agencies a ON r.agency_slug = a.slug
-                LEFT JOIN agencies p ON a.parent_slug = p.slug
-                WHERE COALESCE(r.chapter, r.subtitle, r.subchapter) IS NOT NULL
-            """)
+        rows = self._query("""
+            SELECT
+                r.title,
+                COALESCE(r.chapter, r.subtitle, r.subchapter) as chapter,
+                a.slug as agency_slug,
+                a.name as agency_name,
+                a.parent_slug,
+                p.name as parent_name
+            FROM cfr_references r
+            JOIN agencies a ON r.agency_slug = a.slug
+            LEFT JOIN agencies p ON a.parent_slug = p.slug
+            WHERE COALESCE(r.chapter, r.subtitle, r.subchapter) IS NOT NULL
+        """)
 
-            for row in cursor.fetchall():
-                title, chapter, agency_slug, agency_name, parent_slug, parent_name = row
-                if title and chapter:
-                    lookup[(title, chapter)].append({
-                        "agency_slug": agency_slug,
-                        "agency_name": agency_name,
-                        "parent_slug": parent_slug,
-                        "parent_name": parent_name,
-                    })
+        for title, chapter, agency_slug, agency_name, parent_slug, parent_name in rows:
+            if title and chapter:
+                lookup[(title, chapter)].append({
+                    "agency_slug": agency_slug,
+                    "agency_name": agency_name,
+                    "parent_slug": parent_slug,
+                    "parent_name": parent_name,
+                })
 
         return dict(lookup)
 
-    # Sections methods
+    def get_agency_word_counts(self) -> dict[str, int]:
+        """Get total word counts for all agencies, including parent aggregates."""
+        direct_counts = {
+            row[0]: row[1]
+            for row in self._query("SELECT agency_slug, SUM(word_count) FROM agency_word_counts GROUP BY agency_slug")
+        }
+        child_to_parent = {
+            row[0]: row[1]
+            for row in self._query("SELECT slug, parent_slug FROM agencies WHERE parent_slug IS NOT NULL")
+        }
+
+        totals = dict(direct_counts)
+        for child_slug, parent_slug in child_to_parent.items():
+            if child_slug in direct_counts:
+                totals[parent_slug] = totals.get(parent_slug, 0) + direct_counts[child_slug]
+
+        return totals
+
+    # Sections - Write
+
+    def has_year_data(self, year: int) -> bool:
+        """Check if sections table has data for a specific year."""
+        return self._query_one("SELECT COUNT(*) FROM sections WHERE year = ?", (year,))[0] > 0
 
     def save_sections(self, sections: list[dict], year: int = 0) -> None:
         """Save section data to the database."""
@@ -348,33 +371,150 @@ class ECFRDatabase:
                     """, (agency_info["agency_slug"], title_num, chapter, word_count))
             conn.commit()
 
-    def get_agency_word_counts(self) -> dict[str, int]:
-        """Get total word counts for all agencies, including parent aggregates."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
+    # Sections - Read
 
-            cursor.execute("""
-                SELECT agency_slug, SUM(word_count) as total
-                FROM agency_word_counts
-                GROUP BY agency_slug
-            """)
-            direct_counts = {row[0]: row[1] for row in cursor.fetchall()}
+    def list_years(self) -> list[int]:
+        """List available years from database (0 = current)."""
+        return [row[0] for row in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
 
-            cursor.execute("""
-                SELECT slug, parent_slug FROM agencies WHERE parent_slug IS NOT NULL
-            """)
-            child_to_parent = {row[0]: row[1] for row in cursor.fetchall()}
+    def list_titles(self, year: int = 0) -> list[int]:
+        """List available title numbers that have sections."""
+        return [row[0] for row in self._query(
+            "SELECT DISTINCT title FROM sections WHERE year = ? ORDER BY title", (year,)
+        )]
 
-        totals = dict(direct_counts)
-        for child_slug, parent_slug in child_to_parent.items():
-            if child_slug in direct_counts:
-                if parent_slug not in totals:
-                    totals[parent_slug] = 0
-                totals[parent_slug] += direct_counts[child_slug]
+    def get_section(self, title: int, section: str, year: int = 0) -> dict | None:
+        """Get full section data."""
+        row = self._query_one(f'''
+            SELECT {", ".join(self.SECTION_COLUMNS)}
+            FROM sections WHERE year = ? AND title = ? AND section = ?
+        ''', (year, title, section))
+        return self._row_to_section(row) if row else None
 
-        return totals
+    def get_section_heading(self, title: int, section: str, year: int = 0) -> str | None:
+        """Get the heading text for a section."""
+        s = self.get_section(title, section, year)
+        return s["heading"] if s else None
 
-    # Similarity methods
+    def get_section_text(self, title: int, section: str, year: int = 0) -> str | None:
+        """Get the full text content of a section."""
+        s = self.get_section(title, section, year)
+        return s["text"] if s else None
+
+    def get_sections(self, title: int, chapter: str = None, part: str = None, year: int = 0) -> list[dict]:
+        """Get all sections for a title."""
+        query = f"SELECT {', '.join(self.SECTION_COLUMNS)} FROM sections WHERE year = ? AND title = ?"
+        params = [year, title]
+
+        if chapter:
+            query += " AND chapter = ?"
+            params.append(chapter)
+        if part:
+            query += " AND part = ?"
+            params.append(part)
+
+        query += " ORDER BY part, section"
+        return [self._row_to_section(row) for row in self._query(query, tuple(params))]
+
+    def navigate(
+        self,
+        title: int,
+        subtitle: str = None,
+        chapter: str = None,
+        subchapter: str = None,
+        part: str = None,
+        subpart: str = None,
+        section: str = None,
+        year: int = 0,
+    ) -> dict | None:
+        """Navigate to a specific location in the CFR hierarchy."""
+        query = f"SELECT {', '.join(self.SECTION_COLUMNS)} FROM sections WHERE year = ? AND title = ?"
+        params = [year, title]
+
+        filters = [
+            ("section", section), ("subtitle", subtitle), ("chapter", chapter),
+            ("subchapter", subchapter), ("part", part), ("subpart", subpart)
+        ]
+        for col, val in filters:
+            if val:
+                query += f" AND {col} = ?"
+                params.append(val)
+
+        query += " LIMIT 1"
+        row = self._query_one(query, tuple(params))
+        return self._row_to_section(row) if row else None
+
+    def search(self, query: str, title: int = None, year: int = 0) -> list[dict]:
+        """Full-text search across sections."""
+        if title:
+            sql = "SELECT title, section, heading, text FROM sections WHERE year = ? AND title = ? AND text LIKE ?"
+            params = (year, title, f"%{query}%")
+        else:
+            sql = "SELECT title, section, heading, text FROM sections WHERE year = ? AND text LIKE ?"
+            params = (year, f"%{query}%")
+
+        results = []
+        query_lower = query.lower()
+
+        for t, section, heading, text in self._query(sql, params):
+            idx = text.lower().find(query_lower)
+            start, end = max(0, idx - 50), min(len(text), idx + len(query) + 50)
+            snippet = ("..." if start > 0 else "") + text[start:end] + ("..." if end < len(text) else "")
+            results.append({"title": t, "section": section, "heading": heading, "snippet": snippet})
+
+        return results
+
+    def get_structure(self, title: int, year: int = 0) -> dict:
+        """Return hierarchy tree for a title."""
+        rows = self._query(
+            "SELECT DISTINCT part, section FROM sections WHERE year = ? AND title = ? ORDER BY part, section",
+            (year, title)
+        )
+        if not rows:
+            return {}
+
+        result = {"type": "title", "identifier": str(title), "children": []}
+        parts = {}
+
+        for part, section in rows:
+            if part and part not in parts:
+                parts[part] = {"type": "part", "identifier": part, "children": []}
+                result["children"].append(parts[part])
+            if part and section:
+                parts[part]["children"].append({"type": "section", "identifier": section})
+
+        return result
+
+    def get_word_counts(
+        self,
+        title: int,
+        chapter: str = None,
+        subchapter: str = None,
+        part: str = None,
+        subpart: str = None,
+        year: int = 0,
+    ) -> dict:
+        """Get word counts for sections."""
+        query = "SELECT section, word_count FROM sections WHERE year = ? AND title = ?"
+        params = [year, title]
+
+        filters = [("chapter", chapter), ("subchapter", subchapter), ("part", part), ("subpart", subpart)]
+        for col, val in filters:
+            if val:
+                query += f" AND {col} = ?"
+                params.append(val)
+
+        rows = self._query(query, tuple(params))
+        return {
+            "sections": {row[0]: row[1] for row in rows if row[0]},
+            "total": sum(row[1] for row in rows)
+        }
+
+    def get_total_words(self, title: int, year: int = 0) -> int:
+        """Get total word count for a title."""
+        return self.get_word_counts(title, year=year)["total"]
+
+    # Embeddings and Similarity
 
     def _get_embedding_model(self):
         """Lazily load the sentence transformer model."""
@@ -397,291 +537,31 @@ class ECFRDatabase:
 
         Returns number of embeddings stored.
         """
+        rows = self._query(
+            "SELECT section, text FROM sections WHERE year = ? AND title = ? AND text != ''",
+            (year, title)
+        )
+        if len(rows) < 2:
+            return 0
+
+        sections = [row[0] for row in rows]
+        texts = [row[1][:10000] for row in rows]  # Truncate to avoid memory issues
+
+        model = self._get_embedding_model()
+        embeddings = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+
         with self._connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("DELETE FROM section_embeddings WHERE year = ? AND title = ?", (year, title))
 
-            cursor.execute("""
-                SELECT section, text FROM sections
-                WHERE year = ? AND title = ? AND text != ''
-            """, (year, title))
-            rows = cursor.fetchall()
-
-            if len(rows) < 2:
-                return 0
-
-            sections = [row[0] for row in rows]
-            texts = [row[1] for row in rows]
-
-            # Generate embeddings using sentence-transformers
-            model = self._get_embedding_model()
-            # Truncate long texts to avoid memory issues
-            truncated_texts = [t[:10000] if len(t) > 10000 else t for t in texts]
-            embeddings = model.encode(truncated_texts, show_progress_bar=False, normalize_embeddings=True)
-
-            # Clear old embeddings for this title/year
-            cursor.execute("""
-                DELETE FROM section_embeddings WHERE year = ? AND title = ?
-            """, (year, title))
-            conn.commit()
-
-            # Insert new embeddings
-            count = 0
             for section, embedding in zip(sections, embeddings):
-                vec_binary = self._embedding_to_blob(embedding)
-                cursor.execute("""
-                    INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding)
-                    VALUES (?, ?, ?, ?)
-                """, (year, title, section, vec_binary))
-                count += 1
-
+                cursor.execute(
+                    "INSERT OR REPLACE INTO section_embeddings (year, title, section, embedding) VALUES (?, ?, ?, ?)",
+                    (year, title, section, self._embedding_to_blob(embedding))
+                )
             conn.commit()
 
-        return count
-
-    # Query methods (read operations)
-
-    def _row_to_section_dict(self, row: tuple) -> dict:
-        """Convert a database row to a section dict."""
-        return {
-            "year": row[0],
-            "title": row[1],
-            "subtitle": row[2],
-            "chapter": row[3],
-            "subchapter": row[4],
-            "part": row[5],
-            "subpart": row[6],
-            "section": row[7],
-            "heading": row[8],
-            "text": row[9],
-            "word_count": row[10],
-        }
-
-    def list_years(self) -> list[int]:
-        """List available years from database (0 = current)."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT year FROM sections ORDER BY year")
-            return [row[0] for row in cursor.fetchall()]
-
-    def list_section_titles(self, year: int = 0) -> list[int]:
-        """List available title numbers that have sections."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT DISTINCT title FROM sections WHERE year = ? ORDER BY title",
-                (year,)
-            )
-            return [row[0] for row in cursor.fetchall()]
-
-    def navigate(
-        self,
-        title: int,
-        subtitle: str = None,
-        chapter: str = None,
-        subchapter: str = None,
-        part: str = None,
-        subpart: str = None,
-        section: str = None,
-        year: int = 0,
-    ) -> dict | None:
-        """Navigate to a specific location in the CFR hierarchy."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            query = """SELECT year, title, subtitle, chapter, subchapter, part, subpart,
-                              section, heading, text, word_count
-                       FROM sections WHERE year = ? AND title = ?"""
-            params = [year, title]
-
-            if section:
-                query += " AND section = ?"
-                params.append(section)
-            if subtitle:
-                query += " AND subtitle = ?"
-                params.append(subtitle)
-            if chapter:
-                query += " AND chapter = ?"
-                params.append(chapter)
-            if subchapter:
-                query += " AND subchapter = ?"
-                params.append(subchapter)
-            if part:
-                query += " AND part = ?"
-                params.append(part)
-            if subpart:
-                query += " AND subpart = ?"
-                params.append(subpart)
-
-            query += " LIMIT 1"
-            cursor.execute(query, params)
-            row = cursor.fetchone()
-
-            return self._row_to_section_dict(row) if row else None
-
-    def search(self, query: str, title: int = None, year: int = 0) -> list[dict]:
-        """Full-text search across sections."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            if title:
-                cursor.execute(
-                    "SELECT title, section, heading, text FROM sections WHERE year = ? AND title = ? AND text LIKE ?",
-                    (year, title, f"%{query}%")
-                )
-            else:
-                cursor.execute(
-                    "SELECT title, section, heading, text FROM sections WHERE year = ? AND text LIKE ?",
-                    (year, f"%{query}%")
-                )
-
-            results = []
-            query_lower = query.lower()
-
-            for row in cursor.fetchall():
-                t, section, heading, text = row
-                idx = text.lower().find(query_lower)
-                start = max(0, idx - 50)
-                end = min(len(text), idx + len(query) + 50)
-                snippet = text[start:end]
-                if start > 0:
-                    snippet = "..." + snippet
-                if end < len(text):
-                    snippet = snippet + "..."
-
-                results.append({
-                    "title": t,
-                    "section": section,
-                    "heading": heading,
-                    "snippet": snippet,
-                })
-
-            return results
-
-    def get_structure(self, title: int, year: int = 0) -> dict:
-        """Return hierarchy tree for a title."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT DISTINCT part, section FROM sections
-                WHERE year = ? AND title = ? ORDER BY part, section
-            ''', (year, title))
-            rows = cursor.fetchall()
-
-            if not rows:
-                return {}
-
-            result = {"type": "title", "identifier": str(title), "children": []}
-            parts = {}
-
-            for part, section in rows:
-                if part and part not in parts:
-                    parts[part] = {"type": "part", "identifier": part, "children": []}
-                    result["children"].append(parts[part])
-                if part and section:
-                    parts[part]["children"].append({"type": "section", "identifier": section})
-
-            return result
-
-    def get_section_word_counts(
-        self,
-        title: int,
-        chapter: str = None,
-        subchapter: str = None,
-        part: str = None,
-        subpart: str = None,
-        year: int = 0,
-    ) -> dict:
-        """Get word counts for sections."""
-        query = "SELECT section, word_count FROM sections WHERE year = ? AND title = ?"
-        params = [year, title]
-
-        if chapter:
-            query += " AND chapter = ?"
-            params.append(chapter)
-        if subchapter:
-            query += " AND subchapter = ?"
-            params.append(subchapter)
-        if part:
-            query += " AND part = ?"
-            params.append(part)
-        if subpart:
-            query += " AND subpart = ?"
-            params.append(subpart)
-
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-
-        section_counts = {row[0]: row[1] for row in rows if row[0]}
-        total = sum(row[1] for row in rows)
-
-        return {"sections": section_counts, "total": total}
-
-    def get_total_section_words(self, title: int, year: int = 0) -> int:
-        """Get total word count for a title."""
-        return self.get_section_word_counts(title, year=year)["total"]
-
-    def get_section_heading(self, title: int, section: str, year: int = 0) -> str | None:
-        """Get the heading text for a section."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT heading FROM sections WHERE year = ? AND title = ? AND section = ?",
-                (year, title, section)
-            )
-            row = cursor.fetchone()
-            return row[0] if row else None
-
-    def get_section_text(self, title: int, section: str, year: int = 0) -> str | None:
-        """Get the full text content of a section."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT text FROM sections WHERE year = ? AND title = ? AND section = ?",
-                (year, title, section)
-            )
-            row = cursor.fetchone()
-            return row[0] if row else None
-
-    def get_section(self, title: int, section: str, year: int = 0) -> dict | None:
-        """Get full section data."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT year, title, subtitle, chapter, subchapter, part, subpart,
-                       section, heading, text, word_count
-                FROM sections WHERE year = ? AND title = ? AND section = ?
-            ''', (year, title, section))
-            row = cursor.fetchone()
-            return self._row_to_section_dict(row) if row else None
-
-    def get_sections(
-        self,
-        title: int,
-        chapter: str = None,
-        part: str = None,
-        year: int = 0,
-    ) -> list[dict]:
-        """Get all sections for a title."""
-        query = """SELECT year, title, subtitle, chapter, subchapter, part, subpart,
-                          section, heading, text, word_count
-                   FROM sections WHERE year = ? AND title = ?"""
-        params = [year, title]
-
-        if chapter:
-            query += " AND chapter = ?"
-            params.append(chapter)
-        if part:
-            query += " AND part = ?"
-            params.append(part)
-
-        query += " ORDER BY part, section"
-
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return [self._row_to_section_dict(row) for row in cursor.fetchall()]
+        return len(sections)
 
     def get_similar_sections(
         self,
@@ -692,207 +572,35 @@ class ECFRDatabase:
         min_similarity: float = 0.1,
     ) -> list[dict]:
         """Find sections similar to a given section using vector similarity search."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            # Get the embedding for the query section
-            cursor.execute("""
-                SELECT embedding FROM section_embeddings
-                WHERE year = ? AND title = ? AND section = ?
-            """, (year, title, section))
-            row = cursor.fetchone()
-            if not row:
-                return []
-
-            query_embedding = self._blob_to_embedding(row[0])
-
-            # Get all embeddings for this year (for cross-title search) or just this title
-            cursor.execute("""
-                SELECT se.title, se.section, se.embedding, s.heading
-                FROM section_embeddings se
-                LEFT JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
-                WHERE se.year = ?
-            """, (year,))
-
-            results = []
-            for row in cursor.fetchall():
-                sim_title, sim_section, embedding_blob, heading = row
-                # Skip self
-                if sim_title == title and sim_section == section:
-                    continue
-
-                embedding = self._blob_to_embedding(embedding_blob)
-                # Cosine similarity (embeddings are already normalized)
-                similarity = float(np.dot(query_embedding, embedding))
-
-                if similarity >= min_similarity:
-                    results.append({
-                        "title": sim_title,
-                        "section": sim_section,
-                        "similarity": similarity,
-                        "heading": heading,
-                    })
-
-            # Sort by similarity descending and limit
-            results.sort(key=lambda x: x["similarity"], reverse=True)
-            return results[:limit]
-
-    def get_most_similar_pairs(
-        self,
-        year: int = 0,
-        limit: int = 20,
-        min_similarity: float = 0.5,
-        title: int = None,
-    ) -> list[dict]:
-        """Get the most similar section pairs across all titles."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            query = '''
-                SELECT ss.title, ss.section, s1.heading,
-                       ss.similar_title, ss.similar_section, s2.heading,
-                       ss.similarity
-                FROM section_similarities ss
-                LEFT JOIN sections s1
-                    ON ss.year = s1.year AND ss.title = s1.title AND ss.section = s1.section
-                LEFT JOIN sections s2
-                    ON ss.year = s2.year AND ss.similar_title = s2.title AND ss.similar_section = s2.section
-                WHERE ss.year = ? AND ss.similarity >= ?
-                    AND ss.section < ss.similar_section
-            '''
-            params = [year, min_similarity]
-
-            if title:
-                query += " AND ss.title = ?"
-                params.append(title)
-
-            query += " ORDER BY ss.similarity DESC LIMIT ?"
-            params.append(limit)
-
-            cursor.execute(query, params)
-
-            return [
-                {
-                    "title1": row[0],
-                    "section1": row[1],
-                    "heading1": row[2],
-                    "title2": row[3],
-                    "section2": row[4],
-                    "heading2": row[5],
-                    "similarity": row[6],
-                }
-                for row in cursor.fetchall()
-            ]
-
-    def find_duplicate_regulations(
-        self,
-        year: int = 0,
-        min_similarity: float = 0.95,
-        limit: int = 100,
-    ) -> list[dict]:
-        """Find potential duplicate regulations (sections with very high similarity)."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT ss.title, ss.section, s1.heading, s1.text,
-                       ss.similar_title, ss.similar_section, s2.heading, s2.text,
-                       ss.similarity
-                FROM section_similarities ss
-                LEFT JOIN sections s1
-                    ON ss.year = s1.year AND ss.title = s1.title AND ss.section = s1.section
-                LEFT JOIN sections s2
-                    ON ss.year = s2.year AND ss.similar_title = s2.title AND ss.similar_section = s2.section
-                WHERE ss.year = ? AND ss.similarity >= ?
-                    AND ss.section < ss.similar_section
-                ORDER BY ss.similarity DESC
-                LIMIT ?
-            ''', (year, min_similarity, limit))
-
-            return [
-                {
-                    "title1": row[0],
-                    "section1": row[1],
-                    "heading1": row[2],
-                    "text1": row[3],
-                    "title2": row[4],
-                    "section2": row[5],
-                    "heading2": row[6],
-                    "text2": row[7],
-                    "similarity": row[8],
-                }
-                for row in cursor.fetchall()
-            ]
-
-    def similarity_stats(self, year: int = 0) -> dict:
-        """Get statistics about section similarities in the database."""
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute(
-                "SELECT COUNT(*) FROM section_similarities WHERE year = ?",
-                (year,)
-            )
-            total_pairs = cursor.fetchone()[0]
-
-            cursor.execute(
-                "SELECT COUNT(DISTINCT title) FROM section_similarities WHERE year = ?",
-                (year,)
-            )
-            titles_with_similarities = cursor.fetchone()[0]
-
-            cursor.execute('''
-                SELECT
-                    COUNT(CASE WHEN similarity >= 0.9 THEN 1 END) as very_high,
-                    COUNT(CASE WHEN similarity >= 0.7 AND similarity < 0.9 THEN 1 END) as high,
-                    COUNT(CASE WHEN similarity >= 0.5 AND similarity < 0.7 THEN 1 END) as medium,
-                    COUNT(CASE WHEN similarity >= 0.3 AND similarity < 0.5 THEN 1 END) as low,
-                    COUNT(CASE WHEN similarity < 0.3 THEN 1 END) as very_low,
-                    AVG(similarity) as avg_similarity,
-                    MAX(similarity) as max_similarity
-                FROM section_similarities
-                WHERE year = ?
-            ''', (year,))
-            row = cursor.fetchone()
-
-            return {
-                "total_pairs": total_pairs,
-                "titles_with_similarities": titles_with_similarities,
-                "distribution": {
-                    "very_high_0.9+": row[0],
-                    "high_0.7-0.9": row[1],
-                    "medium_0.5-0.7": row[2],
-                    "low_0.3-0.5": row[3],
-                    "very_low_<0.3": row[4],
-                },
-                "avg_similarity": row[5],
-                "max_similarity": row[6],
-            }
-
-    # Aliases for backwards compatibility with ECFRReader interface
-
-    def list_titles(self, year: int = 0) -> list[int]:
-        """Alias for list_section_titles."""
-        return self.list_section_titles(year)
-
-    def get_word_counts(
-        self,
-        title: int,
-        chapter: str = None,
-        subchapter: str = None,
-        part: str = None,
-        subpart: str = None,
-        year: int = 0,
-    ) -> dict:
-        """Alias for get_section_word_counts."""
-        return self.get_section_word_counts(
-            title=title,
-            chapter=chapter,
-            subchapter=subchapter,
-            part=part,
-            subpart=subpart,
-            year=year,
+        row = self._query_one(
+            "SELECT embedding FROM section_embeddings WHERE year = ? AND title = ? AND section = ?",
+            (year, title, section)
         )
+        if not row:
+            return []
 
-    def get_total_words(self, title: int, year: int = 0) -> int:
-        """Alias for get_total_section_words."""
-        return self.get_total_section_words(title, year=year)
+        query_embedding = self._blob_to_embedding(row[0])
+
+        rows = self._query("""
+            SELECT se.title, se.section, se.embedding, s.heading
+            FROM section_embeddings se
+            LEFT JOIN sections s ON se.year = s.year AND se.title = s.title AND se.section = s.section
+            WHERE se.year = ?
+        """, (year,))
+
+        results = []
+        for sim_title, sim_section, embedding_blob, heading in rows:
+            if sim_title == title and sim_section == section:
+                continue
+
+            similarity = float(np.dot(query_embedding, self._blob_to_embedding(embedding_blob)))
+            if similarity >= min_similarity:
+                results.append({
+                    "title": sim_title,
+                    "section": sim_section,
+                    "similarity": similarity,
+                    "heading": heading,
+                })
+
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:limit]

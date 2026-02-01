@@ -129,7 +129,7 @@ class TestECFRDatabaseInit:
         conn.close()
 
         expected = {"titles", "agencies", "cfr_references", "agency_word_counts",
-                    "sections", "section_similarities"}
+                    "sections", "section_embeddings"}
         assert expected.issubset(tables)
 
     def test_creates_indexes(self, temp_db):
@@ -141,7 +141,7 @@ class TestECFRDatabaseInit:
         conn.close()
 
         assert "idx_sections_year_title" in indexes
-        assert "idx_similarities_source" in indexes
+        assert "idx_embeddings_year_title" in indexes
 
 
 class TestECFRDatabaseTitles:
@@ -281,10 +281,10 @@ class TestECFRDatabaseQueries:
         assert 0 in years
         assert 2020 in years
 
-    def test_list_section_titles(self, temp_db, sample_sections):
+    def test_list_titles(self, temp_db, sample_sections):
         """List titles with sections."""
         temp_db.save_sections(sample_sections, year=0)
-        titles = temp_db.list_section_titles(year=0)
+        titles = temp_db.list_titles(year=0)
 
         assert 1 in titles
 
@@ -319,10 +319,10 @@ class TestECFRDatabaseQueries:
         assert structure["type"] == "title"
         assert len(structure["children"]) >= 1
 
-    def test_get_section_word_counts(self, temp_db, sample_sections):
+    def test_get_word_counts(self, temp_db, sample_sections):
         """Get word counts for sections."""
         temp_db.save_sections(sample_sections, year=0)
-        counts = temp_db.get_section_word_counts(title=1, year=0)
+        counts = temp_db.get_word_counts(title=1, year=0)
 
         assert counts["total"] > 0
         assert "1.1" in counts["sections"]
@@ -385,17 +385,6 @@ class TestECFRDatabaseSimilarities:
         count = temp_db.compute_similarities(title=1, year=0)
         assert count == 0
 
-    def test_compute_similarities_skips_large(self, temp_db):
-        """Skip titles with too many sections."""
-        large_sections = [
-            {"title": 99, "section": f"{i}.1", "text": f"Section {i} content."}
-            for i in range(100)
-        ]
-        temp_db.save_sections(large_sections, year=0)
-
-        count = temp_db.compute_similarities(title=99, year=0, max_sections=50)
-        assert count == -1
-
     def test_get_similar_sections(self, temp_db, sections_for_similarity):
         """Get similar sections."""
         temp_db.save_sections(sections_for_similarity, year=0)
@@ -403,23 +392,6 @@ class TestECFRDatabaseSimilarities:
 
         similar = temp_db.get_similar_sections(title=1, section="1.1", year=0)
         assert len(similar) > 0
-
-    def test_get_most_similar_pairs(self, temp_db, sections_for_similarity):
-        """Get most similar pairs."""
-        temp_db.save_sections(sections_for_similarity, year=0)
-        temp_db.compute_similarities(title=1, year=0)
-
-        pairs = temp_db.get_most_similar_pairs(year=0, min_similarity=0.1)
-        assert len(pairs) > 0
-
-    def test_similarity_stats(self, temp_db, sections_for_similarity):
-        """Get similarity statistics."""
-        temp_db.save_sections(sections_for_similarity, year=0)
-        temp_db.compute_similarities(title=1, year=0)
-
-        stats = temp_db.similarity_stats(year=0)
-        assert stats["total_pairs"] > 0
-        assert "distribution" in stats
 
 
 class TestECFRDatabaseUtils:
