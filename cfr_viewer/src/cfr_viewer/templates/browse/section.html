@@ -48,11 +48,9 @@
     </article>
 </div>
 
-{% if similar_count > 0 %}
 <article>
     <header>
         <strong>Similar Sections</strong>
-        <small>({{ similar_count }} found)</small>
     </header>
     <div
         hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
@@ -62,7 +60,6 @@
         <button aria-busy="true" class="outline">Loading similar sections...</button>
     </div>
 </article>
-{% endif %}
 
 <article>
     <header>

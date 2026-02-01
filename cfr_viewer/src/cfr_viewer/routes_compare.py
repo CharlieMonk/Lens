@@ -1,9 +1,10 @@
 """Comparison routes for historical diff view."""
 
-from flask import Blueprint, render_template, request
 import difflib
 
-from . import services
+from flask import Blueprint, render_template, request
+
+from .services import get_database
 
 compare_bp = Blueprint("compare", __name__)
 
@@ -11,11 +12,12 @@ compare_bp = Blueprint("compare", __name__)
 @compare_bp.route("/title/<int:title_num>/section/<path:section>")
 def diff(title_num: int, section: str):
     """Side-by-side comparison of a section across years."""
+    db = get_database()
     year1 = request.args.get("year1", 0, type=int)
     year2 = request.args.get("year2", type=int)
 
-    years = services.list_years()
-    title_meta = services.get_title_metadata().get(title_num, {})
+    years = db.list_years()
+    title_meta = db.get_titles().get(title_num, {})
 
     # Default year2 to the previous available year
     if year2 is None:
@@ -26,8 +28,8 @@ def diff(title_num: int, section: str):
         if year2 is None:
             year2 = year1
 
-    section1 = services.get_section(title_num, section, year1)
-    section2 = services.get_section(title_num, section, year2)
+    section1 = db.get_section(title_num, section, year1)
+    section2 = db.get_section(title_num, section, year2)
 
     # Generate diff if both sections exist
     diff_html = None
