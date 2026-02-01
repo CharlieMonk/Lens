@@ -4,6 +4,7 @@
  * Usage:
  * - Add class="sortable" to the table
  * - Add data-sort="string|number" to th elements to specify sort type
+ * - Add data-sort-default="desc" to th elements that should sort descending on first click
  * - Optionally add data-value="..." to td elements for custom sort values
  */
 (function() {
@@ -25,13 +26,24 @@
 
                     const rows = Array.from(tbody.querySelectorAll('tr'));
                     const sortType = header.dataset.sort || 'string';
-                    const isAsc = header.classList.contains('sort-asc');
+                    const isCurrentlyAsc = header.classList.contains('sort-asc');
+                    const isCurrentlyDesc = header.classList.contains('sort-desc');
+                    const defaultDesc = header.dataset.sortDefault === 'desc';
 
                     // Clear sort classes from all headers in this table
                     headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
 
-                    // Set new sort direction
-                    header.classList.add(isAsc ? 'sort-desc' : 'sort-asc');
+                    // Determine new sort direction
+                    let sortAsc;
+                    if (!isCurrentlyAsc && !isCurrentlyDesc) {
+                        // First click - use default (desc for Word Count, asc for others)
+                        sortAsc = !defaultDesc;
+                    } else {
+                        // Subsequent clicks - toggle
+                        sortAsc = !isCurrentlyAsc;
+                    }
+
+                    header.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
 
                     rows.sort((a, b) => {
                         const aCell = a.cells[index];
@@ -50,7 +62,7 @@
                         } else {
                             cmp = aVal.localeCompare(bVal);
                         }
-                        return isAsc ? -cmp : cmp;
+                        return sortAsc ? cmp : -cmp;
                     });
 
                     rows.forEach(row => tbody.appendChild(row));
