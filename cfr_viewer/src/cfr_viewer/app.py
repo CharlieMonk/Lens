@@ -7,7 +7,7 @@ from flask import Flask
 
 from ecfr.database import ECFRDatabase
 from .routes_browse import browse_bp
-from .routes_rankings import rankings_bp
+from .routes_statistics import statistics_bp
 from .routes_compare import compare_bp
 from .routes_api import api_bp
 
@@ -39,7 +39,7 @@ def create_app(db_path: str | None = None):
 
     # Register blueprints
     app.register_blueprint(browse_bp)
-    app.register_blueprint(rankings_bp, url_prefix="/rankings")
+    app.register_blueprint(statistics_bp, url_prefix="/statistics")
     app.register_blueprint(compare_bp, url_prefix="/compare")
     app.register_blueprint(api_bp, url_prefix="/api")
 

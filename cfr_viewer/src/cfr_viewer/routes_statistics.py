@@ -1,19 +1,19 @@
-"""Rankings routes for word count statistics."""
+"""Statistics routes for word count statistics."""
 
 from flask import Blueprint, render_template, request
 
 from .services import get_database, list_titles_with_metadata
 
-rankings_bp = Blueprint("rankings", __name__)
+statistics_bp = Blueprint("statistics", __name__)
 
 
-@rankings_bp.route("/")
+@statistics_bp.route("/")
 def index():
-    """Rankings dashboard."""
-    return render_template("rankings/index.html")
+    """Statistics dashboard."""
+    return render_template("statistics/index.html")
 
 
-@rankings_bp.route("/agencies")
+@statistics_bp.route("/agencies")
 def agencies():
     """Agencies ranked by word count."""
     db = get_database()
@@ -64,24 +64,24 @@ def agencies():
     # Sort by word count descending
     agencies_list.sort(key=lambda x: x["word_count"], reverse=True)
 
-    return render_template("rankings/agencies.html", agencies=agencies_list)
+    return render_template("statistics/agencies.html", agencies=agencies_list)
 
 
-@rankings_bp.route("/agencies/<slug>")
+@statistics_bp.route("/agencies/<slug>")
 def agency_detail(slug: str):
     """Agency detail page showing CFR chapters."""
     db = get_database()
     agency = db.get_agency(slug)
 
     if not agency:
-        return render_template("rankings/agency_detail.html", agency=None, chapters=[])
+        return render_template("statistics/agency_detail.html", agency=None, chapters=[])
 
     chapters = db.get_agency_chapters(slug)
 
-    return render_template("rankings/agency_detail.html", agency=agency, chapters=chapters)
+    return render_template("statistics/agency_detail.html", agency=agency, chapters=chapters)
 
 
-@rankings_bp.route("/titles")
+@statistics_bp.route("/titles")
 def titles():
     """Titles ranked by word count."""
     db = get_database()
@@ -102,4 +102,4 @@ def titles():
     # Sort by word count descending
     sorted_titles = sorted(titles_list, key=lambda x: x["word_count"], reverse=True)
 
-    return render_template("rankings/titles.html", titles=sorted_titles, year=year, years=years)
+    return render_template("statistics/titles.html", titles=sorted_titles, year=year, years=years)
