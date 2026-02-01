@@ -1,0 +1,471 @@
+"""
+User Stories for CFR Web Viewer - Playwright Tests
+
+User Story 1: Browse CFR Titles
+  As a legal researcher, I want to see all CFR titles on the home page
+  so I can quickly find the regulation area I need.
+
+User Story 2: Navigate to a Title
+  As a compliance officer, I want to click on a title to see its structure
+  so I can understand how regulations are organized.
+
+User Story 3: View a Section
+  As a lawyer, I want to view a specific CFR section with its full text
+  and word count so I can analyze the regulation.
+
+User Story 4: Find Similar Sections
+  As a policy analyst, I want to see sections similar to the one I'm reading
+  so I can identify related or duplicate regulations.
+
+User Story 5: Compare Historical Versions
+  As a regulatory affairs specialist, I want to compare a section across years
+  so I can track how regulations have changed.
+
+User Story 6: View Rankings
+  As a government watchdog, I want to see which agencies have the most words
+  in the CFR so I can understand regulatory burden.
+"""
+
+import re
+
+import pytest
+from playwright.sync_api import Page, expect
+import os
+
+BASE_URL = "http://localhost:5000"
+SCREENSHOT_DIR = "/tmp/cfr_viewer_screenshots"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_screenshots():
+    """Create screenshot directory."""
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+
+class TestUserStory1_BrowseTitles:
+    """
+    User Story 1: Browse CFR Titles
+    As a legal researcher, I want to see all CFR titles on the home page
+    so I can quickly find the regulation area I need.
+
+    Steps:
+    1. Navigate to the home page
+    2. Verify the page title mentions CFR
+    3. Verify there's a table with titles
+    4. Verify titles have numbers, names, and word counts
+    5. Verify navigation links exist
+    """
+
+    def test_home_page_loads(self, page: Page):
+        """Step 1: Navigate to the home page."""
+        page.goto(BASE_URL)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/01_home_page.png", full_page=True)
+
+        # Step 2: Verify page title
+        expect(page).to_have_title("All Titles - CFR Viewer")
+
+    def test_titles_table_exists(self, page: Page):
+        """Step 3: Verify there's a table with titles."""
+        page.goto(BASE_URL)
+
+        # Check for table
+        table = page.locator("table")
+        expect(table).to_be_visible()
+
+        # Check table headers
+        headers = page.locator("table thead th")
+        header_texts = headers.all_text_contents()
+        assert "Title" in header_texts
+        assert "Name" in header_texts
+        assert "Word Count" in header_texts
+
+    def test_titles_have_links(self, page: Page):
+        """Step 4: Verify titles have numbers, names, and word counts."""
+        page.goto(BASE_URL)
+
+        # Check that rows have links
+        title_links = page.locator("table tbody tr td a")
+        expect(title_links.first).to_be_visible()
+
+        # Check word counts are numbers
+        word_count_cells = page.locator("table tbody tr td.numeric")
+        first_count = word_count_cells.first.text_content()
+        # Should contain digits and commas
+        assert any(c.isdigit() for c in first_count), f"Word count should be numeric: {first_count}"
+
+    def test_navigation_exists(self, page: Page):
+        """Step 5: Verify navigation links exist."""
+        page.goto(BASE_URL)
+
+        # Check nav links
+        nav = page.locator("nav")
+        expect(nav).to_be_visible()
+
+        browse_link = page.locator("nav a", has_text="Browse")
+        expect(browse_link).to_be_visible()
+
+        rankings_link = page.locator("nav a", has_text="Rankings")
+        expect(rankings_link).to_be_visible()
+
+
+class TestUserStory2_NavigateToTitle:
+    """
+    User Story 2: Navigate to a Title
+    As a compliance officer, I want to click on a title to see its structure
+    so I can understand how regulations are organized.
+
+    Steps:
+    1. Go to home page
+    2. Click on first title link
+    3. Verify title page shows title number and name
+    4. Verify structure is displayed with parts
+    5. Verify sections are listed under parts
+    """
+
+    def test_click_title_navigates(self, page: Page):
+        """Steps 1-2: Click on a title link."""
+        page.goto(BASE_URL)
+
+        # Get first title link
+        first_link = page.locator("table tbody tr:first-child td a").first
+        title_text = first_link.text_content()
+        first_link.click()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/02_title_page.png", full_page=True)
+
+        # Verify we navigated
+        expect(page).to_have_url(re.compile(r".*/title/.*"))
+
+    def test_title_page_shows_info(self, page: Page):
+        """Step 3: Verify title page shows title number and name."""
+        page.goto(BASE_URL)
+        first_link = page.locator("table tbody tr:first-child td a").first
+        first_link.click()
+
+        # Check heading contains "Title"
+        heading = page.locator("h1")
+        expect(heading).to_contain_text("Title")
+
+        # Check word count is shown
+        word_count = page.locator("hgroup p")
+        expect(word_count).to_be_visible()
+
+    def test_structure_displayed(self, page: Page):
+        """Steps 4-5: Verify structure with parts and sections."""
+        page.goto(BASE_URL)
+        first_link = page.locator("table tbody tr:first-child td a").first
+        first_link.click()
+
+        # Look for structure section
+        structure = page.locator("article", has_text="Structure")
+
+        # Check for parts (details/summary elements)
+        parts = page.locator("details")
+        if parts.count() > 0:
+            # Expand first part
+            parts.first.click()
+            page.screenshot(path=f"{SCREENSHOT_DIR}/02b_title_expanded.png", full_page=True)
+
+            # Check for section links
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                expect(section_links.first).to_contain_text("§")
+
+
+class TestUserStory3_ViewSection:
+    """
+    User Story 3: View a Section
+    As a lawyer, I want to view a specific CFR section with its full text
+    and word count so I can analyze the regulation.
+
+    Steps:
+    1. Navigate to a title
+    2. Expand a part
+    3. Click on a section
+    4. Verify section heading is displayed
+    5. Verify word count statistics are shown
+    6. Verify section text is displayed
+    """
+
+    def test_navigate_to_section(self, page: Page):
+        """Steps 1-3: Navigate to a section."""
+        page.goto(BASE_URL)
+
+        # Click first title
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        # Expand first part
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)  # Wait for expansion
+
+            # Click first section
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+                page.screenshot(path=f"{SCREENSHOT_DIR}/03_section_page.png", full_page=True)
+                expect(page).to_have_url(re.compile(r".*/section/.*"))
+
+    def test_section_shows_statistics(self, page: Page):
+        """Steps 4-5: Verify section heading and statistics."""
+        # Navigate directly to a section if possible
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)
+
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+
+                # Check for heading
+                heading = page.locator("h1")
+                expect(heading).to_contain_text("§")
+
+                # Check for statistics section
+                stats = page.locator("article", has_text="Statistics")
+                expect(stats).to_be_visible()
+
+                # Check word count is displayed
+                word_count_label = page.locator("dt", has_text="Word Count")
+                expect(word_count_label).to_be_visible()
+
+    def test_section_text_displayed(self, page: Page):
+        """Step 6: Verify section text is displayed."""
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)
+
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+
+                # Check for section text container
+                text_section = page.locator("article", has_text="Section Text")
+                expect(text_section).to_be_visible()
+
+                # Check text content exists
+                text_content = page.locator(".section-text")
+                expect(text_content).to_be_visible()
+
+
+class TestUserStory4_SimilarSections:
+    """
+    User Story 4: Find Similar Sections
+    As a policy analyst, I want to see sections similar to the one I'm reading
+    so I can identify related or duplicate regulations.
+
+    Steps:
+    1. Navigate to a section
+    2. Look for "Similar Sections" indicator
+    3. Wait for HTMX to load similar sections
+    4. Verify similar sections are displayed with similarity percentages
+    """
+
+    def test_similar_sections_loads(self, page: Page):
+        """Steps 1-4: Check similar sections feature."""
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)
+
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+
+                # Look for Similar Sections article
+                similar_section = page.locator("article", has_text="Similar Sections")
+
+                if similar_section.count() > 0:
+                    # Wait for HTMX to load (wait for loading message to disappear)
+                    page.wait_for_timeout(2000)
+                    page.screenshot(path=f"{SCREENSHOT_DIR}/04_similar_sections.png", full_page=True)
+
+                    # Check if table or "no similar" message appears (not loading indicator)
+                    # The content could be a table with results, or a message saying no similar sections
+                    similar_content = similar_section.locator("table, p:not(:has-text('Loading'))")
+                    if similar_content.count() > 0:
+                        expect(similar_content.first).to_be_visible()
+
+
+class TestUserStory5_CompareVersions:
+    """
+    User Story 5: Compare Historical Versions
+    As a regulatory affairs specialist, I want to compare a section across years
+    so I can track how regulations have changed.
+
+    Steps:
+    1. Navigate to a section
+    2. Click "Compare Years" button
+    3. Verify comparison page loads
+    4. Verify year selectors are present
+    5. Verify diff or section content is shown
+    """
+
+    def test_compare_button_exists(self, page: Page):
+        """Steps 1-2: Find and click Compare Years button."""
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)
+
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+
+                # Look for Compare Years button/link
+                compare_link = page.locator("a", has_text="Compare Years")
+                expect(compare_link).to_be_visible()
+
+                compare_link.click()
+                page.screenshot(path=f"{SCREENSHOT_DIR}/05_compare_page.png", full_page=True)
+
+                expect(page).to_have_url(re.compile(r".*/compare/.*"))
+
+    def test_compare_page_elements(self, page: Page):
+        """Steps 3-5: Verify comparison page elements."""
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        parts = page.locator("details")
+        if parts.count() > 0:
+            parts.first.click()
+            page.wait_for_timeout(300)
+
+            section_links = page.locator("details ul li a")
+            if section_links.count() > 0:
+                section_links.first.click()
+
+                compare_link = page.locator("a", has_text="Compare Years")
+                if compare_link.count() > 0:
+                    compare_link.click()
+
+                    # Check for year selectors
+                    year_selects = page.locator("select[name='year1'], select[name='year2']")
+                    expect(year_selects.first).to_be_visible()
+
+                    # Check for compare button
+                    compare_btn = page.locator("button[type='submit']", has_text="Compare")
+                    expect(compare_btn).to_be_visible()
+
+
+class TestUserStory6_ViewRankings:
+    """
+    User Story 6: View Rankings
+    As a government watchdog, I want to see which agencies have the most words
+    in the CFR so I can understand regulatory burden.
+
+    Steps:
+    1. Click Rankings in navigation
+    2. Verify rankings dashboard loads
+    3. Click on Agency Rankings
+    4. Verify agencies are listed with word counts
+    5. Go back and click Title Rankings
+    6. Verify titles are sorted by word count
+    """
+
+    def test_rankings_navigation(self, page: Page):
+        """Steps 1-2: Navigate to rankings dashboard."""
+        page.goto(BASE_URL)
+
+        rankings_link = page.locator("nav a", has_text="Rankings")
+        rankings_link.click()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06_rankings_dashboard.png", full_page=True)
+
+        expect(page).to_have_url(re.compile(r".*/rankings.*"))
+        expect(page.locator("h1")).to_contain_text("Rankings")
+
+    def test_agency_rankings(self, page: Page):
+        """Steps 3-4: View agency rankings."""
+        page.goto(f"{BASE_URL}/rankings/")
+
+        agency_link = page.locator("a", has_text="View Agency Rankings")
+        agency_link.click()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06b_agency_rankings.png", full_page=True)
+
+        expect(page).to_have_url(re.compile(r".*/rankings/agencies.*"))
+
+        # Check table exists
+        table = page.locator("table")
+        expect(table).to_be_visible()
+
+        # Check headers
+        headers = page.locator("table thead th")
+        header_texts = headers.all_text_contents()
+        assert "Rank" in header_texts
+        assert "Agency" in header_texts
+        assert "Word Count" in header_texts
+
+    def test_title_rankings(self, page: Page):
+        """Steps 5-6: View title rankings."""
+        page.goto(f"{BASE_URL}/rankings/")
+
+        title_link = page.locator("a", has_text="View Title Rankings")
+        title_link.click()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_title_rankings.png", full_page=True)
+
+        expect(page).to_have_url(re.compile(r".*/rankings/titles.*"))
+
+        # Check table exists
+        table = page.locator("table")
+        expect(table).to_be_visible()
+
+
+class TestAccessibilityAndUsability:
+    """Additional tests for accessibility and usability issues."""
+
+    def test_breadcrumbs_work(self, page: Page):
+        """Test that breadcrumb navigation works."""
+        page.goto(BASE_URL)
+        page.locator("table tbody tr:first-child td a").first.click()
+
+        # Check breadcrumb exists
+        breadcrumb = page.locator("nav[aria-label='breadcrumb']")
+        expect(breadcrumb).to_be_visible()
+
+        # Click "All Titles" breadcrumb
+        all_titles_link = breadcrumb.locator("a", has_text="All Titles")
+        all_titles_link.click()
+
+        expect(page).to_have_url(BASE_URL + "/?year=0")
+
+    def test_year_selector_works(self, page: Page):
+        """Test that year selector changes the view."""
+        page.goto(BASE_URL)
+
+        # Find year selector
+        year_select = page.locator("select[name='year']")
+        expect(year_select).to_be_visible()
+
+        # Check it has options
+        options = year_select.locator("option")
+        assert options.count() >= 1, "Year selector should have at least one option"
+
+    def test_footer_exists(self, page: Page):
+        """Test that footer with attribution exists."""
+        page.goto(BASE_URL)
+
+        footer = page.locator("footer")
+        expect(footer).to_be_visible()
+        expect(footer).to_contain_text("ecfr.gov")
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--headed"])

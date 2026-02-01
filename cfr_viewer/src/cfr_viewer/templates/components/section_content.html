@@ -1,0 +1,91 @@
+{# Partial template for section content - used by HTMX navigation #}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
+        <li><a href="{{ url_for('browse.title', title_num=title_num, year=year) }}">Title {{ title_num }}</a></li>
+        <li>&sect; {{ section.section }}</li>
+    </ul>
+</nav>
+
+{% if section %}
+<hgroup id="section-heading">
+    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}</h1>
+    <p>Title {{ title_num }}: {{ title_name }}</p>
+</hgroup>
+
+<div class="section-controls">
+    {% include "components/year_selector.html" %}
+    <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="outline secondary">
+        Compare Years
+    </a>
+</div>
+
+<div id="section-layout" class="section-layout">
+    <article>
+        <header>
+            <strong>Section Text</strong>
+        </header>
+        <div class="section-text">
+            {{ section.text | safe }}
+        </div>
+        <footer class="section-nav">
+            {% if prev_section %}
+            <a href="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}"
+               hx-get="{{ url_for('api.section_content', title_num=title_num, section=prev_section, year=year) }}"
+               hx-target="#section-content"
+               hx-swap="innerHTML"
+               hx-push-url="{{ url_for('browse.section', title_num=title_num, section=prev_section, year=year) }}"
+               role="button" class="outline">
+                &larr; &sect; {{ prev_section }}
+            </a>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if next_section %}
+            <a href="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}"
+               hx-get="{{ url_for('api.section_content', title_num=title_num, section=next_section, year=year) }}"
+               hx-target="#section-content"
+               hx-swap="innerHTML"
+               hx-push-url="{{ url_for('browse.section', title_num=title_num, section=next_section, year=year) }}"
+               role="button" class="outline">
+                &sect; {{ next_section }} &rarr;
+            </a>
+            {% endif %}
+        </footer>
+    </article>
+
+    <article class="similar-sections">
+        <header>
+            <strong>Similar Sections</strong>
+        </header>
+        <div
+            hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
+            hx-trigger="load"
+            hx-swap="innerHTML"
+        >
+            <button aria-busy="true" class="outline">Loading...</button>
+        </div>
+    </article>
+</div>
+
+<article>
+    <header>
+        <strong>Statistics</strong>
+    </header>
+    <dl>
+        <dt>Word Count</dt>
+        <dd>{{ "{:,}".format(section.word_count or 0) }}</dd>
+        {% if section.part %}
+        <dt>Part</dt>
+        <dd>{{ section.part }}</dd>
+        {% endif %}
+        {% if section.chapter %}
+        <dt>Chapter</dt>
+        <dd>{{ section.chapter }}</dd>
+        {% endif %}
+    </dl>
+</article>
+
+{% else %}
+<p>Section not found.</p>
+{% endif %}

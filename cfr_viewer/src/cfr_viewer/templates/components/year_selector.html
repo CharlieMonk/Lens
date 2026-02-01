@@ -1,0 +1,12 @@
+<form method="get" class="year-selector">
+    <label>
+        Year:
+        <select name="year" onchange="this.form.submit()">
+            {% for y in years %}
+            <option value="{{ y }}" {% if y == year %}selected{% endif %}>
+                {{ "Current" if y == 0 else y }}
+            </option>
+            {% endfor %}
+        </select>
+    </label>
+</form>

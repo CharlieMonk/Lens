@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Compare &sect; {{ section_id }} - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('browse.index') }}">All Titles</a></li>
+        <li><a href="{{ url_for('browse.title', title_num=title_num) }}">Title {{ title_num }}</a></li>
+        <li><a href="{{ url_for('browse.section', title_num=title_num, section=section_id, year=year1) }}">&sect; {{ section_id }}</a></li>
+        <li>Compare</li>
+    </ul>
+</nav>
+
+<h1>Compare &sect; {{ section_id }}</h1>
+<p>Title {{ title_num }}: {{ title_name }}</p>
+
+<form method="get" action="{{ url_for('compare.diff', title_num=title_num, section=section_id) }}">
+    <div class="grid">
+        <label>
+            Compare from:
+            <select name="year2">
+                {% for y in years %}
+                <option value="{{ y }}" {% if y == year2 %}selected{% endif %}>
+                    {{ "Current" if y == 0 else y }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            To:
+            <select name="year1">
+                {% for y in years %}
+                <option value="{{ y }}" {% if y == year1 %}selected{% endif %}>
+                    {{ "Current" if y == 0 else y }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Compare</button>
+    </div>
+</form>
+
+{% if diff_html %}
+<article>
+    <header>
+        <strong>Differences</strong>
+    </header>
+    <div class="diff-container">
+        {{ diff_html | safe }}
+    </div>
+</article>
+{% elif section1 and section2 %}
+<article>
+    <p>No differences found between the two versions.</p>
+</article>
+{% else %}
+<article>
+    <p>One or both sections could not be found for comparison.</p>
+    {% if not section1 %}
+    <p>Section not found for year {{ year1 or "Current" }}.</p>
+    {% endif %}
+    {% if not section2 %}
+    <p>Section not found for year {{ year2 or "Current" }}.</p>
+    {% endif %}
+</article>
+{% endif %}
+
+<div class="grid">
+    {% if section2 %}
+    <article>
+        <header>
+            <strong>{{ "Current" if year2 == 0 else year2 }} Version</strong>
+            <small>({{ "{:,}".format(section2.word_count or 0) }} words)</small>
+        </header>
+        <div class="section-text">
+            {{ section2.text | safe }}
+        </div>
+    </article>
+    {% endif %}
+
+    {% if section1 %}
+    <article>
+        <header>
+            <strong>{{ "Current" if year1 == 0 else year1 }} Version</strong>
+            <small>({{ "{:,}".format(section1.word_count or 0) }} words)</small>
+        </header>
+        <div class="section-text">
+            {{ section1.text | safe }}
+        </div>
+    </article>
+    {% endif %}
+</div>
+{% endblock %}

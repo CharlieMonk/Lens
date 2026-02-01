@@ -1,0 +1,24 @@
+{% if similar %}
+<table class="sortable">
+    <thead>
+        <tr>
+            <th scope="col" data-sort="string">Citation</th>
+            <th scope="col" data-sort="number" data-sort-default="desc" class="numeric">Similarity</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in similar %}
+        <tr>
+            <td data-value="{{ s.title }} CFR {{ s.section }}">
+                <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}">
+                    {{ s.title }} CFR &sect; {{ s.section }}
+                </a>
+            </td>
+            <td class="numeric" data-value="{{ s.similarity }}">{{ "%.1f" | format(s.similarity * 100) }}%</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No similar sections found.</p>
+{% endif %}

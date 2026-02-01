@@ -1,0 +1,326 @@
+/* Red theme overrides for Pico CSS */
+:root {
+    --pico-primary: #c62828;
+    --pico-primary-hover: #b71c1c;
+    --pico-primary-focus: rgba(198, 40, 40, 0.25);
+    --pico-primary-inverse: #fff;
+}
+
+/* Ensure links use the red theme */
+a {
+    --pico-color: var(--pico-primary);
+}
+
+a:hover {
+    --pico-color: var(--pico-primary-hover);
+}
+
+/* Navigation styling */
+nav {
+    padding: 0.5rem 0;
+}
+
+/* Reduce space between nav and main content */
+main.container {
+    padding-top: 0;
+}
+
+main.container > hgroup:first-child,
+main.container > h1:first-child,
+main.container > nav:first-child {
+    margin-top: 0;
+}
+
+nav strong a {
+    color: var(--pico-primary);
+    text-decoration: none;
+}
+
+/* Numeric columns right-align */
+.numeric {
+    text-align: right;
+}
+
+/* Year selector styling */
+.year-selector {
+    display: inline-block;
+    margin-bottom: 1rem;
+}
+
+.year-selector label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.year-selector select {
+    margin: 0;
+    width: auto;
+}
+
+/* Section controls - year selector and compare button */
+.section-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.section-controls .year-selector {
+    margin-bottom: 0;
+}
+
+.section-controls a[role="button"] {
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Section page layout - text and similar sections side by side */
+.section-layout {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: start;
+}
+
+.section-layout .similar-sections {
+    width: 280px;
+    min-width: 200px;
+}
+
+@media (max-width: 768px) {
+    .section-layout {
+        grid-template-columns: 1fr;
+    }
+    .section-layout .similar-sections {
+        width: 100%;
+    }
+}
+
+/* Section text container */
+.section-text {
+    padding: 1rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+}
+
+/* Diff container styling - unified diff format */
+.diff-container {
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.diff-container .diff-header {
+    color: var(--pico-muted-color);
+    font-weight: bold;
+}
+
+.diff-container .diff-hunk {
+    color: #6a1b9a;
+    background-color: #f3e5f5;
+    margin: 0.5rem 0;
+    padding: 0.25rem;
+}
+
+.diff-container .diff-add {
+    background-color: #c8e6c9;
+    color: #1b5e20;
+}
+
+.diff-container .diff-sub {
+    background-color: #ffcdd2;
+    color: #b71c1c;
+}
+
+.diff-container .diff-context {
+    color: var(--pico-color);
+}
+
+/* Breadcrumb styling */
+nav[aria-label="breadcrumb"] ul {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+    gap: 0.5rem;
+}
+
+nav[aria-label="breadcrumb"] li:not(:last-child)::after {
+    content: ">";
+    margin-left: 0.5rem;
+    color: var(--pico-muted-color);
+}
+
+nav[aria-label="breadcrumb"] li:last-child {
+    color: var(--pico-muted-color);
+}
+
+/* Details/summary for structure */
+details {
+    margin-bottom: 0.5rem;
+}
+
+details summary {
+    cursor: pointer;
+    padding: 0.5rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+}
+
+details summary:hover {
+    background: var(--pico-card-sectionning-background-color);
+}
+
+details[open] summary {
+    margin-bottom: 0.5rem;
+}
+
+details ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+details li {
+    padding: 0.25rem 0;
+}
+
+/* Structure tree styling */
+.structure-tree {
+    list-style: none;
+    padding-left: 0;
+    margin: 1rem 0 0 0;
+}
+
+.structure-tree details {
+    margin-bottom: 0.25rem;
+}
+
+.structure-tree details[open] > summary {
+    margin-bottom: 0.25rem;
+}
+
+.structure-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+/* Structure items with depth-based indentation */
+.structure-item {
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.structure-item:last-child {
+    border-bottom: none;
+}
+
+/* Indentation by depth - progressive indentation for hierarchy */
+.structure-item.depth-0 { margin-left: 0; }
+.structure-item.depth-1 { margin-left: 1.5rem; }
+.structure-item.depth-2 { margin-left: 3rem; }
+.structure-item.depth-3 { margin-left: 4.5rem; }
+.structure-item.depth-4 { margin-left: 6rem; }
+.structure-item.depth-5 { margin-left: 7.5rem; }
+
+/* Section links */
+.structure-item a {
+    text-decoration: none;
+}
+
+/* Summary styling */
+details summary small {
+    font-weight: normal;
+    margin-left: 0.5rem;
+}
+
+/* Color coding for hierarchy levels */
+.structure-item.depth-0 > details > summary strong {
+    color: var(--pico-primary);
+}
+
+.structure-item.depth-1 > details > summary strong {
+    color: #1565c0;
+}
+
+.structure-item.depth-2 > details > summary strong {
+    color: #2e7d32;
+}
+
+.structure-item.depth-3 > details > summary strong {
+    color: #6a1b9a;
+}
+
+.structure-item.depth-4 > details > summary strong {
+    color: #e65100;
+}
+
+.structure-item.depth-5 > details > summary strong {
+    color: #00695c;
+}
+
+/* Footer styling */
+footer {
+    margin-top: 2rem;
+    padding: 1rem 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+    text-align: center;
+}
+
+/* Section navigation */
+.section-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
+
+/* Reserved items styling */
+.reserved-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+.reserved-label {
+    margin-right: 0.5rem;
+}
+
+.reserved-tag {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+}
+
+/* Sortable table headers */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable-header:hover {
+    background: var(--pico-card-sectionning-background-color);
+}
+
+.sortable-header::after {
+    content: " ⇅";
+    opacity: 0.3;
+}
+
+.sortable-header.sort-asc::after {
+    content: " ↑";
+    opacity: 1;
+}
+
+.sortable-header.sort-desc::after {
+    content: " ↓";
+    opacity: 1;
+}

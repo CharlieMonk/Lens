@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Agencies by Word Count - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('rankings.index') }}">Rankings</a></li>
+        <li>Agencies</li>
+    </ul>
+</nav>
+
+<h1>Agencies by Word Count</h1>
+
+<table class="sortable">
+    <thead>
+        <tr>
+            <th scope="col" data-sort="number">Rank</th>
+            <th scope="col" data-sort="string">Agency</th>
+            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for agency_name, word_count in agencies %}
+        <tr>
+            <td data-value="{{ loop.index }}">{{ loop.index }}</td>
+            <td>{{ agency_name }}</td>
+            <td class="numeric" data-value="{{ word_count }}">{{ "{:,}".format(word_count) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No agency data available.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

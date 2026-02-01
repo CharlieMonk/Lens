@@ -36,15 +36,11 @@ class Source:
 @dataclass(frozen=True)
 class Document:
     id: Optional[int]
-    source_id: int
     agency_id: int
     title: str
     url: str
     published_at: datetime
     retrieved_at: datetime
-    raw_html: str
-    text: str
-    content_hash: str
 
 
 @dataclass(frozen=True)
