@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for TF-IDF similarity computation on data ingestion."""
+"""Tests for embedding-based similarity computation."""
 
 import sqlite3
 import tempfile
@@ -20,7 +20,7 @@ def temp_db():
 
 @pytest.fixture
 def sample_sections():
-    """Sample sections with enough text for TF-IDF to find similarities."""
+    """Sample sections with enough text for similarity computation."""
     return [
         {
             "title": 1,
@@ -71,7 +71,7 @@ def sample_sections():
 
 
 class TestSimilarityComputation:
-    """Test that similarities are computed when data is added."""
+    """Test that embeddings are computed when data is added."""
 
     def test_save_sections_stores_data(self, temp_db, sample_sections):
         """Verify sections are saved to the database."""
@@ -85,60 +85,55 @@ class TestSimilarityComputation:
 
         assert count == len(sample_sections)
 
-    def test_compute_similarities_creates_pairs(self, temp_db, sample_sections):
-        """Verify compute_similarities creates similarity pairs."""
+    def test_compute_similarities_creates_embeddings(self, temp_db, sample_sections):
+        """Verify compute_similarities creates embeddings for sections."""
         temp_db.save_sections(sample_sections, year=0)
 
-        # Compute similarities
-        count = temp_db.compute_similarities(title=1, year=0, top_n=3)
+        # Compute similarities (creates embeddings)
+        count = temp_db.compute_similarities(title=1, year=0)
 
-        assert count > 0, "Should create at least one similarity pair"
+        assert count > 0, "Should create at least one embedding"
 
-        # Verify pairs are in the database
+        # Verify embeddings are in the database
         conn = sqlite3.connect(temp_db.db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT COUNT(*) FROM section_similarities WHERE year = 0 AND title = 1"
+            "SELECT COUNT(*) FROM section_embeddings WHERE year = 0 AND title = 1"
         )
         db_count = cursor.fetchone()[0]
         conn.close()
 
         assert db_count == count
 
-    def test_similarities_have_valid_scores(self, temp_db, sample_sections):
-        """Verify similarity scores are between 0 and 1."""
+    def test_embeddings_have_valid_format(self, temp_db, sample_sections):
+        """Verify embeddings are stored as valid blobs."""
         temp_db.save_sections(sample_sections, year=0)
         temp_db.compute_similarities(title=1, year=0)
 
         conn = sqlite3.connect(temp_db.db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT similarity FROM section_similarities WHERE year = 0 AND title = 1"
+            "SELECT embedding FROM section_embeddings WHERE year = 0 AND title = 1 LIMIT 1"
         )
-        scores = [row[0] for row in cursor.fetchall()]
+        row = cursor.fetchone()
         conn.close()
 
-        assert all(0 < s <= 1 for s in scores), "Similarity scores should be in (0, 1]"
+        assert row is not None, "Should have at least one embedding"
+        embedding_blob = row[0]
+        assert isinstance(embedding_blob, bytes), "Embedding should be bytes"
+        assert len(embedding_blob) > 0, "Embedding should not be empty"
 
-    def test_compute_similarities_skips_large_titles(self, temp_db):
-        """Verify large titles are skipped to avoid memory issues."""
-        # Create many sections (more than default max_sections=2000)
-        large_sections = [
-            {
-                "title": 99,
-                "chapter": "I",
-                "part": str(i // 100),
-                "section": f"{i // 100}.{i % 100}",
-                "heading": f"Section {i}",
-                "text": f"This is section number {i} with some text content for testing.",
-            }
-            for i in range(2100)
-        ]
-        temp_db.save_sections(large_sections, year=0)
+    def test_compute_similarities_incremental(self, temp_db, sample_sections):
+        """Verify compute_similarities only adds missing embeddings."""
+        temp_db.save_sections(sample_sections, year=0)
 
-        # Should return -1 (skipped)
-        count = temp_db.compute_similarities(title=99, year=0, max_sections=2000)
-        assert count == -1, "Should skip titles with too many sections"
+        # First call should create all embeddings
+        count1 = temp_db.compute_similarities(title=1, year=0)
+        assert count1 > 0, "Should create embeddings on first call"
+
+        # Second call should not create new embeddings (all exist)
+        count2 = temp_db.compute_similarities(title=1, year=0)
+        assert count2 == 0, "Should not recompute existing embeddings"
 
     def test_fetcher_compute_all_similarities(self, sample_sections):
         """Verify ECFRFetcher.compute_all_similarities processes all titles."""
@@ -153,21 +148,21 @@ class TestSimilarityComputation:
             results = fetcher.compute_all_similarities(year=0)
 
             assert 1 in results, "Title 1 should be processed"
-            assert results[1] > 0, "Should create similarity pairs for title 1"
+            assert results[1] > 0, "Should create embeddings for title 1"
 
-    def test_historical_year_similarities(self, temp_db, sample_sections):
-        """Verify similarities work for historical years."""
+    def test_historical_year_embeddings(self, temp_db, sample_sections):
+        """Verify embeddings work for historical years."""
         # Save sections for a historical year
         temp_db.save_sections(sample_sections, year=2020)
 
         count = temp_db.compute_similarities(title=1, year=2020)
-        assert count > 0, "Should create similarities for historical year"
+        assert count > 0, "Should create embeddings for historical year"
 
         # Verify year is stored correctly
         conn = sqlite3.connect(temp_db.db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT DISTINCT year FROM section_similarities WHERE title = 1"
+            "SELECT DISTINCT year FROM section_embeddings WHERE title = 1"
         )
         years = [row[0] for row in cursor.fetchall()]
         conn.close()
@@ -202,35 +197,18 @@ class TestECFRReaderSimilarity:
             assert "similarity" in item
             assert 0 < item["similarity"] <= 1
 
-    def test_get_most_similar_pairs(self, reader_with_data):
-        """Test getting most similar section pairs."""
-        pairs = reader_with_data.get_most_similar_pairs(limit=10, min_similarity=0.1)
-        assert isinstance(pairs, list)
-        for pair in pairs:
-            assert "title1" in pair
-            assert "section1" in pair
-            assert "title2" in pair
-            assert "section2" in pair
-            assert "similarity" in pair
+    def test_get_similar_sections_respects_limit(self, reader_with_data):
+        """Test that limit is respected."""
+        similar = reader_with_data.get_similar_sections(title=1, section="1.1", limit=2)
+        assert len(similar) <= 2
 
-    def test_find_duplicate_regulations(self, reader_with_data):
-        """Test finding duplicate regulations."""
-        dupes = reader_with_data.find_duplicate_regulations(min_similarity=0.1, limit=10)
-        assert isinstance(dupes, list)
-        for dupe in dupes:
-            assert "title1" in dupe
-            assert "text1" in dupe
-            assert "title2" in dupe
-            assert "text2" in dupe
-
-    def test_similarity_stats(self, reader_with_data):
-        """Test similarity statistics."""
-        stats = reader_with_data.similarity_stats()
-        assert "total_pairs" in stats
-        assert "titles_with_similarities" in stats
-        assert "distribution" in stats
-        assert "avg_similarity" in stats
-        assert stats["total_pairs"] > 0
+    def test_get_similar_sections_min_similarity(self, reader_with_data):
+        """Test filtering by minimum similarity."""
+        similar = reader_with_data.get_similar_sections(
+            title=1, section="1.1", min_similarity=0.9, limit=10
+        )
+        for item in similar:
+            assert item["similarity"] >= 0.9
 
 
 if __name__ == "__main__":

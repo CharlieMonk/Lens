@@ -376,14 +376,14 @@ class TestECFRDatabaseSimilarities:
 
         assert count > 0
 
-    def test_compute_similarities_too_few_sections(self, temp_db):
-        """Skip when fewer than 2 sections."""
+    def test_compute_similarities_single_section(self, temp_db):
+        """Single section still gets an embedding for cross-title similarity."""
         temp_db.save_sections([{
             "title": 1, "section": "1.1", "text": "Only one section."
         }], year=0)
 
         count = temp_db.compute_similarities(title=1, year=0)
-        assert count == 0
+        assert count == 1
 
     def test_get_similar_sections(self, temp_db, sections_for_similarity):
         """Get similar sections."""
