@@ -26,6 +26,19 @@
             </a>
         </li>
     {% elif node.type in ['subtitle', 'chapter', 'subchapter', 'part', 'subpart'] %}
+        {% if node.reserved %}
+        <div class="reserved-item">
+            <span class="reserved-label">
+                {% if node.type == 'subtitle' %}{{ node.identifier }}
+                {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
+                {% elif node.type == 'subchapter' %}Subchapter {{ node.identifier }}
+                {% elif node.type == 'part' %}Part {{ node.identifier }}
+                {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
+                {% endif %}
+            </span>
+            <span class="reserved-tag">[Reserved]</span>
+        </div>
+        {% else %}
         <details {% if depth == 0 %}open{% endif %}>
             <summary>
                 <strong>
@@ -44,6 +57,7 @@
                 {% endfor %}
             </ul>
         </details>
+        {% endif %}
     {% endif %}
 {% endmacro %}
 

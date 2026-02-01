@@ -127,6 +127,15 @@ class ECFRDatabase:
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS title_structures (
+                title INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                structure_json TEXT NOT NULL,
+                PRIMARY KEY (title, year)
+            )
+        """)
+
     def _migrate_sections_table(self, cursor: sqlite3.Cursor, conn: sqlite3.Connection) -> None:
         """Handle sections table creation and migration."""
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
@@ -235,6 +244,33 @@ class ECFRDatabase:
                     1 if t.get("reserved", False) else 0,
                 ))
             conn.commit()
+
+    # Title structure metadata (for reserved elements)
+
+    def save_title_structure(self, title: int, structure: dict, year: int = 0) -> None:
+        """Save the structure metadata for a title (from eCFR structure API)."""
+        import json
+        self._execute("""
+            INSERT OR REPLACE INTO title_structures (title, year, structure_json)
+            VALUES (?, ?, ?)
+        """, (title, year, json.dumps(structure)))
+
+    def get_title_structure_metadata(self, title: int, year: int = 0) -> dict | None:
+        """Get the structure metadata for a title."""
+        import json
+        row = self._query_one(
+            "SELECT structure_json FROM title_structures WHERE title = ? AND year = ?",
+            (title, year)
+        )
+        return json.loads(row[0]) if row else None
+
+    def has_title_structure(self, title: int, year: int = 0) -> bool:
+        """Check if structure metadata exists for a title."""
+        row = self._query_one(
+            "SELECT 1 FROM title_structures WHERE title = ? AND year = ?",
+            (title, year)
+        )
+        return row is not None
 
     # Agencies
 
@@ -496,8 +532,86 @@ class ECFRDatabase:
 
         return results
 
+    def _convert_api_structure(self, api_node: dict) -> dict:
+        """Convert eCFR API structure format to our display format."""
+        import re
+
+        def roman_to_int(s):
+            """Convert Roman numeral to integer."""
+            roman_values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
+            s = s.upper()
+            if not all(c in roman_values for c in s):
+                return None
+            total = 0
+            prev = 0
+            for c in reversed(s):
+                val = roman_values[c]
+                if val < prev:
+                    total -= val
+                else:
+                    total += val
+                prev = val
+            return total
+
+        def sort_key(node):
+            """Sort key for structure nodes."""
+            identifier = node.get("identifier", "")
+            if not identifier:
+                return (2, 0, "")
+            try:
+                return (0, int(identifier), "")
+            except ValueError:
+                pass
+            roman_val = roman_to_int(identifier)
+            if roman_val is not None:
+                return (0, roman_val, "")
+            match = re.match(r'^(\d+)', identifier)
+            if match:
+                return (0, int(match.group(1)), identifier)
+            return (1, 0, identifier)
+
+        def count_sections(node):
+            """Count sections in a node recursively."""
+            if node.get("type") == "section":
+                return 1
+            return sum(count_sections(child) for child in node.get("children", []))
+
+        def convert_node(node):
+            """Recursively convert a node from API format to display format."""
+            node_type = node.get("type", "")
+            identifier = node.get("identifier", "")
+            reserved = node.get("reserved", False)
+            children = node.get("children", [])
+            label_desc = node.get("label_description", "")
+
+            # Convert children recursively
+            converted_children = []
+            for child in sorted(children, key=sort_key):
+                converted_children.append(convert_node(child))
+
+            result = {
+                "type": node_type,
+                "identifier": identifier,
+                "children": converted_children,
+                "section_count": count_sections(node),
+                "reserved": reserved,
+            }
+
+            # Add heading for sections
+            if node_type == "section" and label_desc:
+                result["heading"] = label_desc
+
+            return result
+
+        return convert_node(api_node)
+
     def get_structure(self, title: int, year: int = 0) -> dict:
         """Return full hierarchy tree for a title: Subtitle → Chapter → Subchapter → Part → Subpart → Section."""
+        # Check if we have structure metadata (includes reserved elements)
+        metadata = self.get_title_structure_metadata(title, year)
+        if metadata:
+            return self._convert_api_structure(metadata)
+
         rows = self._query(
             "SELECT subtitle, chapter, subchapter, part, subpart, section, heading FROM sections WHERE year = ? AND title = ?",
             (year, title)
