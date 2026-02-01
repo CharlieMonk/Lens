@@ -831,10 +831,18 @@ class ECFRDatabase:
                 return 0
 
         def build_part_children(part, sub_key, ch_key, subch_key):
-            """Build children list for a part (subparts and sections)."""
-            part_children = []
+            """Build children list for a part (subparts and sections).
+
+            Orphaned sections (no subpart) are interleaved with named subparts
+            based on section numbers. Named subparts maintain alphabetical order.
+            """
             part_section_count = 0
             part_word_count = 0
+
+            # Collect named subparts and orphaned sections separately
+            named_subparts = []
+            orphaned_sections = []
+
             for subpart_key in sorted(part["subparts"].keys(), key=sort_key):
                 subpart = part["subparts"][subpart_key]
                 sections = sorted(subpart["sections"], key=section_sort_key)
@@ -844,15 +852,46 @@ class ECFRDatabase:
                 part_word_count += subpart_wc
 
                 if subpart["identifier"]:
-                    part_children.append({
+                    named_subparts.append({
                         "type": "subpart",
                         "identifier": subpart["identifier"],
                         "children": sections,
                         "section_count": subpart_section_count,
                         "word_count": subpart_wc,
+                        "_min_section_key": section_sort_key(sections[0]) if sections else None,
                     })
                 else:
-                    part_children.extend(sections)
+                    orphaned_sections.extend(sections)
+
+            # Interleave orphaned sections with named subparts
+            if not named_subparts:
+                part_children = orphaned_sections
+            elif not orphaned_sections:
+                # Remove internal sort keys
+                for sp in named_subparts:
+                    sp.pop("_min_section_key", None)
+                part_children = named_subparts
+            else:
+                # Place orphaned sections before the first subpart whose
+                # min section number is greater than the orphan's section number
+                part_children = []
+                orphan_idx = 0
+
+                for sp in named_subparts:
+                    sp_min = sp.pop("_min_section_key", None)
+                    # Add orphans that come before this subpart
+                    while orphan_idx < len(orphaned_sections):
+                        orphan_key = section_sort_key(orphaned_sections[orphan_idx])
+                        if sp_min is not None and orphan_key < sp_min:
+                            part_children.append(orphaned_sections[orphan_idx])
+                            orphan_idx += 1
+                        else:
+                            break
+                    part_children.append(sp)
+
+                # Add remaining orphans at the end
+                part_children.extend(orphaned_sections[orphan_idx:])
+
             return part_children, part_section_count, part_word_count
 
         def build_subchapter_children(subch, sub_key, ch_key):
