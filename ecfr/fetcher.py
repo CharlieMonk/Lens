@@ -29,14 +29,8 @@ MAX_WORKERS = _config.get("max_workers", _DEFAULT_MAX_WORKERS)
 
 
 def _run_async(coro):
-    """Run async coroutine, handling case where event loop is already running."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        return pool.submit(asyncio.run, coro).result()
+    """Run async coroutine."""
+    return asyncio.run(coro)
 
 
 class ECFRFetcher:
