@@ -131,6 +131,14 @@ nav strong a {
     margin-top: 0.5rem;
 }
 
+/* Compare page navigation */
+.compare-nav {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    padding-top: 0;
+    border-top: none;
+}
+
 /* Compare page version cards */
 .compare-versions {
     gap: 1rem;

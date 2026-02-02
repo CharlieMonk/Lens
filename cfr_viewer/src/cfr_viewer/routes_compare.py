@@ -75,6 +75,7 @@ def diff(title_num: int, section: str):
     if year2 is None:
         year2 = next((y for y in years if y != year1 and y != 0), year1)
     s1, s2 = db.get_section(title_num, section, year1), db.get_section(title_num, section, year2)
+    prev_sec, next_sec = db.get_adjacent_sections(title_num, section, year1)
 
     # Generate side-by-side diff with inline highlighting (ignoring whitespace)
     old_html, new_html = None, None
@@ -82,4 +83,4 @@ def diff(title_num: int, section: str):
     if has_changes:
         old_html, new_html = side_by_side_diff(s2.get("text", ""), s1.get("text", ""))
 
-    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes)
+    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec)
