@@ -2,6 +2,7 @@
 
 import asyncio
 import gc
+import os
 from pathlib import Path
 import aiohttp
 import requests
@@ -289,43 +290,59 @@ class ECFRFetcher:
         return results
 
 
-def main(historical_years: list[int] = None) -> int:
+def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
     historical_years = historical_years or HISTORICAL_YEARS
+    all_titles = set(range(1, 51)) - {35}  # All CFR titles except 35 (reserved)
+
+    # Run at lowest CPU priority
+    try:
+        os.nice(19)
+    except (OSError, AttributeError):
+        pass  # nice() not available on all platforms
+
     fetcher = ECFRFetcher()
     db = fetcher.db
-    print("=" * 50 + "\neCFR Database Population\n" + "=" * 50)
+    print("=" * 50 + "\neCFR Database Population\n" + "=" * 50, flush=True)
 
     for name, check, action in [
         ("Titles metadata", lambda: db.has_titles() and db.is_fresh(), fetcher._load_titles_metadata),
         ("Agencies metadata", lambda: db.has_agencies() and db.is_fresh(), fetcher._load_agency_lookup),
     ]:
         if check():
-            print(f"{name}: already cached")
+            print(f"{name}: already cached", flush=True)
         else:
-            print(f"{name}: fetching...")
+            print(f"{name}: fetching...", flush=True)
             try:
                 action()
-                print("  Done")
+                print("  Done", flush=True)
             except Exception as e:
-                print(f"  {'Error' if 'Titles' in name else 'Warning'}: {e}")
+                print(f"  {'Error' if 'Titles' in name else 'Warning'}: {e}", flush=True)
                 if "Titles" in name:
                     return 1
 
-    if db.has_year_data(0):
-        print("Current sections (year=0): already in database")
+    # Fetch current sections with retry logic
+    for attempt in range(max_retries):
+        stored_titles = set(db.list_titles(0))
+        missing_titles = all_titles - stored_titles
+        if not missing_titles:
+            print("Current sections (year=0): all titles present", flush=True)
+            break
+        print(f"Current sections: {len(missing_titles)} titles missing{f' (attempt {attempt + 1}/{max_retries})' if attempt > 0 else ''}", flush=True)
+        fetcher.update_stale_titles(sorted(missing_titles))
     else:
-        print("Current sections: fetching...")
-        if fetcher.fetch_current() != 0:
-            print("  Warning: some titles failed to fetch")
+        missing = all_titles - set(db.list_titles(0))
+        if missing:
+            print(f"  Warning: {len(missing)} titles still missing after {max_retries} attempts: {sorted(missing)}", flush=True)
 
+    # Fetch historical years
     for year in historical_years:
         if db.has_year_data(year):
-            print(f"Historical sections ({year}): already in database")
+            print(f"Historical sections ({year}): already in database", flush=True)
         else:
-            print(f"Historical sections ({year}): fetching...")
+            print(f"Historical sections ({year}): fetching...", flush=True)
             fetcher.fetch_historical([year])
 
-    print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50)
+    print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50, flush=True)
     return 0
 
 if __name__ == "__main__":

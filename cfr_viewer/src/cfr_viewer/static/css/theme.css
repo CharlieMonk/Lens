@@ -178,13 +178,13 @@ nav strong a {
 }
 
 .compare-versions .version-old header {
-    background: #ffebee;
-    border-bottom: 2px solid #ffcdd2;
+    background: #e8f5e9;
+    border-bottom: 2px solid #c8e6c9;
 }
 
 .compare-versions .version-new header {
-    background: #e8f5e9;
-    border-bottom: 2px solid #c8e6c9;
+    background: #ffebee;
+    border-bottom: 2px solid #ffcdd2;
 }
 
 /* Breadcrumb styling */

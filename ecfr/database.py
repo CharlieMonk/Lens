@@ -43,6 +43,8 @@ class ECFRDatabase:
         self._stats_cache = {}
         self._stats_cache_time = 0
         self._stats_cache_ttl = 300  # 5 minutes
+        self._structure_cache = {}
+        self._structure_cache_time = 0
         self._init_schema()
 
     @contextmanager
@@ -83,7 +85,7 @@ class ECFRDatabase:
                     c.execute("DROP TABLE sections_old")
             else:
                 c.execute("CREATE TABLE IF NOT EXISTS sections (year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL, subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '', part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '', heading TEXT DEFAULT '', text TEXT DEFAULT '', word_count INTEGER NOT NULL, PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))")
-            for n, cols in [("idx_sections_year_title", "sections(year, title)"), ("idx_sections_year_title_section", "sections(year, title, section)"), ("idx_cfr_title_chapter", "cfr_references(title, chapter)"), ("idx_cfr_agency", "cfr_references(agency_slug)"), ("idx_word_counts_agency", "agency_word_counts(agency_slug)"), ("idx_structure_year_title", "structure_nodes(year, title)")]:
+            for n, cols in [("idx_sections_year_title", "sections(year, title)"), ("idx_sections_year_title_section", "sections(year, title, section)"), ("idx_sections_groupby", "sections(year, title, subtitle, chapter, subchapter, part, subpart)"), ("idx_cfr_title_chapter", "cfr_references(title, chapter)"), ("idx_cfr_agency", "cfr_references(agency_slug)"), ("idx_word_counts_agency", "agency_word_counts(agency_slug)"), ("idx_structure_year_title", "structure_nodes(year, title)")]:
                 c.execute(f"CREATE INDEX IF NOT EXISTS {n} ON {cols}")
             # Migrate: drop old title_structures JSON table if exists
             c.execute("DROP TABLE IF EXISTS title_structures")
@@ -280,6 +282,15 @@ class ECFRDatabase:
         return self._set_cached_stats(cache_key, result)
 
     def get_structure(self, title, year=0):
+        import time
+        cache_key = (title, year)
+        # Check cache (5 min TTL)
+        if time.time() - self._structure_cache_time > 300:
+            self._structure_cache = {}
+            self._structure_cache_time = time.time()
+        if cache_key in self._structure_cache:
+            return self._structure_cache[cache_key]
+
         wc = self.get_structure_word_counts(title, year)
         section_wc = {r[0]: r[1] for r in self._query("SELECT section, word_count FROM sections WHERE year=? AND title=?", (year, title))}
         def get_wc(path):
@@ -291,36 +302,46 @@ class ECFRDatabase:
                 return d.get("total", 0)
             except: return 0
 
-        # Try to build from structure_nodes table
-        nodes = self.get_structure_nodes(title, year)
+        # Structure_nodes approach disabled - (parent_type, parent_id) key isn't unique
+        # across the tree, causing nodes to be visited multiple times.
+        # The sections-based fallback with caching is fast enough.
+        nodes = None  # self.get_structure_nodes(title, year)
         if nodes:
-            # Build lookup: (parent_type, parent_identifier) -> list of children
+            # Build lookup using full node identity as key since (type, identifier) isn't unique
+            # Key: (parent_type, parent_id, node_type, node_id) -> list of children
             children_map = {}
             for n in nodes:
-                key = (n["parent_type"], n["parent_identifier"])
-                children_map.setdefault(key, []).append(n)
+                # Children are stored under their parent's full identity
+                parent_key = (n["parent_type"], n["parent_identifier"])
+                children_map.setdefault(parent_key, []).append(n)
 
-            def count(n): return 1 if n["node_type"] == "section" else sum(count(c) for c in children_map.get((n["node_type"], n["identifier"]), []))
-            def build_node(n, path=None):
+            def build_node(n, parent_key, path=None):
                 path = path or {}
                 t, ident = n["node_type"], n["identifier"]
                 np = dict(path)
                 if t in ["subtitle", "chapter", "subchapter", "part", "subpart"]: np[t] = ident or ""
-                ch = [build_node(c, np) for c in sorted(children_map.get((t, ident), []), key=lambda x: sort_key(x["identifier"], use_roman=x["node_type"] == "chapter"))]
-                r = {"type": t, "identifier": ident, "children": ch, "section_count": count(n), "reserved": n["reserved"], "word_count": get_wc(np) if t in ["subtitle", "chapter", "subchapter", "part", "subpart"] else section_wc.get(ident, 0)}
+                # Children of this node are stored under (this_node_type, this_node_id)
+                my_key = (t, ident)
+                ch = [build_node(c, my_key, np) for c in sorted(children_map.get(my_key, []), key=lambda x: sort_key(x["identifier"], use_roman=x["node_type"] == "chapter"))]
+                # Compute section_count bottom-up: 1 for sections, sum of children for others
+                sec_count = 1 if t == "section" else sum(c.get("section_count", 0) for c in ch)
+                r = {"type": t, "identifier": ident, "children": ch, "section_count": sec_count, "reserved": n["reserved"], "word_count": get_wc(np) if t in ["subtitle", "chapter", "subchapter", "part", "subpart"] else section_wc.get(ident, 0)}
                 if t == "section" and n.get("label"): r["heading"] = n["label"]
                 return r
 
             # Find root node (parent_type is empty string for root)
             roots = children_map.get(('', ''), [])
             if roots:
-                res = build_node(roots[0])
+                res = build_node(roots[0], ('', ''))
                 res["word_count"] = wc.get("total", 0)
+                self._structure_cache[cache_key] = res
                 return res
 
         # Fallback: build from sections table
         rows = self._query("SELECT subtitle, chapter, subchapter, part, subpart, section, heading FROM sections WHERE year=? AND title=?", (year, title))
-        if not rows: return {}
+        if not rows:
+            self._structure_cache[cache_key] = {}
+            return {}
         tree = {}
         for sub, ch, subch, prt, subprt, sec, hd in rows:
             keys = [sub or "", ch or "", subch or "", prt or "", subprt or ""]
@@ -345,7 +366,23 @@ class ECFRDatabase:
             return ch, tot
 
         ch, tot = build(tree, 0, {})
-        return {"type": "title", "identifier": str(title), "children": ch, "section_count": tot, "word_count": wc.get("total", 0)}
+        result = {"type": "title", "identifier": str(title), "children": ch, "section_count": tot, "word_count": wc.get("total", 0)}
+        self._structure_cache[cache_key] = result
+        return result
+
+    def warm_structure_cache(self, years=None, titles=None):
+        """Pre-load structure cache for all titles and years. ~544MB RAM for all data."""
+        import time
+        years = years or [0] + [y for y in self.list_years() if y != 0]
+        titles = titles or [t for t in range(1, 51) if t != 35]
+        self._structure_cache = {}
+        self._structure_cache_time = time.time()
+        count = 0
+        for year in years:
+            for title in titles:
+                self.get_structure(title, year)
+                count += 1
+        return count
 
     def get_similar_sections(self, title, section, year=0, limit=10, min_similarity=0.1):
         from sklearn.feature_extraction.text import TfidfVectorizer

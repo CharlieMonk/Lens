@@ -51,12 +51,14 @@ class ECFRClient:
 
     async def fetch_title_structure_async(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = 60) -> list[tuple]:
         """Fetch structure and flatten to list of (node_type, identifier, parent_type, parent_identifier, label, reserved)."""
+        import json
         url = f"{self.ECFR_BASE}/versioner/v1/structure/{date}/title-{title_num}.json"
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                 if resp.status != 200:
                     return []
-                data = await resp.json()
+                # Use content_type=None to handle server returning wrong mimetype
+                data = json.loads(await resp.read())
                 return self._flatten_structure(data)
         except Exception:
             return []

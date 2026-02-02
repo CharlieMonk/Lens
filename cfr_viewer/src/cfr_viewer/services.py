@@ -7,9 +7,9 @@ BASELINE_YEAR = 2010
 def get_database() -> ECFRDatabase:
     return current_app.ecfr_database
 
-def compute_change_pct(current: int, baseline: int | None) -> float | None:
-    """Compute percentage change from baseline. Returns None if baseline is missing."""
-    if baseline is None or baseline == 0:
+def compute_change_pct(current: int | None, baseline: int | None) -> float | None:
+    """Compute percentage change from baseline. Returns None if either value is missing."""
+    if current is None or baseline is None or baseline == 0:
         return None
     return ((current - baseline) / baseline) * 100
 
