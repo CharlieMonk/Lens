@@ -115,16 +115,13 @@ nav strong a {
     overflow-wrap: break-word;
 }
 
+/* Hide technical diff headers */
 .diff-container .diff-header {
-    color: var(--pico-muted-color);
-    font-weight: bold;
+    display: none;
 }
 
 .diff-container .diff-hunk {
-    color: #6a1b9a;
-    background-color: #f3e5f5;
-    margin: 0.5rem 0;
-    padding: 0.25rem;
+    display: none;
 }
 
 .diff-container .diff-add {
@@ -323,4 +320,192 @@ footer {
 .sortable-header.sort-desc::after {
     content: " ↓";
     opacity: 1;
+}
+
+/* Citation input row with Go button */
+.citation-row {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 0;
+}
+
+.citation-row > * {
+    height: 100%;
+}
+
+.citation-input {
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 2px solid var(--pico-muted-border-color);
+    border-right: none;
+    border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);
+    background: var(--pico-background-color);
+    padding: 0.5rem 1rem;
+    margin: 0;
+    min-width: 20ch;
+    width: auto;
+    cursor: text;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.citation-input:hover,
+.citation-row:hover .citation-input {
+    border-color: var(--pico-primary);
+}
+
+.citation-input:focus {
+    border-color: var(--pico-primary);
+    box-shadow: 0 0 0 3px var(--pico-primary-focus);
+    outline: none;
+    z-index: 1;
+}
+
+.compare-form .citation-row {
+    --citation-height: calc(1.5rem * 1.5 + 1rem + 4px); /* font-size * line-height + padding + border */
+}
+
+.compare-form .citation-row .citation-input {
+    height: var(--citation-height) !important;
+    box-sizing: border-box !important;
+}
+
+.compare-form .citation-row button.citation-go {
+    height: var(--citation-height) !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 1rem !important;
+    margin: 0 !important;
+    font-size: 1rem !important;
+    line-height: normal !important;
+    border: 2px solid var(--pico-primary) !important;
+    border-left: none !important;
+    border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0 !important;
+    box-sizing: border-box !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Compare toolbar - all controls on one line */
+.compare-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.compare-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.compare-controls select {
+    margin: 0;
+    width: auto;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+}
+
+.compare-arrow {
+    color: var(--pico-muted-color);
+    font-size: 1.25rem;
+}
+
+/* Compare summary - version badges with word count */
+.compare-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+}
+
+.version-badge {
+    text-align: center;
+    padding: 0.5rem 1rem;
+    border-radius: var(--pico-border-radius);
+}
+
+.version-badge strong {
+    display: block;
+    font-size: 1.1rem;
+}
+
+.version-badge span {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+}
+
+.version-badge.version-old {
+    background: #ffebee;
+    border: 1px solid #ffcdd2;
+}
+
+.version-badge.version-new {
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+}
+
+.version-change {
+    font-size: 1.25rem;
+    font-weight: bold;
+}
+
+.change-positive {
+    color: #2e7d32;
+}
+
+.change-negative {
+    color: #c62828;
+}
+
+.change-neutral {
+    color: var(--pico-muted-color);
+    font-weight: normal;
+    font-size: 0.9rem;
+}
+
+/* Diff article styling */
+.diff-article header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.diff-legend {
+    display: flex;
+    gap: 1rem;
+}
+
+.legend-add, .legend-remove {
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+.legend-add {
+    background: #c8e6c9;
+    color: #1b5e20;
+}
+
+.legend-remove {
+    background: #ffcdd2;
+    color: #b71c1c;
+}
+
+/* Statistics page grid cards - align buttons at bottom */
+.grid > article {
+    display: flex;
+    flex-direction: column;
+}
+
+.grid > article > a[role="button"] {
+    margin-top: auto;
 }

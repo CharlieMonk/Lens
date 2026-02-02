@@ -21,5 +21,13 @@
         <p>View CFR titles by total word count.</p>
         <a href="{{ url_for('statistics.titles') }}" role="button">View Title Statistics</a>
     </article>
+
+    <article>
+        <header>
+            <strong>Compare Years</strong>
+        </header>
+        <p>Compare how CFR sections have changed over time with side-by-side diffs.</p>
+        <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}" role="button">Compare Sections</a>
+    </article>
 </div>
 {% endblock %}
