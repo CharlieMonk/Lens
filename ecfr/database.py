@@ -139,6 +139,10 @@ class ECFRDatabase:
         return totals
 
     def get_agency_chapters(self, slug): return [{"title": r[0], "chapter": r[1], "title_name": r[2]} for r in self._query("SELECT r.title, COALESCE(r.chapter, r.subtitle, r.subchapter), t.name FROM cfr_references r JOIN titles t ON r.title = t.number WHERE r.agency_slug = ? ORDER BY r.title", (slug,)) if r[1]]
+
+    def get_agency_chapter_word_counts(self, slug, year=0):
+        """Get word counts by title/chapter for a specific agency."""
+        return [{"title": r[0], "chapter": r[1], "word_count": r[2]} for r in self._query("SELECT title, chapter, word_count FROM agency_word_counts WHERE agency_slug = ? AND year = ? ORDER BY title, chapter", (slug, year))]
     def get_agency(self, slug):
         r = self._query_one("SELECT slug, name, short_name FROM agencies WHERE slug = ?", (slug,)); return {"slug": r[0], "name": r[1], "short_name": r[2]} if r else None
 
@@ -239,13 +243,13 @@ class ECFRDatabase:
         if cached:
             return cached
 
-        # Get all title word counts for current year (0) and 2020
+        # Get all title word counts for current year (0) and 2010
         title_counts_current = self.get_all_title_word_counts(0)
-        title_counts_2020 = self.get_all_title_word_counts(2020)
+        title_counts_2010 = self.get_all_title_word_counts(2010)
 
-        # Get all agency word counts for current year and 2020
+        # Get all agency word counts for current year and 2010
         agency_counts_current = self.get_agency_word_counts(0)
-        agency_counts_2020 = self.get_agency_word_counts(2020)
+        agency_counts_2010 = self.get_agency_word_counts(2010)
 
         # Get agency details
         agency_details = {r[0]: {"name": r[1], "short_name": r[2]} for r in self._query("SELECT slug, name, short_name FROM agencies")}
@@ -254,8 +258,8 @@ class ECFRDatabase:
         title_meta = self.get_titles()
 
         result = {
-            "title_counts": {0: title_counts_current, 2020: title_counts_2020},
-            "agency_counts": {0: agency_counts_current, 2020: agency_counts_2020},
+            "title_counts": {0: title_counts_current, 2010: title_counts_2010},
+            "agency_counts": {0: agency_counts_current, 2010: agency_counts_2010},
             "agency_details": agency_details,
             "title_meta": title_meta,
         }

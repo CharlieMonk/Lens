@@ -21,15 +21,27 @@
 
 <h2>CFR Chapters</h2>
 
-{% if chapters %}
-<ul>
-    {% for ch in chapters %}
-    <li>
-        <a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">Title {{ ch.title }}, Chapter {{ ch.chapter }}</a>
-        {% if ch.title_name %}<small>— {{ ch.title_name }}</small>{% endif %}
-    </li>
-    {% endfor %}
-</ul>
+{% if chapter_stats %}
+<table class="striped">
+    <thead>
+        <tr>
+            <th class="sortable-header" data-sort="number">Title</th>
+            <th class="sortable-header" data-sort="string">Chapter</th>
+            <th class="sortable-header numeric" data-sort="number">Word Count</th>
+            <th class="sortable-header numeric" data-sort="number">Since 2010</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ch in chapter_stats %}
+        <tr>
+            <td data-value="{{ ch.title }}"><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.title }}</a></td>
+            <td><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.chapter }}</a></td>
+            <td class="numeric" data-value="{{ ch.word_count }}">{{ "{:,}".format(ch.word_count) }}</td>
+            <td class="numeric {% if ch.change_pct and ch.change_pct > 0 %}change-positive{% elif ch.change_pct and ch.change_pct < 0 %}change-negative{% else %}change-zero{% endif %}" data-value="{{ ch.change_pct or 0 }}">{% if ch.change_pct is not none %}{{ "{:+.1f}%".format(ch.change_pct) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% else %}
 <p>No CFR chapters associated with this agency.</p>
 {% endif %}
