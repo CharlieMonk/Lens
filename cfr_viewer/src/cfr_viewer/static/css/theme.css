@@ -105,37 +105,61 @@ nav strong a {
     border-radius: var(--pico-border-radius);
 }
 
-/* Diff container styling - unified diff format */
-.diff-container {
-    font-family: monospace;
-    font-size: 0.85rem;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+/* Side-by-side diff styling */
+.diff-text {
+    line-height: 1.6;
 }
 
-/* Hide technical diff headers */
-.diff-container .diff-header {
-    display: none;
-}
-
-.diff-container .diff-hunk {
-    display: none;
-}
-
-.diff-container .diff-add {
+.diff-text .diff-add {
     background-color: #c8e6c9;
     color: #1b5e20;
+    border-radius: 2px;
+    padding: 0 2px;
 }
 
-.diff-container .diff-sub {
+.diff-text .diff-del {
     background-color: #ffcdd2;
     color: #b71c1c;
+    border-radius: 2px;
+    padding: 0 2px;
 }
 
-.diff-container .diff-context {
-    color: var(--pico-color);
+.diff-legend-bar {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.no-changes-note {
+    text-align: center;
+    color: var(--pico-muted-color);
+    font-style: italic;
+    margin-top: 0.5rem;
+}
+
+/* Compare page version cards */
+.compare-versions {
+    gap: 1rem;
+}
+
+.compare-versions .version-card {
+    margin: 0;
+}
+
+.compare-versions .version-card header {
+    padding: 0.5rem 1rem;
+    margin: 0;
+}
+
+.compare-versions .version-old header {
+    background: #ffebee;
+    border-bottom: 2px solid #ffcdd2;
+}
+
+.compare-versions .version-new header {
+    background: #e8f5e9;
+    border-bottom: 2px solid #c8e6c9;
 }
 
 /* Breadcrumb styling */
@@ -479,27 +503,7 @@ footer {
     font-size: 0.9rem;
 }
 
-/* Diff article styling */
-.diff-article {
-    margin-top: 0 !important;
-}
-
-.compare-summary + .diff-article,
-.section-heading-context + .compare-summary + .diff-article {
-    margin-top: 0 !important;
-}
-
-.diff-article header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.diff-legend {
-    display: flex;
-    gap: 1rem;
-}
-
+/* Legend badges for diff view */
 .legend-add, .legend-remove {
     padding: 0.15rem 0.5rem;
     border-radius: 3px;

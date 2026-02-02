@@ -7,16 +7,42 @@ from .services import get_database
 
 compare_bp = Blueprint("compare", __name__)
 
-def diff_html(text1: str, text2: str, label1: str, label2: str) -> str:
-    lines = []
-    for line in difflib.unified_diff(text1.splitlines(keepends=True), text2.splitlines(keepends=True), fromfile=label1, tofile=label2, lineterm=''):
-        line = line.rstrip('\n')
-        # Skip empty add/remove lines (just '+' or '-' with no content)
-        if line in ('+', '-') or (len(line) > 0 and line[0] in '+-' and line[1:].strip() == ''):
-            continue
-        cls = "diff-header" if line[:3] in ('+++', '---') else "diff-hunk" if line[:2] == '@@' else "diff-add" if line[0] == '+' else "diff-sub" if line[0] == '-' else "diff-context"
-        lines.append(f'<div class="{cls}">{Markup.escape(line)}</div>')
-    return '\n'.join(lines)
+def side_by_side_diff(text1: str, text2: str) -> tuple[str, str]:
+    """Generate side-by-side HTML with word-level highlighting.
+
+    Returns (old_html, new_html) with deletions/additions highlighted inline.
+    """
+    if not text1 and not text2:
+        return "", ""
+    if not text1:
+        return "", f'<span class="diff-add">{Markup.escape(text2)}</span>'
+    if not text2:
+        return f'<span class="diff-del">{Markup.escape(text1)}</span>', ""
+
+    # Split into words while preserving whitespace
+    def tokenize(text):
+        return re.findall(r'\S+|\s+', text)
+
+    words1, words2 = tokenize(text1), tokenize(text2)
+    matcher = difflib.SequenceMatcher(None, words1, words2)
+
+    old_parts, new_parts = [], []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_chunk = ''.join(words1[i1:i2])
+        new_chunk = ''.join(words2[j1:j2])
+
+        if tag == 'equal':
+            old_parts.append(Markup.escape(old_chunk))
+            new_parts.append(Markup.escape(new_chunk))
+        elif tag == 'delete':
+            old_parts.append(f'<span class="diff-del">{Markup.escape(old_chunk)}</span>')
+        elif tag == 'insert':
+            new_parts.append(f'<span class="diff-add">{Markup.escape(new_chunk)}</span>')
+        elif tag == 'replace':
+            old_parts.append(f'<span class="diff-del">{Markup.escape(old_chunk)}</span>')
+            new_parts.append(f'<span class="diff-add">{Markup.escape(new_chunk)}</span>')
+
+    return Markup(''.join(old_parts)), Markup(''.join(new_parts))
 
 def parse_citation(citation: str) -> tuple[int | None, str | None]:
     """Parse CFR citation formats like '47 C.F.R. § 73.609', '29 CFR 1910.134a', etc."""
@@ -50,5 +76,11 @@ def diff(title_num: int, section: str):
     if year2 is None:
         year2 = next((y for y in years if y != year1 and y != 0), year1)
     s1, s2 = db.get_section(title_num, section, year1), db.get_section(title_num, section, year2)
-    d = diff_html(s2.get("text", ""), s1.get("text", ""), f"Year {year2 or 'Current'}", f"Year {year1 or 'Current'}") if s1 and s2 and s1.get("text") != s2.get("text") else None
-    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, diff_html=d)
+
+    # Generate side-by-side diff with inline highlighting
+    old_html, new_html = None, None
+    has_changes = s1 and s2 and s1.get("text") != s2.get("text")
+    if has_changes:
+        old_html, new_html = side_by_side_diff(s2.get("text", ""), s1.get("text", ""))
+
+    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes)
