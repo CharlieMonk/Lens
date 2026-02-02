@@ -1,5 +1,5 @@
 [project]
-name = "efcr"
+name = "ecfr"
 version = "0.1.0"
 description = "eCFR tooling with enforcement relevance analysis"
 requires-python = ">=3.10"
