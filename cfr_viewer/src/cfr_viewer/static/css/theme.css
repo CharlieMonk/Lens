@@ -121,15 +121,15 @@ nav strong a {
 }
 
 .diff-text .diff-add {
-    background-color: #c8e6c9;
-    color: #1b5e20;
+    background-color: #ffcdd2;
+    color: #b71c1c;
     border-radius: 2px;
     padding: 0 2px;
 }
 
 .diff-text .diff-del {
-    background-color: #ffcdd2;
-    color: #b71c1c;
+    background-color: #c8e6c9;
+    color: #1b5e20;
     border-radius: 2px;
     padding: 0 2px;
 }
@@ -380,13 +380,13 @@ footer {
 }
 
 .legend-add {
-    background: #c8e6c9;
-    color: #1b5e20;
+    background: #ffcdd2;
+    color: #b71c1c;
 }
 
 .legend-remove {
-    background: #ffcdd2;
-    color: #b71c1c;
+    background: #c8e6c9;
+    color: #1b5e20;
 }
 
 /* Statistics page grid cards - align buttons at bottom */

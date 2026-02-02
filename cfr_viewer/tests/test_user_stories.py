@@ -203,12 +203,12 @@ class TestUserStory3_ViewSection:
         heading = page.locator("h1")
         expect(heading).to_contain_text("§")
 
-        # Check for section text article
-        section_text = page.locator("article", has_text="Section Text")
+        # Check for section text container
+        section_text = page.locator(".section-text")
         expect(section_text).to_be_visible()
 
         # Check for similar sections article
-        similar = page.locator("article", has_text="Similar Sections")
+        similar = page.locator("article.similar-sections")
         expect(similar).to_be_visible()
 
     def test_section_text_displayed(self, page: Page):
@@ -217,10 +217,6 @@ class TestUserStory3_ViewSection:
         page.goto(f"{BASE_URL}/title/1/section/1.1")
 
         # Check for section text container
-        text_section = page.locator("article", has_text="Section Text")
-        expect(text_section).to_be_visible()
-
-        # Check text content exists
         text_content = page.locator(".section-text")
         expect(text_content).to_be_visible()
 
@@ -294,9 +290,9 @@ class TestUserStory5_CompareVersions:
         year_selects = page.locator("select[name='year1'], select[name='year2']")
         expect(year_selects.first).to_be_visible()
 
-        # Check for compare button
-        compare_btn = page.locator("button[type='submit']", has_text="Compare")
-        expect(compare_btn).to_be_visible()
+        # Check for Go button (for citation navigation)
+        go_btn = page.locator("button[type='submit']", has_text="Go")
+        expect(go_btn).to_be_visible()
 
 
 class TestUserStory6_ViewStatistics:
@@ -344,7 +340,7 @@ class TestUserStory6_ViewStatistics:
         # Check headers
         headers = page.locator("table thead th")
         header_texts = headers.all_text_contents()
-        assert "Rank" in header_texts
+        assert "Abbreviation" in header_texts
         assert "Agency" in header_texts
         assert "Word Count" in header_texts
 

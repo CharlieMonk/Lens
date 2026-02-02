@@ -25,7 +25,7 @@
 
 {% include "components/year_selector.html" %}
 
-{{ structure_table(node.children if node else [], title_num, year) }}
+{{ structure_table(node.children if node else [], title_num, year, breadcrumb[-1].path if breadcrumb else "", baseline_year=BASELINE_YEAR) }}
 {% else %}
 <h1>Not Found</h1>
 <p>The requested structure could not be found.</p>

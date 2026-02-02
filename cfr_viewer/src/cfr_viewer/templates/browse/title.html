@@ -18,5 +18,5 @@
 
 {% include "components/year_selector.html" %}
 
-{{ structure_table(structure.children if structure else [], title_num, year) }}
+{{ structure_table(structure.children if structure else [], title_num, year, baseline_year=BASELINE_YEAR) }}
 {% endblock %}
