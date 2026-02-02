@@ -17,12 +17,13 @@ def roman_to_int(s):
         prev = v
     return total
 
-def sort_key(ident):
+def sort_key(ident, use_roman=False):
     if not ident: return (2, 0, "")
     try: return (0, int(ident), "")
     except ValueError: pass
-    r = roman_to_int(ident)
-    if r: return (0, r, "")
+    if use_roman:
+        r = roman_to_int(ident)
+        if r: return (0, r, "")
     m = re.match(r'^(\d+)', ident)
     return (0, int(m.group(1)), ident) if m else (1, 0, ident)
 
@@ -219,7 +220,7 @@ class ECFRDatabase:
                 t, ident = n.get("type", ""), n.get("identifier", "")
                 np = dict(path)
                 if t in ["subtitle", "chapter", "subchapter", "part", "subpart"]: np[t] = ident or ""
-                ch = [convert(c, np) for c in sorted(n.get("children", []), key=lambda x: sort_key(x.get("identifier", "")))]
+                ch = [convert(c, np) for c in sorted(n.get("children", []), key=lambda x: sort_key(x.get("identifier", ""), use_roman=x.get("type") == "chapter"))]
                 r = {"type": t, "identifier": ident, "children": ch, "section_count": count(n), "reserved": n.get("reserved", False), "word_count": get_wc(np) if t in ["subtitle", "chapter", "subchapter", "part", "subpart"] else 0}
                 if t == "section" and n.get("label_description"): r["heading"] = n["label_description"]
                 return r
@@ -238,7 +239,7 @@ class ECFRDatabase:
             levels = ["subtitle", "chapter", "subchapter", "part", "subpart"]
             if lvl >= len(levels): return sorted(data.get("sections", []), key=section_sort_key), len(data.get("sections", []))
             ch, tot = [], 0
-            for k in sorted(data.keys(), key=sort_key):
+            for k in sorted(data.keys(), key=lambda x: sort_key(x, use_roman=(lvl == 1))):
                 if k == "sections": continue
                 np = dict(path, **{levels[lvl]: k})
                 sub_ch, cnt = build(data[k], lvl+1, np)
