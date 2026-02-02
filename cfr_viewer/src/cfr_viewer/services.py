@@ -32,28 +32,36 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
     return results
 
 
-def _build_baseline_map(node, path=""):
-    """Build a flat map of path -> word_count from a structure tree."""
-    result = {}
+def _build_baseline_maps(node, path=""):
+    """Build maps for baseline comparison: path -> word_count and section_id -> word_count."""
+    path_map, section_map = {}, {}
     node_path = f"{path}/{node['type']}/{node['identifier']}" if path else f"{node['type']}/{node['identifier']}"
     if node.get("word_count"):
-        result[node_path] = node["word_count"]
+        path_map[node_path] = node["word_count"]
+        if node.get("type") == "section":
+            section_map[node["identifier"]] = node["word_count"]
     for child in node.get("children", []):
-        result.update(_build_baseline_map(child, node_path))
-    return result
+        child_path, child_section = _build_baseline_maps(child, node_path)
+        path_map.update(child_path)
+        section_map.update(child_section)
+    return path_map, section_map
 
 
-def _enrich_with_changes(node, baseline_map, path="", before_baseline=False):
+def _enrich_with_changes(node, baseline_map, section_map, path="", before_baseline=False):
     """Recursively add change_pct to each node by comparing against baseline."""
     node_path = f"{path}/{node['type']}/{node['identifier']}" if path else f"{node['type']}/{node['identifier']}"
     wc = node.get("word_count", 0)
-    bc = baseline_map.get(node_path)
+    # For sections, use section_map (by ID) since paths may differ between years
+    if node.get("type") == "section":
+        bc = section_map.get(node["identifier"])
+    else:
+        bc = baseline_map.get(node_path)
     if before_baseline:
         node["change_pct"] = compute_change_pct(bc, wc) if wc else None
     else:
         node["change_pct"] = compute_change_pct(wc, bc)
     for child in node.get("children", []):
-        _enrich_with_changes(child, baseline_map, node_path, before_baseline)
+        _enrich_with_changes(child, baseline_map, section_map, node_path, before_baseline)
 
 
 def get_structure_with_changes(title_num: int, year: int = 0) -> dict | None:
@@ -63,7 +71,7 @@ def get_structure_with_changes(title_num: int, year: int = 0) -> dict | None:
     if not structure:
         return None
     baseline_structure = db.get_structure(title_num, BASELINE_YEAR)
-    baseline_map = _build_baseline_map(baseline_structure) if baseline_structure else {}
+    baseline_map, section_map = _build_baseline_maps(baseline_structure) if baseline_structure else ({}, {})
     before_baseline = year and year < BASELINE_YEAR
-    _enrich_with_changes(structure, baseline_map, before_baseline=before_baseline)
+    _enrich_with_changes(structure, baseline_map, section_map, before_baseline=before_baseline)
     return structure

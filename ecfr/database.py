@@ -65,7 +65,7 @@ class ECFRDatabase:
                 CREATE TABLE IF NOT EXISTS agencies (slug TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT, display_name TEXT, sortable_name TEXT, parent_slug TEXT);
                 CREATE TABLE IF NOT EXISTS cfr_references (id INTEGER PRIMARY KEY AUTOINCREMENT, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT, subtitle TEXT, subchapter TEXT);
                 CREATE TABLE IF NOT EXISTS agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter));
-                CREATE TABLE IF NOT EXISTS title_structures (title INTEGER NOT NULL, year INTEGER NOT NULL, structure_json TEXT NOT NULL, PRIMARY KEY (title, year));""")
+                CREATE TABLE IF NOT EXISTS structure_nodes (year INTEGER NOT NULL, title INTEGER NOT NULL, node_type TEXT NOT NULL, identifier TEXT NOT NULL, parent_type TEXT NOT NULL DEFAULT '', parent_identifier TEXT NOT NULL DEFAULT '', label TEXT, reserved INTEGER DEFAULT 0, PRIMARY KEY (year, title, node_type, identifier, parent_type, parent_identifier));""")
             # Migrate agency_word_counts if missing year column
             c.execute("PRAGMA table_info(agency_word_counts)")
             if "year" not in {r[1] for r in c.fetchall()}:
@@ -83,8 +83,10 @@ class ECFRDatabase:
                     c.execute("DROP TABLE sections_old")
             else:
                 c.execute("CREATE TABLE IF NOT EXISTS sections (year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL, subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '', part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '', heading TEXT DEFAULT '', text TEXT DEFAULT '', word_count INTEGER NOT NULL, PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))")
-            for n, cols in [("idx_sections_year_title", "sections(year, title)"), ("idx_sections_year_title_section", "sections(year, title, section)"), ("idx_cfr_title_chapter", "cfr_references(title, chapter)"), ("idx_cfr_agency", "cfr_references(agency_slug)"), ("idx_word_counts_agency", "agency_word_counts(agency_slug)")]:
+            for n, cols in [("idx_sections_year_title", "sections(year, title)"), ("idx_sections_year_title_section", "sections(year, title, section)"), ("idx_cfr_title_chapter", "cfr_references(title, chapter)"), ("idx_cfr_agency", "cfr_references(agency_slug)"), ("idx_word_counts_agency", "agency_word_counts(agency_slug)"), ("idx_structure_year_title", "structure_nodes(year, title)")]:
                 c.execute(f"CREATE INDEX IF NOT EXISTS {n} ON {cols}")
+            # Migrate: drop old title_structures JSON table if exists
+            c.execute("DROP TABLE IF EXISTS title_structures")
             conn.commit()
 
     def is_fresh(self): return self.db_path.exists() and self.db_path.stat().st_mtime >= datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
@@ -107,10 +109,21 @@ class ECFRDatabase:
         cnt = self._query_one("SELECT COUNT(*) FROM sections WHERE year=? AND title=?", (year, title))[0]
         self._execute("DELETE FROM sections WHERE year=? AND title=?", (year, title)); return cnt
 
-    def save_title_structure(self, title, structure, year=0): self._execute("INSERT OR REPLACE INTO title_structures VALUES (?,?,?)", (title, year, json.dumps(structure)))
-    def get_title_structure_metadata(self, title, year=0):
-        r = self._query_one("SELECT structure_json FROM title_structures WHERE title=? AND year=?", (title, year)); return json.loads(r[0]) if r else None
-    def has_title_structure(self, title, year=0): return self._query_one("SELECT 1 FROM title_structures WHERE title=? AND year=?", (title, year)) is not None
+    def save_structure_nodes(self, title, nodes, year=0):
+        """Save structure nodes from API response. nodes is list of (node_type, identifier, parent_type, parent_identifier, label, reserved)."""
+        with self._connection() as c:
+            cur = c.cursor()
+            cur.execute("DELETE FROM structure_nodes WHERE year=? AND title=?", (year, title))
+            cur.executemany("INSERT INTO structure_nodes (year, title, node_type, identifier, parent_type, parent_identifier, label, reserved) VALUES (?,?,?,?,?,?,?,?)",
+                [(year, title, n[0], n[1], n[2] or '', n[3] or '', n[4], 1 if n[5] else 0) for n in nodes])
+            c.commit()
+
+    def get_structure_nodes(self, title, year=0):
+        """Get structure nodes as list of dicts."""
+        return [{"node_type": r[0], "identifier": r[1], "parent_type": r[2], "parent_identifier": r[3], "label": r[4], "reserved": bool(r[5])}
+                for r in self._query("SELECT node_type, identifier, parent_type, parent_identifier, label, reserved FROM structure_nodes WHERE year=? AND title=?", (year, title))]
+
+    def has_structure(self, title, year=0): return self._query_one("SELECT 1 FROM structure_nodes WHERE year=? AND title=? LIMIT 1", (year, title)) is not None
 
     def has_agencies(self): return self._query_one("SELECT COUNT(*) FROM agencies")[0] > 0
     def save_agencies(self, agencies):
@@ -268,6 +281,7 @@ class ECFRDatabase:
 
     def get_structure(self, title, year=0):
         wc = self.get_structure_word_counts(title, year)
+        section_wc = {r[0]: r[1] for r in self._query("SELECT section, word_count FROM sections WHERE year=? AND title=?", (year, title))}
         def get_wc(path):
             try:
                 d = wc["subtitles"].get(path.get("subtitle", ""), {})
@@ -277,20 +291,34 @@ class ECFRDatabase:
                 return d.get("total", 0)
             except: return 0
 
-        meta = self.get_title_structure_metadata(title, year)
-        if meta:
-            def count(n): return 1 if n.get("type") == "section" else sum(count(c) for c in n.get("children", []))
-            def convert(n, path=None):
+        # Try to build from structure_nodes table
+        nodes = self.get_structure_nodes(title, year)
+        if nodes:
+            # Build lookup: (parent_type, parent_identifier) -> list of children
+            children_map = {}
+            for n in nodes:
+                key = (n["parent_type"], n["parent_identifier"])
+                children_map.setdefault(key, []).append(n)
+
+            def count(n): return 1 if n["node_type"] == "section" else sum(count(c) for c in children_map.get((n["node_type"], n["identifier"]), []))
+            def build_node(n, path=None):
                 path = path or {}
-                t, ident = n.get("type", ""), n.get("identifier", "")
+                t, ident = n["node_type"], n["identifier"]
                 np = dict(path)
                 if t in ["subtitle", "chapter", "subchapter", "part", "subpart"]: np[t] = ident or ""
-                ch = [convert(c, np) for c in sorted(n.get("children", []), key=lambda x: sort_key(x.get("identifier", ""), use_roman=x.get("type") == "chapter"))]
-                r = {"type": t, "identifier": ident, "children": ch, "section_count": count(n), "reserved": n.get("reserved", False), "word_count": get_wc(np) if t in ["subtitle", "chapter", "subchapter", "part", "subpart"] else 0}
-                if t == "section" and n.get("label_description"): r["heading"] = n["label_description"]
+                ch = [build_node(c, np) for c in sorted(children_map.get((t, ident), []), key=lambda x: sort_key(x["identifier"], use_roman=x["node_type"] == "chapter"))]
+                r = {"type": t, "identifier": ident, "children": ch, "section_count": count(n), "reserved": n["reserved"], "word_count": get_wc(np) if t in ["subtitle", "chapter", "subchapter", "part", "subpart"] else section_wc.get(ident, 0)}
+                if t == "section" and n.get("label"): r["heading"] = n["label"]
                 return r
-            res = convert(meta); res["word_count"] = wc.get("total", 0); return res
 
+            # Find root node (parent_type is empty string for root)
+            roots = children_map.get(('', ''), [])
+            if roots:
+                res = build_node(roots[0])
+                res["word_count"] = wc.get("total", 0)
+                return res
+
+        # Fallback: build from sections table
         rows = self._query("SELECT subtitle, chapter, subchapter, part, subpart, section, heading FROM sections WHERE year=? AND title=?", (year, title))
         if not rows: return {}
         tree = {}
@@ -298,11 +326,13 @@ class ECFRDatabase:
             keys = [sub or "", ch or "", subch or "", prt or "", subprt or ""]
             node = tree
             for i, k in enumerate(keys): node = node.setdefault(k, {} if i < 4 else {"sections": []})
-            if sec: node["sections"].append({"type": "section", "identifier": sec, "heading": hd or ""})
+            if sec: node["sections"].append({"type": "section", "identifier": sec, "heading": hd or "", "word_count": section_wc.get(sec, 0)})
 
         def build(data, lvl, path):
             levels = ["subtitle", "chapter", "subchapter", "part", "subpart"]
-            if lvl >= len(levels): return sorted(data.get("sections", []), key=section_sort_key), len(data.get("sections", []))
+            if lvl >= len(levels):
+                secs = sorted(data.get("sections", []), key=section_sort_key)
+                return secs, len(secs)
             ch, tot = [], 0
             for k in sorted(data.keys(), key=lambda x: sort_key(x, use_roman=(lvl == 1))):
                 if k == "sections": continue

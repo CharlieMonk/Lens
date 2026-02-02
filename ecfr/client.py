@@ -49,6 +49,25 @@ class ECFRClient:
     def fetch_title_structure(self, title_num: int, date: str) -> dict:
         return self._request_with_retry(f"{self.ECFR_BASE}/versioner/v1/structure/{date}/title-{title_num}.json", timeout=120).json()
 
+    async def fetch_title_structure_async(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = 60) -> list[tuple]:
+        """Fetch structure and flatten to list of (node_type, identifier, parent_type, parent_identifier, label, reserved)."""
+        url = f"{self.ECFR_BASE}/versioner/v1/structure/{date}/title-{title_num}.json"
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return self._flatten_structure(data)
+        except Exception:
+            return []
+
+    def _flatten_structure(self, node, parent_type=None, parent_identifier=None) -> list[tuple]:
+        """Flatten nested structure to list of tuples."""
+        result = [(node.get("type"), node.get("identifier"), parent_type, parent_identifier, node.get("label_description", ""), node.get("reserved", False))]
+        for child in node.get("children", []):
+            result.extend(self._flatten_structure(child, node.get("type"), node.get("identifier")))
+        return result
+
     async def fetch_title_racing(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = 120) -> tuple[str, bytes]:
         """Fetch title from both eCFR and govinfo in parallel, return first success."""
         async def fetch(url, source):

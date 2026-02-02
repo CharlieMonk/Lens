@@ -1,6 +1,7 @@
 """Main orchestrator for fetching and processing eCFR data."""
 
 import asyncio
+import gc
 from pathlib import Path
 import aiohttp
 import requests
@@ -12,7 +13,7 @@ from .database import ECFRDatabase
 from .extractor import XMLExtractor
 
 # Default values
-_DEFAULT_MAX_WORKERS = 5
+_DEFAULT_MAX_WORKERS = 3  # Reduced to limit memory usage
 _DEFAULT_HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
 
 def _load_config():
@@ -59,44 +60,54 @@ class ECFRFetcher:
         self.db.save_agencies(self.client.fetch_agencies())
         return self.db.build_agency_lookup()
 
-    async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int, date: str, agency_lookup: dict) -> tuple[bool, str, int]:
+    async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int, date: str, agency_lookup: dict, year: int = 0) -> tuple[bool, str, int]:
         extractor = XMLExtractor(agency_lookup)
         try:
+            # Fetch XML first, then structure (sequential to reduce peak memory)
             source, xml = await self.client.fetch_title_racing(session, title_num, date)
             size, sections, chapter_wc = extractor.extract(xml, title_num)
-            self.db.save_sections(sections)
-            if agency_lookup and chapter_wc:
-                self.db.update_word_counts(title_num, chapter_wc, agency_lookup)
+            del xml  # Free XML memory immediately after extraction
+
+            self.db.save_sections(sections, year=year)
             word_count = sum(s.get("word_count", 0) for s in sections)
-            del xml, sections  # Free memory
+            del sections  # Free sections memory after saving
+
+            # Fetch and save structure separately
+            structure_nodes = await self.client.fetch_title_structure_async(session, title_num, date)
+            if structure_nodes:
+                self.db.save_structure_nodes(title_num, structure_nodes, year=year)
+            del structure_nodes
+
+            if agency_lookup and chapter_wc:
+                self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
             return True, f"{size:,} bytes", word_count
         except Exception as e:
             return False, f"Error: {e}", 0
 
     async def fetch_current_async(self, clear_cache: bool = False) -> int:
         if clear_cache:
-            print("Clearing cache...")
+            print("Clearing cache...", flush=True)
             self.clear_cache()
 
         cached = self.db.is_fresh()
-        print(f"Loading titles metadata {'(cached)' if cached else '(fetching)'}...")
+        print(f"Loading titles metadata {'(cached)' if cached else '(fetching)'}...", flush=True)
         try:
             titles_meta = self._load_titles_metadata()
         except (requests.exceptions.RequestException, KeyError, TypeError) as e:
-            print(f"Error: Failed to fetch titles metadata: {e}")
+            print(f"Error: Failed to fetch titles metadata: {e}", flush=True)
             return 1
 
-        print(f"Loading agencies metadata {'(cached)' if cached else '(fetching)'}...")
+        print(f"Loading agencies metadata {'(cached)' if cached else '(fetching)'}...", flush=True)
         try:
             agency_lookup = self._load_agency_lookup()
-            print(f"  {len(agency_lookup)} chapter/agency mappings loaded")
+            print(f"  {len(agency_lookup)} chapter/agency mappings loaded", flush=True)
         except (requests.exceptions.RequestException, KeyError, TypeError) as e:
-            print(f"Warning: Could not load agencies metadata: {e}")
+            print(f"Warning: Could not load agencies metadata: {e}", flush=True)
             agency_lookup = {}
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         titles_to_fetch = [(n, m["latest_issue_date"]) for n, m in titles_meta.items() if 1 <= n <= 50 and m.get("latest_issue_date")]
-        print(f"Processing {len(titles_to_fetch)} titles...\nOutput directory: {self.output_dir}\n" + "-" * 50)
+        print(f"Processing {len(titles_to_fetch)} titles...\nOutput directory: {self.output_dir}\n" + "-" * 50, flush=True)
 
         semaphore = asyncio.Semaphore(self.max_workers)
 
@@ -107,20 +118,21 @@ class ECFRFetcher:
                 except Exception as e:
                     return num, (False, f"Error: {e}", 0)
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
-            tasks = [fetch_one(session, num, date) for num, date in titles_to_fetch]
-            results = await asyncio.gather(*tasks)
-
         success_count, total_words = 0, 0
-        for num, (ok, msg, word_count) in sorted(results):
-            print(f"{'+' if ok else 'x'} Title {num}: {msg}")
-            if ok:
-                success_count += 1
-                total_words += word_count
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
+            tasks = [asyncio.create_task(fetch_one(session, num, date)) for num, date in titles_to_fetch]
+            # Process results as they complete to free memory early
+            for coro in asyncio.as_completed(tasks):
+                num, (ok, msg, word_count) = await coro
+                print(f"{'+' if ok else 'x'} Title {num}: {msg}", flush=True)
+                if ok:
+                    success_count += 1
+                    total_words += word_count
+                gc.collect()  # Force garbage collection after each title
 
-        print("-" * 50 + f"\nComplete: {success_count}/{len(titles_to_fetch)} titles downloaded")
+        print("-" * 50 + f"\nComplete: {success_count}/{len(titles_to_fetch)} titles downloaded", flush=True)
         if total_words:
-            print(f"Total words: {total_words:,}")
+            print(f"Total words: {total_words:,}", flush=True)
         return 0 if success_count == len(titles_to_fetch) else 1
 
     def fetch_current(self, clear_cache: bool = False) -> int:
@@ -136,13 +148,13 @@ class ECFRFetcher:
 
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
         if not years_to_fetch:
-            print("All historical years already in database, skipping fetch")
+            print("All historical years already in database, skipping fetch", flush=True)
             return 0
         skipped = set(historical_years) - set(years_to_fetch)
         if skipped:
-            print(f"Skipping years already in database: {sorted(skipped)}")
+            print(f"Skipping years already in database: {sorted(skipped)}", flush=True)
 
-        semaphore = asyncio.Semaphore(self.max_workers)  # Limit to 5 concurrent titles to avoid OOM
+        semaphore = asyncio.Semaphore(self.max_workers)
 
         async def fetch_title_year(session, year, title_num):
             async with semaphore:
@@ -172,16 +184,17 @@ class ECFRFetcher:
         all_success = True
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
             for year in years_to_fetch:
-                print(f"\n{'='*50}\nFetching CFR {year} edition\n" + "-" * 50)
-                tasks = [fetch_title_year(session, year, title_num) for title_num in title_nums]
-                results = await asyncio.gather(*tasks)
-
+                print(f"\n{'='*50}\nFetching CFR {year} edition\n" + "-" * 50, flush=True)
+                tasks = [asyncio.create_task(fetch_title_year(session, year, title_num)) for title_num in title_nums]
+                # Process results as they complete to free memory early
                 success_count = 0
-                for title_num, ok, msg in sorted(results):
-                    print(f"{'+' if ok else 'x'} Title {title_num}: {msg}")
+                for coro in asyncio.as_completed(tasks):
+                    title_num, ok, msg = await coro
+                    print(f"{'+' if ok else 'x'} Title {title_num}: {msg}", flush=True)
                     if ok:
                         success_count += 1
-                print(f"Complete: {success_count}/{len(title_nums)} titles")
+                    gc.collect()  # Force garbage collection after each title
+                print(f"Complete: {success_count}/{len(title_nums)} titles", flush=True)
                 if success_count < len(title_nums):
                     all_success = False
         return 0 if all_success else 1
