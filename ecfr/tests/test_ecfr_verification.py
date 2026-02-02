@@ -8,7 +8,7 @@ import time
 import pytest
 from playwright.sync_api import Page, expect, BrowserContext
 
-from ecfr_reader import ECFRReader
+from ecfr import ECFRReader
 
 
 # Number of random sections to sample per title
