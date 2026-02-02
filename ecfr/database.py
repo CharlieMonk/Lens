@@ -237,19 +237,20 @@ class ECFRDatabase:
         self._stats_cache_time = time.time()
         return value
 
-    def get_statistics_data(self):
+    def get_statistics_data(self, baseline_year: int = 2010):
         """Get all statistics data in bulk with caching."""
-        cached = self._get_cached_stats("statistics")
+        cache_key = f"statistics_{baseline_year}"
+        cached = self._get_cached_stats(cache_key)
         if cached:
             return cached
 
-        # Get all title word counts for current year (0) and 2010
+        # Get all title word counts for current year (0) and baseline
         title_counts_current = self.get_all_title_word_counts(0)
-        title_counts_2010 = self.get_all_title_word_counts(2010)
+        title_counts_baseline = self.get_all_title_word_counts(baseline_year)
 
-        # Get all agency word counts for current year and 2010
+        # Get all agency word counts for current year and baseline
         agency_counts_current = self.get_agency_word_counts(0)
-        agency_counts_2010 = self.get_agency_word_counts(2010)
+        agency_counts_baseline = self.get_agency_word_counts(baseline_year)
 
         # Get agency details
         agency_details = {r[0]: {"name": r[1], "short_name": r[2]} for r in self._query("SELECT slug, name, short_name FROM agencies")}
@@ -258,12 +259,12 @@ class ECFRDatabase:
         title_meta = self.get_titles()
 
         result = {
-            "title_counts": {0: title_counts_current, 2010: title_counts_2010},
-            "agency_counts": {0: agency_counts_current, 2010: agency_counts_2010},
+            "title_counts": {0: title_counts_current, baseline_year: title_counts_baseline},
+            "agency_counts": {0: agency_counts_current, baseline_year: agency_counts_baseline},
             "agency_details": agency_details,
             "title_meta": title_meta,
         }
-        return self._set_cached_stats("statistics", result)
+        return self._set_cached_stats(cache_key, result)
 
     def get_structure(self, title, year=0):
         wc = self.get_structure_word_counts(title, year)

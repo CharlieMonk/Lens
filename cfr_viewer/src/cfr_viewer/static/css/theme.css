@@ -468,7 +468,7 @@ footer {
     font-size: 1.25rem;
 }
 
-/* Word count change indicators for "Since 2010" columns */
+/* Word count change indicators for "Since BASELINE_YEAR" columns */
 /* Positive = regulations grew = red (bad) */
 .change-positive {
     color: #c62828;

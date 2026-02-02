@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/change_cell.html" import change_cell %}
 
 {% block title %}{{ agency.name if agency else "Agency Not Found" }} - CFR Viewer{% endblock %}
 
@@ -28,7 +29,7 @@
             <th scope="col" data-sort="number">Title</th>
             <th scope="col" data-sort="string">Chapter</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Since 2010</th>
+            <th scope="col" class="numeric" data-sort="number">Since {{ BASELINE_YEAR }}</th>
         </tr>
     </thead>
     <tbody>
@@ -37,7 +38,7 @@
             <td data-value="{{ ch.title }}"><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.title }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.chapter }}</a></td>
             <td class="numeric" data-value="{{ ch.word_count }}">{{ "{:,}".format(ch.word_count) }}</td>
-            <td class="numeric {% if ch.change_pct is none %}change-positive{% elif ch.change_pct|round(1) == 0 %}change-zero{% elif ch.change_pct > 0 %}change-positive{% else %}change-negative{% endif %}" data-value="{{ ch.change_pct or 999 }}">{% if ch.change_pct is not none %}{{ "{:+.1f}%".format(ch.change_pct) }}{% else %}new{% endif %}</td>
+            {{ change_cell(ch.change_pct, show_new=true) }}
         </tr>
         {% endfor %}
     </tbody>

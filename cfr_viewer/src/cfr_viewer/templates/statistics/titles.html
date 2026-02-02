@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/change_cell.html" import change_cell %}
 
 {% block title %}Titles by Word Count - CFR Viewer{% endblock %}
 
@@ -20,7 +21,7 @@
             <th scope="col" data-sort="number">Title</th>
             <th scope="col" data-sort="string">Name</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number">Since 2010</th>
+            <th scope="col" class="numeric" data-sort="number">Since {{ BASELINE_YEAR }}</th>
         </tr>
     </thead>
     <tbody>
@@ -29,7 +30,7 @@
             <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
             <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
-            <td class="numeric {% if title.change_pct is not none and title.change_pct|round(1) != 0 %}{% if title.change_pct > 0 %}change-positive{% else %}change-negative{% endif %}{% else %}change-zero{% endif %}" data-value="{{ title.change_pct or 0 }}">{% if title.change_pct is not none %}{{ "{:+.1f}%".format(title.change_pct) }}{% else %}—{% endif %}</td>
+            {{ change_cell(title.change_pct, invert=(year and year < BASELINE_YEAR)) }}
         </tr>
         {% else %}
         <tr>
