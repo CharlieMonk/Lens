@@ -50,13 +50,14 @@
 <div id="section-layout" class="section-layout">
     <article>
         <header>
-            <strong>Section Text</strong>
+            {{ section_nav() }}
         </header>
-        {{ section_nav() }}
         <div class="section-text">
             {{ section.text | safe }}
         </div>
-        {{ section_nav() }}
+        <footer>
+            {{ section_nav() }}
+        </footer>
     </article>
 
     <article class="similar-sections">
