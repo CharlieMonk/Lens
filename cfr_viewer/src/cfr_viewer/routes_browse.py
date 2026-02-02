@@ -58,16 +58,11 @@ def _find_node(structure, path):
 def _node_label(node):
     """Get display label for a structure node."""
     t, ident = node.get("type", ""), node.get("identifier", "")
-    if t == "subtitle":
-        return ident
-    if t == "chapter":
-        return f"Chapter {ident}"
-    if t == "subchapter":
-        return f"Subchapter {ident}" if len(ident) <= 3 else ident
-    if t == "part":
-        return f"Part {ident}"
-    if t == "subpart":
-        return f"Subpart {ident}"
+    # Map type to prefix, skip if identifier already has it (case-insensitive)
+    prefixes = {"subtitle": "Subtitle", "chapter": "Chapter", "subchapter": "Subchapter", "part": "Part", "subpart": "Subpart"}
+    if t in prefixes:
+        prefix = prefixes[t]
+        return ident if ident.upper().startswith(prefix.upper()) else f"{prefix} {ident}"
     return ident
 
 
