@@ -47,16 +47,16 @@
 </nav>
 {% endmacro %}
 
-{{ section_nav() }}
-
 <div id="section-layout" class="section-layout">
     <article>
         <header>
             <strong>Section Text</strong>
         </header>
+        {{ section_nav() }}
         <div class="section-text">
             {{ section.text | safe }}
         </div>
+        {{ section_nav() }}
     </article>
 
     <article class="similar-sections">
@@ -72,8 +72,6 @@
         </div>
     </article>
 </div>
-
-{{ section_nav() }}
 
 {% else %}
 <p>Section not found.</p>
