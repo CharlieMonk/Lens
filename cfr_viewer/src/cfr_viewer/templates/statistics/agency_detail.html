@@ -37,7 +37,7 @@
             <td data-value="{{ ch.title }}"><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.title }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.chapter }}</a></td>
             <td class="numeric" data-value="{{ ch.word_count }}">{{ "{:,}".format(ch.word_count) }}</td>
-            <td class="numeric {% if ch.change_pct and ch.change_pct > 0 %}change-positive{% elif ch.change_pct and ch.change_pct < 0 %}change-negative{% else %}change-zero{% endif %}" data-value="{{ ch.change_pct or 0 }}">{% if ch.change_pct is not none %}{{ "{:+.1f}%".format(ch.change_pct) }}{% else %}—{% endif %}</td>
+            <td class="numeric {% if ch.change_pct is none %}change-positive{% elif ch.change_pct|round(1) == 0 %}change-zero{% elif ch.change_pct > 0 %}change-positive{% else %}change-negative{% endif %}" data-value="{{ ch.change_pct or 999 }}">{% if ch.change_pct is not none %}{{ "{:+.1f}%".format(ch.change_pct) }}{% else %}new{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>
