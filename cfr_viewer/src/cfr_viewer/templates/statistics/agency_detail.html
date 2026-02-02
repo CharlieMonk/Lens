@@ -22,13 +22,13 @@
 <h2>CFR Chapters</h2>
 
 {% if chapter_stats %}
-<table class="striped">
+<table class="striped sortable">
     <thead>
         <tr>
-            <th class="sortable-header" data-sort="number">Title</th>
-            <th class="sortable-header" data-sort="string">Chapter</th>
-            <th class="sortable-header numeric" data-sort="number">Word Count</th>
-            <th class="sortable-header numeric" data-sort="number">Since 2010</th>
+            <th scope="col" data-sort="number">Title</th>
+            <th scope="col" data-sort="string">Chapter</th>
+            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
+            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Since 2010</th>
         </tr>
     </thead>
     <tbody>
