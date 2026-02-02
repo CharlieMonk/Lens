@@ -34,12 +34,44 @@ def generate_unified_diff_html(text1: str, text2: str, label1: str, label2: str)
     return '\n'.join(html_lines)
 
 
+def parse_citation(citation: str) -> tuple[int | None, str | None]:
+    """Parse a citation like '29 CFR 1910.134' or '29 1910.134' or '1910.134'.
+
+    Returns (title_num, section) tuple. Title may be None if not specified.
+    """
+    if not citation:
+        return None, None
+    # Remove "CFR" case-insensitively but preserve section case
+    import re
+    citation = re.sub(r'\bCFR\b', '', citation, flags=re.IGNORECASE).strip()
+    parts = citation.split()
+    if len(parts) >= 2:
+        try:
+            return int(parts[0]), parts[1]
+        except ValueError:
+            return None, None
+    elif len(parts) == 1:
+        return None, parts[0]
+    return None, None
+
+
 @compare_bp.route("/title/<int:title_num>/section/<path:section>")
 def diff(title_num: int, section: str):
     """Side-by-side comparison of a section across years."""
+    from flask import redirect, url_for
+
     db = get_database()
     year1 = request.args.get("year1", 0, type=int)
     year2 = request.args.get("year2", type=int)
+    other_citation = request.args.get("other", "").strip()
+
+    # If a different section was entered, redirect to that section's compare page
+    if other_citation:
+        other_title, other_section = parse_citation(other_citation)
+        if other_section:
+            redirect_title = other_title or title_num
+            return redirect(url_for("compare.diff", title_num=redirect_title,
+                                    section=other_section, year1=year1, year2=year2))
 
     years = db.list_years()
     title_meta = db.get_titles().get(title_num, {})

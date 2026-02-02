@@ -39,6 +39,10 @@
         </label>
         <button type="submit">Compare</button>
     </div>
+    <label>
+        Jump to different section (e.g., "29 CFR 1910.134" or "1910.134"):
+        <input type="text" name="other" value="" placeholder="29 CFR 1910.134">
+    </label>
 </form>
 
 {% if diff_html %}
@@ -56,12 +60,12 @@
 </article>
 {% else %}
 <article>
-    <p>One or both sections could not be found for comparison.</p>
+    <p>One or both versions could not be found for comparison.</p>
     {% if not section1 %}
-    <p>Section not found for year {{ year1 or "Current" }}.</p>
+    <p>&sect; {{ section_id }} not found for {{ "current" if year1 == 0 else year1 }}.</p>
     {% endif %}
     {% if not section2 %}
-    <p>Section not found for year {{ year2 or "Current" }}.</p>
+    <p>&sect; {{ section_id }} not found for {{ "current" if year2 == 0 else year2 }}.</p>
     {% endif %}
 </article>
 {% endif %}
