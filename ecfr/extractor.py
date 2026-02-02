@@ -99,10 +99,15 @@ class XMLExtractor:
 
         for elem in root.iter():
             tag = elem.tag
-            if tag in ("CHAPTER", "SUBCHAP", "PART", "SUBPART"):
+            if tag in ("CHAPTER", "SUBCHAP", "PART", "SUBPART", "SUBTITLE"):
                 hd = elem.find(".//HD")
                 if hd is not None and hd.text:
-                    patterns = {"CHAPTER": (r'CHAPTER\s+([IVXLCDM]+)', "chapter"), "PART": (r'PART\s+(\d+)', "part")}
+                    # Use ^ anchor to avoid matching "SUBCHAPTER X" when looking for "CHAPTER X"
+                    patterns = {
+                        "CHAPTER": (r'^CHAPTER\s+([IVXLCDM]+)', "chapter"),
+                        "PART": (r'^PART\s+(\d+)', "part"),
+                        "SUBTITLE": (r'^Subtitle\s+([A-Z])', "subtitle"),
+                    }
                     if tag in patterns:
                         m = re.search(patterns[tag][0], hd.text)
                         if m:
