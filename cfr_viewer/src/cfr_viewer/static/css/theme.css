@@ -206,110 +206,6 @@ nav[aria-label="breadcrumb"] li:last-child {
     color: var(--pico-muted-color);
 }
 
-/* Details/summary for structure */
-details {
-    margin-bottom: 0.5rem;
-}
-
-details summary {
-    cursor: pointer;
-    padding: 0.5rem;
-    background: var(--pico-card-background-color);
-    border-radius: var(--pico-border-radius);
-}
-
-details summary:hover {
-    background: var(--pico-card-sectionning-background-color);
-}
-
-details[open] summary {
-    margin-bottom: 0.5rem;
-}
-
-details ul {
-    margin: 0;
-    padding-left: 1.5rem;
-}
-
-details li {
-    padding: 0.25rem 0;
-}
-
-/* Structure tree styling */
-.structure-tree {
-    list-style: none;
-    padding-left: 0;
-    margin: 1rem 0 0 0;
-}
-
-.structure-tree details {
-    margin-bottom: 0.25rem;
-}
-
-.structure-tree details[open] > summary {
-    margin-bottom: 0.25rem;
-}
-
-.structure-list {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-}
-
-/* Structure items with depth-based indentation */
-.structure-item {
-    padding: 0.3rem 0;
-    border-bottom: 1px solid var(--pico-muted-border-color);
-}
-
-.structure-item:last-child {
-    border-bottom: none;
-}
-
-/* Indentation by depth - progressive indentation for hierarchy */
-.structure-item.depth-0 { margin-left: 0; }
-.structure-item.depth-1 { margin-left: 1.5rem; }
-.structure-item.depth-2 { margin-left: 3rem; }
-.structure-item.depth-3 { margin-left: 4.5rem; }
-.structure-item.depth-4 { margin-left: 6rem; }
-.structure-item.depth-5 { margin-left: 7.5rem; }
-
-/* Section links */
-.structure-item a {
-    text-decoration: none;
-}
-
-/* Summary styling */
-details summary small {
-    font-weight: normal;
-    margin-left: 0.5rem;
-}
-
-/* Color coding for hierarchy levels */
-.structure-item.depth-0 > details > summary strong {
-    color: var(--pico-primary);
-}
-
-.structure-item.depth-1 > details > summary strong {
-    color: #1565c0;
-}
-
-.structure-item.depth-2 > details > summary strong {
-    color: #2e7d32;
-}
-
-.structure-item.depth-3 > details > summary strong {
-    color: #6a1b9a;
-}
-
-.structure-item.depth-4 > details > summary strong {
-    color: #e65100;
-}
-
-.structure-item.depth-5 > details > summary strong {
-    color: #00695c;
-}
-
 /* Footer styling */
 footer {
     margin-top: 2rem;
@@ -328,20 +224,12 @@ footer {
 
 /* Reserved items styling */
 .reserved-item {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem;
     color: var(--pico-muted-color);
     font-style: italic;
 }
 
-.reserved-label {
-    margin-right: 0.5rem;
-}
-
 .reserved-tag {
     font-size: 0.85rem;
-    color: var(--pico-muted-color);
 }
 
 /* Sortable table headers */
