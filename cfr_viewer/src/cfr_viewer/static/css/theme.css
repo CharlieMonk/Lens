@@ -85,7 +85,7 @@ nav strong a {
 }
 
 .section-layout > article > header {
-    min-height: 5rem;
+    height: 140px;
     display: flex;
     align-items: center;
 }
