@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Playwright tests to verify Markdown data matches ecfr.gov."""
+"""Playwright tests to verify Markdown data matches ecfr.gov.
+
+These tests require actual CFR data to be fetched first (run fetch_titles.py).
+"""
 
 import random
 import re
@@ -9,6 +12,9 @@ import pytest
 from playwright.sync_api import Page, expect, BrowserContext
 
 from ecfr import ECFRReader
+
+# Mark all tests in this module as integration tests (require fetched data)
+pytestmark = pytest.mark.integration
 
 
 # Number of random sections to sample per title
