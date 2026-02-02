@@ -84,6 +84,12 @@ nav strong a {
     align-items: start;
 }
 
+.section-layout > article > header {
+    min-height: 5rem;
+    display: flex;
+    align-items: center;
+}
+
 .section-layout .similar-sections {
     width: 280px;
     min-width: 200px;
@@ -458,15 +464,20 @@ footer {
     font-size: 1.25rem;
 }
 
-/* Word count change indicators */
+/* Word count change indicators for "Since 2020" columns */
+/* Positive = regulations grew = red (bad) */
 .change-positive {
-    color: #2e7d32;
-    font-size: 0.85rem;
+    color: #c62828;
 }
 
+/* Negative = regulations shrank = green (good) */
 .change-negative {
-    color: #c62828;
-    font-size: 0.9rem;
+    color: #2e7d32;
+}
+
+/* Zero = no change = black (default) */
+.change-zero {
+    color: inherit;
 }
 
 /* Legend badges for diff view */
