@@ -57,7 +57,7 @@ class ECFRFetcher:
             self.db.save_sections(sections)
             if agency_lookup and chapter_wc:
                 self.db.update_word_counts(title_num, chapter_wc, agency_lookup)
-            return True, f"{size:,} bytes ({source})", sections
+            return True, f"{size:,} bytes", sections
         except Exception as e:
             return False, f"Error: {e}", []
 
@@ -84,20 +84,24 @@ class ECFRFetcher:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         titles_to_fetch = [(n, m["latest_issue_date"]) for n, m in titles_meta.items() if 1 <= n <= 50 and m.get("latest_issue_date")]
-        print(f"Processing {len(titles_to_fetch)} titles...\nOutput directory: {self.output_dir}\n" + "-" * 50)
+        print(f"Processing {len(titles_to_fetch)} titles (parallel)...\nOutput directory: {self.output_dir}\n" + "-" * 50)
+
+        async def fetch_one(session, num, date):
+            try:
+                return num, await self.fetch_title_async(session, num, date, agency_lookup)
+            except Exception as e:
+                return num, (False, f"Error: {e}", [])
+
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers)) as session:
+            tasks = [fetch_one(session, num, date) for num, date in titles_to_fetch]
+            results = await asyncio.gather(*tasks)
 
         success_count, total_words = 0, 0
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=5)) as session:
-            for num, date in titles_to_fetch:
-                try:
-                    ok, msg, sections = await self.fetch_title_async(session, num, date, agency_lookup)
-                    print(f"{'+' if ok else 'x'} Title {num}: {msg}")
-                    if ok:
-                        success_count += 1
-                        total_words += sum(s.get("word_count", 0) for s in sections)
-                        del sections
-                except Exception as e:
-                    print(f"x Title {num}: {e}")
+        for num, (ok, msg, sections) in sorted(results):
+            print(f"{'+' if ok else 'x'} Title {num}: {msg}")
+            if ok:
+                success_count += 1
+                total_words += sum(s.get("word_count", 0) for s in sections)
 
         print("-" * 50 + f"\nComplete: {success_count}/{len(titles_to_fetch)} titles downloaded")
         if total_words:
@@ -119,25 +123,30 @@ class ECFRFetcher:
         if skipped:
             print(f"Skipping years already in database: {sorted(skipped)}")
 
+        async def fetch_title_year(session, year, title_num):
+            try:
+                volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
+                if volumes:
+                    size, sections, _ = extractor.extract_govinfo_volumes(volumes, title_num)
+                    if sections:
+                        self.db.save_sections(sections, year=year)
+                    return title_num, True, f"{size:,} bytes ({len(volumes)} vols)"
+                return title_num, False, "not available"
+            except Exception as e:
+                return title_num, False, str(e)
+
         all_success = True
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=10), timeout=aiohttp.ClientTimeout(total=60)) as session:
             for year in years_to_fetch:
-                print(f"\n{'='*50}\nFetching CFR {year} edition from govinfo\n" + "-" * 50)
+                print(f"\n{'='*50}\nFetching CFR {year} edition (parallel)\n" + "-" * 50)
+                tasks = [fetch_title_year(session, year, title_num) for title_num in title_nums]
+                results = await asyncio.gather(*tasks)
+
                 success_count = 0
-                for title_num in title_nums:
-                    try:
-                        volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
-                        if volumes:
-                            size, sections, _ = extractor.extract_govinfo_volumes(volumes, title_num)
-                            print(f"+ Title {title_num}: {size:,} bytes ({len(volumes)} vols)")
-                            success_count += 1
-                            if sections:
-                                self.db.save_sections(sections, year=year)
-                                del sections
-                        else:
-                            print(f"x Title {title_num}: not available")
-                    except Exception as e:
-                        print(f"x Title {title_num}: {e}")
+                for title_num, ok, msg in sorted(results):
+                    print(f"{'+' if ok else 'x'} Title {title_num}: {msg}")
+                    if ok:
+                        success_count += 1
                 print(f"Complete: {success_count}/{len(title_nums)} titles")
                 if success_count < len(title_nums):
                     all_success = False
@@ -158,24 +167,32 @@ class ECFRFetcher:
             return {}
         agency_lookup = agency_lookup or self._load_agency_lookup()
         titles_meta = self._load_titles_metadata()
-        results = {}
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=5)) as session:
-            for title_num in stale_titles:
-                meta = titles_meta.get(title_num)
-                if not meta or not meta.get("latest_issue_date"):
-                    results[title_num] = "no metadata"
-                    continue
-                deleted = self.db.delete_title_sections(title_num, year=0)
-                if deleted:
-                    print(f"  Deleted {deleted} old sections for Title {title_num}")
-                try:
-                    ok, msg, _ = await self.fetch_title_async(session, title_num, meta["latest_issue_date"], agency_lookup)
-                    results[title_num] = msg
-                    print(f"  {'+' if ok else 'x'} Title {title_num}: {msg}")
-                except Exception as e:
-                    results[title_num] = f"Error: {e}"
-                    print(f"  x Title {title_num}: {e}")
+        # Delete old sections first (sequential, fast)
+        for title_num in stale_titles:
+            deleted = self.db.delete_title_sections(title_num, year=0)
+            if deleted:
+                print(f"  Deleted {deleted} old sections for Title {title_num}")
+
+        async def update_one(session, title_num):
+            meta = titles_meta.get(title_num)
+            if not meta or not meta.get("latest_issue_date"):
+                return title_num, "no metadata"
+            try:
+                ok, msg, _ = await self.fetch_title_async(session, title_num, meta["latest_issue_date"], agency_lookup)
+                return title_num, msg
+            except Exception as e:
+                return title_num, f"Error: {e}"
+
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers)) as session:
+            tasks = [update_one(session, title_num) for title_num in stale_titles]
+            fetch_results = await asyncio.gather(*tasks)
+
+        results = {}
+        for title_num, msg in sorted(fetch_results):
+            results[title_num] = msg
+            ok = not msg.startswith("Error") and msg != "no metadata"
+            print(f"  {'+' if ok else 'x'} Title {title_num}: {msg}")
         return results
 
     def update_stale_titles(self, stale_titles: list[int], agency_lookup: dict = None) -> dict[int, str]:
@@ -263,3 +280,6 @@ def main(historical_years: list[int] = None) -> int:
 
     print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50)
     return 0
+
+if __name__ == "__main__":
+    main()
