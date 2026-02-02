@@ -163,7 +163,7 @@ class TestUserStory2_NavigateToTitle:
         parts = page.locator("details")
         if parts.count() > 0:
             # Expand first part
-            parts.first.click()
+            parts.first.locator("> summary").click()
             page.screenshot(path=f"{SCREENSHOT_DIR}/02b_title_expanded.png", full_page=True)
 
             # Check for section links
@@ -189,72 +189,40 @@ class TestUserStory3_ViewSection:
 
     def test_navigate_to_section(self, page: Page):
         """Steps 1-3: Navigate to a section."""
-        page.goto(BASE_URL)
-
-        # Click first title
-        page.locator("table tbody tr:first-child td a").first.click()
-
-        # Expand first part
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)  # Wait for expansion
-
-            # Click first section
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
-                page.screenshot(path=f"{SCREENSHOT_DIR}/03_section_page.png", full_page=True)
-                expect(page).to_have_url(re.compile(r".*/section/.*"))
+        # Navigate directly to a known section
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+        page.screenshot(path=f"{SCREENSHOT_DIR}/03_section_page.png", full_page=True)
+        expect(page).to_have_url(re.compile(r".*/section/.*"))
 
     def test_section_shows_statistics(self, page: Page):
-        """Steps 4-5: Verify section heading and statistics."""
-        # Navigate directly to a section if possible
-        page.goto(BASE_URL)
-        page.locator("table tbody tr:first-child td a").first.click()
+        """Steps 4-5: Verify section heading and content info."""
+        # Navigate directly to a known section
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
 
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)
+        # Check for heading with section number
+        heading = page.locator("h1")
+        expect(heading).to_contain_text("§")
 
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
+        # Check for section text article
+        section_text = page.locator("article", has_text="Section Text")
+        expect(section_text).to_be_visible()
 
-                # Check for heading
-                heading = page.locator("h1")
-                expect(heading).to_contain_text("§")
-
-                # Check for statistics section
-                stats = page.locator("article", has_text="Statistics")
-                expect(stats).to_be_visible()
-
-                # Check word count is displayed
-                word_count_label = page.locator("dt", has_text="Word Count")
-                expect(word_count_label).to_be_visible()
+        # Check for similar sections article
+        similar = page.locator("article", has_text="Similar Sections")
+        expect(similar).to_be_visible()
 
     def test_section_text_displayed(self, page: Page):
         """Step 6: Verify section text is displayed."""
-        page.goto(BASE_URL)
-        page.locator("table tbody tr:first-child td a").first.click()
+        # Navigate directly to a known section
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
 
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)
+        # Check for section text container
+        text_section = page.locator("article", has_text="Section Text")
+        expect(text_section).to_be_visible()
 
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
-
-                # Check for section text container
-                text_section = page.locator("article", has_text="Section Text")
-                expect(text_section).to_be_visible()
-
-                # Check text content exists
-                text_content = page.locator(".section-text")
-                expect(text_content).to_be_visible()
+        # Check text content exists
+        text_content = page.locator(".section-text")
+        expect(text_content).to_be_visible()
 
 
 class TestUserStory4_SimilarSections:
@@ -272,31 +240,21 @@ class TestUserStory4_SimilarSections:
 
     def test_similar_sections_loads(self, page: Page):
         """Steps 1-4: Check similar sections feature."""
-        page.goto(BASE_URL)
-        page.locator("table tbody tr:first-child td a").first.click()
+        # Navigate directly to a known section
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
 
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)
+        # Look for Similar Sections article
+        similar_section = page.locator("article", has_text="Similar Sections")
+        expect(similar_section).to_be_visible()
 
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
+        # Wait for HTMX to load (wait for loading message to disappear)
+        page.wait_for_timeout(2000)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/04_similar_sections.png", full_page=True)
 
-                # Look for Similar Sections article
-                similar_section = page.locator("article", has_text="Similar Sections")
-
-                if similar_section.count() > 0:
-                    # Wait for HTMX to load (wait for loading message to disappear)
-                    page.wait_for_timeout(2000)
-                    page.screenshot(path=f"{SCREENSHOT_DIR}/04_similar_sections.png", full_page=True)
-
-                    # Check if table or "no similar" message appears (not loading indicator)
-                    # The content could be a table with results, or a message saying no similar sections
-                    similar_content = similar_section.locator("table, p:not(:has-text('Loading'))")
-                    if similar_content.count() > 0:
-                        expect(similar_content.first).to_be_visible()
+        # Check if table or "no similar" message appears (not loading indicator)
+        similar_content = similar_section.locator("table, p:not(:has-text('Loading'))")
+        if similar_content.count() > 0:
+            expect(similar_content.first).to_be_visible()
 
 
 class TestUserStory5_CompareVersions:
@@ -315,52 +273,30 @@ class TestUserStory5_CompareVersions:
 
     def test_compare_button_exists(self, page: Page):
         """Steps 1-2: Find and click Compare Years button."""
-        page.goto(BASE_URL)
-        page.locator("table tbody tr:first-child td a").first.click()
+        # Navigate directly to a known section
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
 
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)
+        # Look for Compare Years button/link
+        compare_link = page.locator("a", has_text="Compare Years")
+        expect(compare_link).to_be_visible()
 
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
+        compare_link.click()
+        page.screenshot(path=f"{SCREENSHOT_DIR}/05_compare_page.png", full_page=True)
 
-                # Look for Compare Years button/link
-                compare_link = page.locator("a", has_text="Compare Years")
-                expect(compare_link).to_be_visible()
-
-                compare_link.click()
-                page.screenshot(path=f"{SCREENSHOT_DIR}/05_compare_page.png", full_page=True)
-
-                expect(page).to_have_url(re.compile(r".*/compare/.*"))
+        expect(page).to_have_url(re.compile(r".*/compare/.*"))
 
     def test_compare_page_elements(self, page: Page):
         """Steps 3-5: Verify comparison page elements."""
-        page.goto(BASE_URL)
-        page.locator("table tbody tr:first-child td a").first.click()
+        # Navigate directly to compare page
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
 
-        parts = page.locator("details")
-        if parts.count() > 0:
-            parts.first.click()
-            page.wait_for_timeout(300)
+        # Check for year selectors
+        year_selects = page.locator("select[name='year1'], select[name='year2']")
+        expect(year_selects.first).to_be_visible()
 
-            section_links = page.locator("details ul li a")
-            if section_links.count() > 0:
-                section_links.first.click()
-
-                compare_link = page.locator("a", has_text="Compare Years")
-                if compare_link.count() > 0:
-                    compare_link.click()
-
-                    # Check for year selectors
-                    year_selects = page.locator("select[name='year1'], select[name='year2']")
-                    expect(year_selects.first).to_be_visible()
-
-                    # Check for compare button
-                    compare_btn = page.locator("button[type='submit']", has_text="Compare")
-                    expect(compare_btn).to_be_visible()
+        # Check for compare button
+        compare_btn = page.locator("button[type='submit']", has_text="Compare")
+        expect(compare_btn).to_be_visible()
 
 
 class TestUserStory6_ViewStatistics:

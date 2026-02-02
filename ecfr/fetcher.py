@@ -12,6 +12,17 @@ from .extractor import XMLExtractor
 HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
 
 
+def _run_async(coro):
+    """Run async coroutine, handling case where event loop is already running."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
@@ -94,7 +105,7 @@ class ECFRFetcher:
         return 0 if success_count == len(titles_to_fetch) else 1
 
     def fetch_current(self, clear_cache: bool = False) -> int:
-        return asyncio.run(self.fetch_current_async(clear_cache))
+        return _run_async(self.fetch_current_async(clear_cache))
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
         title_nums = title_nums or [t for t in range(1, 51) if t != 35]
@@ -133,14 +144,14 @@ class ECFRFetcher:
         return 0 if all_success else 1
 
     def fetch_historical(self, historical_years: list[int], title_nums: list[int] = None) -> int:
-        return asyncio.run(self.fetch_historical_async(historical_years, title_nums))
+        return _run_async(self.fetch_historical_async(historical_years, title_nums))
 
     async def fetch_all_async(self, historical_years: list[int] = None) -> int:
         historical_years = historical_years or HISTORICAL_YEARS
         return 0 if await self.fetch_current_async() == 0 and await self.fetch_historical_async(historical_years) == 0 else 1
 
     def fetch_all(self, historical_years: list[int] = None) -> int:
-        return asyncio.run(self.fetch_all_async(historical_years))
+        return _run_async(self.fetch_all_async(historical_years))
 
     async def update_stale_titles_async(self, stale_titles: list[int], agency_lookup: dict = None) -> dict[int, str]:
         if not stale_titles:
@@ -168,7 +179,7 @@ class ECFRFetcher:
         return results
 
     def update_stale_titles(self, stale_titles: list[int], agency_lookup: dict = None) -> dict[int, str]:
-        return asyncio.run(self.update_stale_titles_async(stale_titles, agency_lookup))
+        return _run_async(self.update_stale_titles_async(stale_titles, agency_lookup))
 
     def sync(self) -> dict:
         print("=" * 50 + "\neCFR Database Sync\n" + "=" * 50)
