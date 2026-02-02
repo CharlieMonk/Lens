@@ -26,7 +26,7 @@
             <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
             <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
-            {{ change_cell(title.change_pct, invert=(year and year < BASELINE_YEAR)) }}
+            {{ change_cell(title.change_pct) }}
         </tr>
         {% else %}
         <tr>

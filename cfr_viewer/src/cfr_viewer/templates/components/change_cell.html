@@ -1,7 +1,5 @@
-{# Macro for rendering a "Since 2010" change percentage cell #}
-{# invert=true swaps red/green for years before 2010 #}
-{% macro change_cell(change_pct, show_new=false, invert=false) %}
-{% set pos_class = "change-negative" if invert else "change-positive" %}
-{% set neg_class = "change-positive" if invert else "change-negative" %}
-<td class="numeric {% if change_pct is none %}{% if show_new %}{{ pos_class }}{% else %}change-zero{% endif %}{% elif change_pct|round(1) == 0 %}change-zero{% elif change_pct > 0 %}{{ pos_class }}{% else %}{{ neg_class }}{% endif %}" data-value="{{ change_pct if change_pct is not none else (999 if show_new else 0) }}">{% if change_pct is not none %}{{ "{:+.1f}%".format(change_pct) }}{% elif show_new %}new{% else %}—{% endif %}</td>
+{# Macro for rendering a "Since/To BASELINE_YEAR" change percentage cell #}
+{# Positive = growth (red), Negative = shrinkage (green), Zero/None = neutral #}
+{% macro change_cell(change_pct, show_new=false) %}
+<td class="numeric {% if change_pct is none %}{% if show_new %}change-positive{% else %}change-zero{% endif %}{% elif change_pct|round(1) == 0 %}change-zero{% elif change_pct > 0 %}change-positive{% else %}change-negative{% endif %}" data-value="{{ change_pct if change_pct is not none else (999 if show_new else 0) }}">{% if change_pct is not none %}{{ "{:+.1f}%".format(change_pct) }}{% elif show_new %}new{% else %}—{% endif %}</td>
 {% endmacro %}
