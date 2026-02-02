@@ -90,6 +90,10 @@ nav strong a {
     align-items: center;
 }
 
+.section-layout > article > header .section-nav {
+    width: 100%;
+}
+
 .section-layout .similar-sections {
     width: 280px;
     min-width: 200px;
@@ -464,7 +468,7 @@ footer {
     font-size: 1.25rem;
 }
 
-/* Word count change indicators for "Since 2020" columns */
+/* Word count change indicators for "Since 2010" columns */
 /* Positive = regulations grew = red (bad) */
 .change-positive {
     color: #c62828;
