@@ -129,7 +129,7 @@ class TestECFRDatabaseInit:
         conn.close()
 
         expected = {"titles", "agencies", "cfr_references", "agency_word_counts",
-                    "sections", "structure_nodes"}
+                    "sections"}
         assert expected.issubset(tables)
 
     def test_creates_indexes(self, temp_db):

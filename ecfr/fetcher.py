@@ -73,12 +73,6 @@ class ECFRFetcher:
             word_count = sum(s.get("word_count", 0) for s in sections)
             del sections  # Free sections memory after saving
 
-            # Fetch and save structure separately
-            structure_nodes = await self.client.fetch_title_structure_async(session, title_num, date)
-            if structure_nodes:
-                self.db.save_structure_nodes(title_num, structure_nodes, year=year)
-            del structure_nodes
-
             if agency_lookup and chapter_wc:
                 self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
             return True, f"{size:,} bytes", word_count
