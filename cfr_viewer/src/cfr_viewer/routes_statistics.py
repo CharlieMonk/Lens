@@ -54,4 +54,4 @@ def titles():
     meta = stats["title_meta"]
     titles_list = [{"number": n, "name": meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc,
                     "change_pct": compute_change_pct(wc, baseline_counts.get(n))} for n, wc in title_counts.items()]
-    return render_template("statistics/titles.html", titles=sorted(titles_list, key=lambda x: x["word_count"], reverse=True), year=year, years=db.list_years())
+    return render_template("statistics/titles.html", titles=sorted(titles_list, key=lambda x: x["word_count"], reverse=True), year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
