@@ -42,8 +42,7 @@
 <p class="section-heading-context">{{ section1.heading }}</p>
 {% endif %}
 
-{% if section1 and section2 %}
-{% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
+{% macro section_nav() %}
 <nav class="section-nav compare-nav">
     {% if prev_section %}
     <a href="{{ url_for('compare.diff', title_num=title_num, section=prev_section, year1=year1, year2=year2) }}" role="button" class="outline">
@@ -58,6 +57,12 @@
     </a>
     {% endif %}
 </nav>
+{% endmacro %}
+
+{{ section_nav() }}
+
+{% if section1 and section2 %}
+{% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
 <div class="grid compare-versions">
     <article class="version-card version-old">
         <header>
@@ -90,6 +95,7 @@
         </div>
     </article>
 </div>
+{{ section_nav() }}
 
 {% if not has_changes %}
 <p class="no-changes-note">Identical content in both versions.</p>
@@ -104,5 +110,6 @@
     <p>&sect; {{ section_id }} not found for {{ "current" if year2 == 0 else year2 }}.</p>
     {% endif %}
 </article>
+{{ section_nav() }}
 {% endif %}
 {% endblock %}
