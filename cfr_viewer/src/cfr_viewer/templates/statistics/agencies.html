@@ -29,7 +29,7 @@
             <td><a href="{{ url_for('statistics.agency_detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
             <td><a href="{{ url_for('statistics.agency_detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
             <td class="numeric" data-value="{{ agency.word_count }}">{{ "{:,}".format(agency.word_count) }}</td>
-            <td class="numeric" data-value="{{ agency.change_pct or 0 }}">{% if agency.change_pct is not none %}{{ "{:+.1f}%".format(agency.change_pct) }}{% else %}—{% endif %}</td>
+            <td class="numeric {% if agency.change_pct and agency.change_pct > 0 %}change-positive{% elif agency.change_pct and agency.change_pct < 0 %}change-negative{% else %}change-zero{% endif %}" data-value="{{ agency.change_pct or 0 }}">{% if agency.change_pct is not none %}{{ "{:+.1f}%".format(agency.change_pct) }}{% else %}—{% endif %}</td>
         </tr>
         {% else %}
         <tr>
