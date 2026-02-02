@@ -7,6 +7,11 @@ from .services import get_database
 
 compare_bp = Blueprint("compare", __name__)
 
+@compare_bp.route("/")
+def index():
+    """Compare landing page."""
+    return render_template("compare/index.html")
+
 def side_by_side_diff(text1: str, text2: str) -> tuple[str, str]:
     """Generate side-by-side HTML with word-level highlighting.
 

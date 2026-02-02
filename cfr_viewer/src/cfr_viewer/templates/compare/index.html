@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Sections - CFR Viewer{% endblock %}
+
+{% block content %}
+<h1>Compare Sections</h1>
+<p>Compare how CFR sections have changed over time with side-by-side diffs.</p>
+
+<form action="{{ url_for('compare.index') }}" method="get" class="compare-form">
+    <label for="citation">Enter a CFR citation:</label>
+    <div class="citation-row">
+        <input type="text" id="citation" name="citation" class="citation-input" placeholder="e.g., 47 CFR 73.609" required>
+        <button type="submit" class="citation-go">Go</button>
+    </div>
+</form>
+
+<script>
+document.querySelector('.compare-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const citation = document.getElementById('citation').value.trim();
+    // Parse citation: "47 CFR 73.609" or "47 C.F.R. § 73.609"
+    const match = citation.match(/(\d+)\s*C\.?F\.?R\.?\s*§?\s*([\d.]+)/i);
+    if (match) {
+        window.location.href = '{{ url_for("compare.diff", title_num=0, section="0") }}'.replace('/0/section/0', '/' + match[1] + '/section/' + match[2]);
+    }
+});
+</script>
+{% endblock %}

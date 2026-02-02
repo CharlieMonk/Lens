@@ -177,15 +177,6 @@ nav strong a {
     color: var(--pico-muted-color);
 }
 
-.compare-versions .version-old header {
-    background: #e8f5e9;
-    border-bottom: 2px solid #c8e6c9;
-}
-
-.compare-versions .version-new header {
-    background: #ffebee;
-    border-bottom: 2px solid #ffcdd2;
-}
 
 /* Breadcrumb styling */
 nav[aria-label="breadcrumb"] ul {
