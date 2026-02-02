@@ -17,7 +17,6 @@
 <table class="sortable">
     <thead>
         <tr>
-            <th scope="col" data-sort="number">Rank</th>
             <th scope="col" data-sort="number">Title</th>
             <th scope="col" data-sort="string">Name</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
@@ -27,7 +26,6 @@
     <tbody>
         {% for title in titles %}
         <tr>
-            <td data-value="{{ loop.index }}">{{ loop.index }}</td>
             <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
             <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
@@ -35,7 +33,7 @@
         </tr>
         {% else %}
         <tr>
-            <td colspan="5">No titles found for this year.</td>
+            <td colspan="4">No titles found for this year.</td>
         </tr>
         {% endfor %}
     </tbody>
