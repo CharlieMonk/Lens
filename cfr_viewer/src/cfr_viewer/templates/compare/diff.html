@@ -66,17 +66,11 @@
 {% endif %}
 
 {% if section1 and section2 %}
-{% if has_changes %}
-<div class="diff-legend-bar">
-    <span class="legend-remove">Removed</span>
-    <span class="legend-add">Added</span>
-</div>
-{% endif %}
-
 <div class="grid compare-versions">
     <article class="version-card version-old">
         <header>
             <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
+            {% if has_changes %}<span class="legend-remove">Removed</span>{% endif %}
         </header>
         <div class="section-text diff-text">
             {% if old_html %}{{ old_html | safe }}{% else %}{{ section2.text | safe }}{% endif %}
@@ -86,6 +80,7 @@
     <article class="version-card version-new">
         <header>
             <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
+            {% if has_changes %}<span class="legend-add">Added</span>{% endif %}
         </header>
         <div class="section-text diff-text">
             {% if new_html %}{{ new_html | safe }}{% else %}{{ section1.text | safe }}{% endif %}

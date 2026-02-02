@@ -124,13 +124,6 @@ nav strong a {
     padding: 0 2px;
 }
 
-.diff-legend-bar {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
-}
-
 .no-changes-note {
     text-align: center;
     color: var(--pico-muted-color);
@@ -150,6 +143,9 @@ nav strong a {
 .compare-versions .version-card header {
     padding: 0.5rem 1rem;
     margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .compare-versions .version-old header {
