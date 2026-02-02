@@ -11,6 +11,9 @@ def diff_html(text1: str, text2: str, label1: str, label2: str) -> str:
     lines = []
     for line in difflib.unified_diff(text1.splitlines(keepends=True), text2.splitlines(keepends=True), fromfile=label1, tofile=label2, lineterm=''):
         line = line.rstrip('\n')
+        # Skip empty add/remove lines (just '+' or '-' with no content)
+        if line in ('+', '-') or (len(line) > 0 and line[0] in '+-' and line[1:].strip() == ''):
+            continue
         cls = "diff-header" if line[:3] in ('+++', '---') else "diff-hunk" if line[:2] == '@@' else "diff-add" if line[0] == '+' else "diff-sub" if line[0] == '-' else "diff-context"
         lines.append(f'<div class="{cls}">{Markup.escape(line)}</div>')
     return '\n'.join(lines)

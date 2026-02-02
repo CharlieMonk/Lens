@@ -38,6 +38,10 @@
     </div>
 </form>
 
+{% if section1 and section1.heading %}
+<p class="section-heading-context">{{ section1.heading }}</p>
+{% endif %}
+
 {% if section1 and section2 %}
 <div class="compare-summary">
     <div class="version-badge version-old">
