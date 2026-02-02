@@ -32,7 +32,8 @@ pytest                              # All tests
 pytest tests/                       # Core ecfr tests
 pytest cfr_viewer/tests/            # Web viewer tests
 pytest relevance/tests/             # Relevance tests only
-pytest test_ecfr_verification.py    # Playwright verification tests
+pytest -m "not integration"         # Skip slow integration tests
+pytest tests/test_file.py::TestClass::test_method -v  # Run single test
 ```
 
 ## Architecture
@@ -41,7 +42,7 @@ pytest test_ecfr_verification.py    # Playwright verification tests
 
 Four classes handle data fetching:
 
-- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, and word counts. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections). Similarity search uses on-demand embedding computation.
+- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, and word counts. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections). Similarity search uses TF-IDF computed on-demand per chapter.
 - **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
 - **XMLExtractor**: Extracts section data directly from eCFR/govinfo XML. Tracks word counts and extracts section data (title/chapter/part/section/text).
 - **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
@@ -55,11 +56,11 @@ Data flow:
 ### CFR Web Viewer (`cfr_viewer/`)
 
 Flask application for browsing CFR data:
-- `app.py` - Flask app factory, registers blueprints
+- `app.py` - Flask app factory, registers blueprints, stores database instance on app
 - `services.py` - Service layer wrapping ECFRDatabase
 - `routes_browse.py` - Browse views: titles index, title structure, section detail
-- `routes_rankings.py` - Word count rankings by agencies and titles
-- `routes_compare.py` - Compare sections functionality
+- `routes_statistics.py` - Word count statistics by agencies and titles (URL: `/statistics`)
+- `routes_compare.py` - Compare sections across years
 - `routes_api.py` - HTMX partials for similar sections
 
 ### Relevance Subproject (`relevance/src/relevance/`)
@@ -104,12 +105,12 @@ Main tables in `ecfr/ecfr_data/ecfr.db`:
 - `cfr_references` - Maps agencies to CFR chapters
 - `sections` - Full section text with hierarchy (year, title, chapter, part, section)
 - `agency_word_counts` - Denormalized word counts per agency-title-chapter
-- `title_structures` - Cached structure metadata from eCFR API
 
 ## Testing
 
 The project uses pytest with Playwright for verification tests:
 - `tests/` - Unit tests for ecfr package (client, database, extractor, fetcher)
+- `tests/test_fetcher_integration.py` - Integration test comparing fetched data against production DB (marked `@integration`, `@slow`)
 - `cfr_viewer/tests/` - Web viewer route tests
-- `test_ecfr_verification.py` - Compares local data against ecfr.gov website
+- `cfr_viewer/tests/test_user_stories.py` - Playwright E2E tests (require running server)
 - `relevance/tests/` - Unit and integration tests using offline fixtures
