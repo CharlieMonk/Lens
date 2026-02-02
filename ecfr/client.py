@@ -68,7 +68,8 @@ class ECFRClient:
             result = await coro
             if result:
                 for t in tasks:
-                    t.cancel()
+                    if not t.done():
+                        t.cancel()
                 return result
         raise aiohttp.ClientError(f"Both sources failed for title {title_num}")
 
@@ -76,14 +77,23 @@ class ECFRClient:
         """Fetch all CFR volumes for a title from govinfo bulk data."""
         volumes = []
         for vol in range(1, max_volumes + 1):
-            try:
-                async with session.get(f"{self.GOVINFO_CFR}/{year}/title-{title_num}/CFR-{year}-title{title_num}-vol{vol}.xml", timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                    if resp.status == 200:
-                        volumes.append(await resp.read())
-                    elif resp.status == 404:
-                        break
-            except Exception:
-                break
+            url = f"{self.GOVINFO_CFR}/{year}/title-{title_num}/CFR-{year}-title{title_num}-vol{vol}.xml"
+            for attempt in range(3):
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                        if resp.status == 200:
+                            volumes.append(await resp.read())
+                            break
+                        elif resp.status == 404:
+                            return volumes  # No more volumes exist
+                        elif resp.status == 429:
+                            await asyncio.sleep(2 ** attempt)  # Rate limited, backoff
+                        else:
+                            break  # Other error, skip this volume
+                except asyncio.TimeoutError:
+                    await asyncio.sleep(1)  # Timeout, retry after delay
+                except Exception:
+                    break  # Other exception, skip this volume
         return volumes
 
     async def fetch_chunks_async(self, title_num: int, date: str, chunks: list[tuple[str, str]], max_concurrent: int = 2, delay: float = 0.2) -> list[bytes]:

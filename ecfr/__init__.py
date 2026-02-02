@@ -2,7 +2,7 @@
 from .client import ECFRClient
 from .extractor import XMLExtractor
 from .database import ECFRDatabase
-from .fetcher import ECFRFetcher, HISTORICAL_YEARS, main
+from .fetcher import ECFRFetcher, HISTORICAL_YEARS, MAX_WORKERS, main
 
 ECFRReader = ECFRDatabase  # Backwards compatibility
-__all__ = ["ECFRClient", "ECFRDatabase", "ECFRFetcher", "ECFRReader", "HISTORICAL_YEARS", "XMLExtractor", "main"]
+__all__ = ["ECFRClient", "ECFRDatabase", "ECFRFetcher", "ECFRReader", "HISTORICAL_YEARS", "MAX_WORKERS", "XMLExtractor", "main"]

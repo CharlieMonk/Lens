@@ -4,12 +4,28 @@ import asyncio
 from pathlib import Path
 import aiohttp
 import requests
+import sys
+import yaml
 
 from .client import ECFRClient
 from .database import ECFRDatabase
 from .extractor import XMLExtractor
 
-HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
+# Default values
+_DEFAULT_MAX_WORKERS = 5
+_DEFAULT_HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
+
+def _load_config():
+    """Load configuration from config.yaml."""
+    config_path = Path(__file__).parent / "config.yaml"
+    if config_path.exists():
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+    return {}
+
+_config = _load_config()
+HISTORICAL_YEARS = _config.get("historical_years", _DEFAULT_HISTORICAL_YEARS)
+MAX_WORKERS = _config.get("max_workers", _DEFAULT_MAX_WORKERS)
 
 
 def _run_async(coro):
@@ -26,9 +42,9 @@ def _run_async(coro):
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
-    def __init__(self, output_dir: Path | str = Path("ecfr/ecfr_data"), max_workers: int = 5):
+    def __init__(self, output_dir: Path | str = Path("ecfr/ecfr_data"), max_workers: int = None):
         self.output_dir = Path(output_dir) if isinstance(output_dir, str) else output_dir
-        self.max_workers = max_workers
+        self.max_workers = max_workers or MAX_WORKERS
         self.db = ECFRDatabase(self.output_dir / "ecfr.db")
         self.client = ECFRClient()
 
@@ -49,7 +65,7 @@ class ECFRFetcher:
         self.db.save_agencies(self.client.fetch_agencies())
         return self.db.build_agency_lookup()
 
-    async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int, date: str, agency_lookup: dict) -> tuple[bool, str, list]:
+    async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int, date: str, agency_lookup: dict) -> tuple[bool, str, int]:
         extractor = XMLExtractor(agency_lookup)
         try:
             source, xml = await self.client.fetch_title_racing(session, title_num, date)
@@ -57,9 +73,11 @@ class ECFRFetcher:
             self.db.save_sections(sections)
             if agency_lookup and chapter_wc:
                 self.db.update_word_counts(title_num, chapter_wc, agency_lookup)
-            return True, f"{size:,} bytes", sections
+            word_count = sum(s.get("word_count", 0) for s in sections)
+            del xml, sections  # Free memory
+            return True, f"{size:,} bytes", word_count
         except Exception as e:
-            return False, f"Error: {e}", []
+            return False, f"Error: {e}", 0
 
     async def fetch_current_async(self, clear_cache: bool = False) -> int:
         if clear_cache:
@@ -84,24 +102,27 @@ class ECFRFetcher:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         titles_to_fetch = [(n, m["latest_issue_date"]) for n, m in titles_meta.items() if 1 <= n <= 50 and m.get("latest_issue_date")]
-        print(f"Processing {len(titles_to_fetch)} titles (parallel)...\nOutput directory: {self.output_dir}\n" + "-" * 50)
+        print(f"Processing {len(titles_to_fetch)} titles...\nOutput directory: {self.output_dir}\n" + "-" * 50)
+
+        semaphore = asyncio.Semaphore(self.max_workers)
 
         async def fetch_one(session, num, date):
-            try:
-                return num, await self.fetch_title_async(session, num, date, agency_lookup)
-            except Exception as e:
-                return num, (False, f"Error: {e}", [])
+            async with semaphore:
+                try:
+                    return num, await self.fetch_title_async(session, num, date, agency_lookup)
+                except Exception as e:
+                    return num, (False, f"Error: {e}", 0)
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
             tasks = [fetch_one(session, num, date) for num, date in titles_to_fetch]
             results = await asyncio.gather(*tasks)
 
         success_count, total_words = 0, 0
-        for num, (ok, msg, sections) in sorted(results):
+        for num, (ok, msg, word_count) in sorted(results):
             print(f"{'+' if ok else 'x'} Title {num}: {msg}")
             if ok:
                 success_count += 1
-                total_words += sum(s.get("word_count", 0) for s in sections)
+                total_words += word_count
 
         print("-" * 50 + f"\nComplete: {success_count}/{len(titles_to_fetch)} titles downloaded")
         if total_words:
@@ -113,7 +134,10 @@ class ECFRFetcher:
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
         title_nums = title_nums or [t for t in range(1, 51) if t != 35]
-        agency_lookup = self._load_agency_lookup()
+        try:
+            agency_lookup = self._load_agency_lookup()
+        except Exception:
+            agency_lookup = {}
         extractor = XMLExtractor(agency_lookup)
 
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
@@ -124,24 +148,37 @@ class ECFRFetcher:
         if skipped:
             print(f"Skipping years already in database: {sorted(skipped)}")
 
+        semaphore = asyncio.Semaphore(self.max_workers)  # Limit to 5 concurrent titles to avoid OOM
+
         async def fetch_title_year(session, year, title_num):
-            try:
-                volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
-                if volumes:
-                    size, sections, chapter_wc = extractor.extract_govinfo_volumes(volumes, title_num)
+            async with semaphore:
+                try:
+                    # Try govinfo bulk first
+                    volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
+                    if volumes:
+                        size, sections, chapter_wc = extractor.extract_govinfo_volumes(volumes, title_num)
+                        if sections:
+                            self.db.save_sections(sections, year=year)
+                        if agency_lookup and chapter_wc:
+                            self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
+                        del volumes, sections  # Free memory immediately
+                        return title_num, True, f"{size:,} bytes"
+                    # Fall back to eCFR for recent years
+                    date = f"{year}-01-01"
+                    source, xml = await self.client.fetch_title_racing(session, title_num, date)
+                    size, sections, chapter_wc = extractor.extract(xml, title_num)
                     if sections:
                         self.db.save_sections(sections, year=year)
                     if agency_lookup and chapter_wc:
                         self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
-                    return title_num, True, f"{size:,} bytes ({len(volumes)} vols)"
-                return title_num, False, "not available"
-            except Exception as e:
-                return title_num, False, str(e)
+                    return title_num, True, f"{size:,} bytes ({source})"
+                except Exception as e:
+                    return title_num, False, str(e)
 
         all_success = True
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=10), timeout=aiohttp.ClientTimeout(total=60)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
             for year in years_to_fetch:
-                print(f"\n{'='*50}\nFetching CFR {year} edition (parallel)\n" + "-" * 50)
+                print(f"\n{'='*50}\nFetching CFR {year} edition\n" + "-" * 50)
                 tasks = [fetch_title_year(session, year, title_num) for title_num in title_nums]
                 results = await asyncio.gather(*tasks)
 
@@ -285,4 +322,4 @@ def main(historical_years: list[int] = None) -> int:
     return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
