@@ -104,8 +104,8 @@ class TestUserStory1_BrowseTitles:
         browse_link = page.locator("nav a", has_text="Browse")
         expect(browse_link).to_be_visible()
 
-        statistics_link = page.locator("nav a", has_text="Statistics")
-        expect(statistics_link).to_be_visible()
+        agencies_link = page.locator("nav a", has_text="Agencies")
+        expect(agencies_link).to_be_visible()
 
 
 class TestUserStory2_NavigateToTitle:
@@ -311,16 +311,15 @@ class TestUserStory6_ViewStatistics:
     """
 
     def test_statistics_navigation(self, page: Page):
-        """Steps 1-2: Navigate to statistics dashboard."""
+        """Steps 1-2: Navigate to statistics via Agencies link."""
         page.goto(BASE_URL)
 
-        statistics_link = page.locator("nav a", has_text="Statistics")
-        statistics_link.click()
+        agencies_link = page.locator("nav a", has_text="Agencies")
+        agencies_link.click()
 
         page.screenshot(path=f"{SCREENSHOT_DIR}/06_statistics_dashboard.png", full_page=True)
 
-        expect(page).to_have_url(re.compile(r".*/statistics.*"))
-        expect(page.locator("h1")).to_contain_text("Statistics")
+        expect(page).to_have_url(re.compile(r".*/statistics/agencies.*"))
 
     def test_agency_statistics(self, page: Page):
         """Steps 3-4: View agency statistics."""
