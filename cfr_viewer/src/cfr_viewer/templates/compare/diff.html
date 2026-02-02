@@ -43,33 +43,14 @@
 {% endif %}
 
 {% if section1 and section2 %}
-<div class="compare-summary">
-    <div class="version-badge version-old">
-        <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
-        <span>{{ "{:,}".format(section2.word_count or 0) }} words</span>
-    </div>
-    <div class="version-change">
-        {% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
-        {% if diff > 0 %}
-            <span class="change-positive">+{{ "{:,}".format(diff) }}</span>
-        {% elif diff < 0 %}
-            <span class="change-negative">{{ "{:,}".format(diff) }}</span>
-        {% else %}
-            <span class="change-neutral">0</span>
-        {% endif %}
-    </div>
-    <div class="version-badge version-new">
-        <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
-        <span>{{ "{:,}".format(section1.word_count or 0) }} words</span>
-    </div>
-</div>
-{% endif %}
-
-{% if section1 and section2 %}
+{% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
 <div class="grid compare-versions">
     <article class="version-card version-old">
         <header>
-            <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
+            <div class="version-header-left">
+                <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
+                <span class="word-count">{{ "{:,}".format(section2.word_count or 0) }} words</span>
+            </div>
             {% if has_changes %}<span class="legend-remove">Removed</span>{% endif %}
         </header>
         <div class="section-text diff-text">
@@ -79,7 +60,15 @@
 
     <article class="version-card version-new">
         <header>
-            <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
+            <div class="version-header-left">
+                <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
+                <span class="word-count">{{ "{:,}".format(section1.word_count or 0) }} words</span>
+                {% if diff != 0 %}
+                <span class="{% if diff > 0 %}change-positive{% else %}change-negative{% endif %}">
+                    ({% if diff > 0 %}+{% endif %}{{ "{:,}".format(diff) }})
+                </span>
+                {% endif %}
+            </div>
             {% if has_changes %}<span class="legend-add">Added</span>{% endif %}
         </header>
         <div class="section-text diff-text">

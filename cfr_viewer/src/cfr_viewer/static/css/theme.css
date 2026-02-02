@@ -148,6 +148,17 @@ nav strong a {
     align-items: center;
 }
 
+.version-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.version-header-left .word-count {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+}
+
 .compare-versions .version-old header {
     background: #ffebee;
     border-bottom: 2px solid #ffcdd2;
@@ -441,61 +452,14 @@ footer {
     font-size: 1.25rem;
 }
 
-/* Compare summary - version badges with word count */
-.compare-summary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-bottom: 0;
-    padding: 0.25rem 0.75rem;
-    background: var(--pico-card-background-color);
-    border-radius: var(--pico-border-radius);
-}
-
-.version-badge {
-    text-align: center;
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--pico-border-radius);
-}
-
-.version-badge strong {
-    display: inline;
-    font-size: 0.85rem;
-}
-
-.version-badge span {
-    font-size: 0.75rem;
-    color: var(--pico-muted-color);
-    margin-left: 0.2rem;
-}
-
-.version-badge.version-old {
-    background: #ffebee;
-    border: 1px solid #ffcdd2;
-}
-
-.version-badge.version-new {
-    background: #e8f5e9;
-    border: 1px solid #c8e6c9;
-}
-
-.version-change {
-    font-size: 0.9rem;
-    font-weight: bold;
-}
-
+/* Word count change indicators */
 .change-positive {
     color: #2e7d32;
+    font-size: 0.85rem;
 }
 
 .change-negative {
     color: #c62828;
-}
-
-.change-neutral {
-    color: var(--pico-muted-color);
-    font-weight: normal;
     font-size: 0.9rem;
 }
 
