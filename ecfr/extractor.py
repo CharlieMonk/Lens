@@ -2,70 +2,19 @@
 
 import re
 from collections import defaultdict
-
 from lxml import etree
 
-from .constants import TYPE_TO_LEVEL
+TYPE_TO_LEVEL = {"TITLE": "title", "SUBTITLE": "subtitle", "CHAPTER": "chapter", "SUBCHAP": "subchapter", "PART": "part", "SUBPART": "subpart", "SECTION": "section"}
 
 
 def get_element_text(elem) -> str:
     """Recursively get all text content from an XML element."""
-    texts = []
-    if elem.text:
-        texts.append(elem.text)
+    texts = [elem.text or ""]
     for child in elem:
         texts.append(get_element_text(child))
         if child.tail:
             texts.append(child.tail)
     return ''.join(texts)
-
-
-class SectionBuilder:
-    """Builds section data during XML processing."""
-
-    def __init__(self):
-        self.sections = []
-        self._current = None
-
-    def start_section(self, context: dict, section_num: str) -> None:
-        """Start a new section, finalizing any previous one."""
-        self.finalize()
-        self._current = {
-            "title": context.get("title") or "",
-            "subtitle": context.get("subtitle") or "",
-            "chapter": context.get("chapter") or "",
-            "subchapter": context.get("subchapter") or "",
-            "part": context.get("part") or "",
-            "subpart": context.get("subpart") or "",
-            "section": section_num,
-            "heading": "",
-            "_text_parts": [],
-        }
-
-    def add_text(self, text: str) -> None:
-        """Add text to the current section."""
-        if self._current and text:
-            self._current["_text_parts"].append(text)
-
-    def set_heading(self, heading: str) -> None:
-        """Set the heading for the current section."""
-        if self._current:
-            self._current["heading"] = heading
-
-    def finalize(self) -> None:
-        """Finalize the current section and add it to the list."""
-        if self._current:
-            s = self._current
-            s["text"] = "\n".join(s["_text_parts"]).strip()
-            s["word_count"] = len(s["text"].split())
-            del s["_text_parts"]
-            self.sections.append(s)
-            self._current = None
-
-    def get_sections(self) -> list[dict]:
-        """Get all finalized sections."""
-        self.finalize()
-        return self.sections
 
 
 class XMLExtractor:
@@ -75,251 +24,119 @@ class XMLExtractor:
         self.agency_lookup = agency_lookup or {}
 
     def extract(self, xml_content: bytes, title_num: int = None) -> tuple[int, list, dict]:
-        """Extract sections from eCFR XML content.
-
-        Returns:
-            Tuple of (xml_size, sections, chapter_word_counts).
-        """
-        root = etree.fromstring(xml_content)
-        chapter_word_counts = defaultdict(int)
-        section_builder = SectionBuilder()
-        cfr_title = str(title_num) if title_num else None
-
-        def process_element(elem, context):
-            tag = elem.tag
-            elem_type = elem.attrib.get("TYPE", "")
-            elem_n = elem.attrib.get("N", "")
-
-            new_context = context.copy()
-            if elem_type in TYPE_TO_LEVEL:
-                if elem_type == "TITLE" and cfr_title:
-                    new_context["title"] = cfr_title
-                else:
-                    new_context[TYPE_TO_LEVEL[elem_type]] = elem_n
-
-            if elem_type == "SECTION":
-                section_num = elem_n.lstrip("§ ").strip()
-                section_builder.start_section(new_context, section_num)
-
-            if tag == "HEAD":
-                text = get_element_text(elem).strip()
-                if text:
-                    parent = elem.getparent()
-                    parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
-
-                    if parent_type == "SECTION":
-                        section_builder.set_heading(text)
-                return
-
-            if tag == "P":
-                text = get_element_text(elem).strip()
-                if text:
-                    chapter = new_context.get("chapter") or new_context.get("subtitle")
-                    if chapter:
-                        chapter_word_counts[chapter] += len(text.split())
-                    section_builder.add_text(text)
-                return
-
-            if tag == "AUTH":
-                for child in elem:
-                    process_element(child, new_context)
-                return
-
-            if tag == "SOURCE":
-                for child in elem:
-                    process_element(child, new_context)
-                return
-
-            if tag in ("FP", "NOTE", "EXTRACT", "GPOTABLE"):
-                text = get_element_text(elem).strip()
-                if text:
-                    chapter = new_context.get("chapter") or new_context.get("subtitle")
-                    if chapter:
-                        chapter_word_counts[chapter] += len(text.split())
-                    section_builder.add_text(text)
-                return
-
-            for child in elem:
-                process_element(child, new_context)
-
-        process_element(root, {})
-        sections = section_builder.get_sections()
-
-        return len(xml_content), sections, dict(chapter_word_counts)
-
-    def extract_govinfo(self, xml_content: bytes, title_num: int = None) -> tuple[int, list, dict]:
-        """Extract sections from govinfo CFR XML.
-
-        Returns:
-            Tuple of (xml_size, sections, chapter_word_counts).
-        """
-        root = etree.fromstring(xml_content)
-        sections = []
-        chapter_word_counts = defaultdict(int)
-        context = {"title": str(title_num) if title_num else ""}
-
-        for elem in root.iter():
-            tag = elem.tag
-
-            if tag == "CHAPTER":
-                hd = elem.find(".//HD")
-                if hd is not None and hd.text:
-                    match = re.search(r'CHAPTER\s+([IVXLCDM]+)', hd.text)
-                    if match:
-                        context["chapter"] = match.group(1)
-
-            elif tag == "SUBCHAP":
-                hd = elem.find(".//HD")
-                if hd is not None and hd.text:
-                    context["subchapter"] = hd.text.strip()
-
-            elif tag == "PART":
-                hd = elem.find(".//HD")
-                if hd is not None and hd.text:
-                    match = re.search(r'PART\s+(\d+)', hd.text)
-                    if match:
-                        context["part"] = match.group(1)
-
-            elif tag == "SUBPART":
-                hd = elem.find(".//HD")
-                if hd is not None and hd.text:
-                    context["subpart"] = hd.text.strip()
-
-            elif tag == "SECTION":
-                section = self._parse_govinfo_section(elem, context, chapter_word_counts)
-                if section:
-                    sections.append(section)
-
-        return len(xml_content), sections, dict(chapter_word_counts)
-
-    def _parse_govinfo_section(self, elem, context: dict, chapter_word_counts: dict) -> dict | None:
-        """Parse a single SECTION element from govinfo XML."""
-        sectno_elem = elem.find("SECTNO")
-        subject_elem = elem.find("SUBJECT")
-
-        if sectno_elem is None or not sectno_elem.text:
-            return None
-
-        section_num = sectno_elem.text.lstrip("§ ").strip()
-        heading = subject_elem.text.strip() if subject_elem is not None and subject_elem.text else ""
-
-        text_parts = []
-        for p in elem.findall(".//P"):
-            p_text = get_element_text(p).strip()
-            if p_text:
-                text_parts.append(p_text)
-
-        full_text = "\n".join(text_parts)
-        word_count = len(full_text.split())
-
-        chapter = context.get("chapter", "")
-        if chapter:
-            chapter_word_counts[chapter] += word_count
-
-        return {
-            "title": context.get("title", ""),
-            "subtitle": context.get("subtitle", ""),
-            "chapter": chapter,
-            "subchapter": context.get("subchapter", ""),
-            "part": context.get("part", ""),
-            "subpart": context.get("subpart", ""),
-            "section": section_num,
-            "heading": heading,
-            "text": full_text,
-            "word_count": word_count,
-        }
-
-    def extract_govinfo_volumes(self, xml_volumes: list[bytes], title_num: int = None) -> tuple[int, list, dict]:
-        """Extract sections from multiple govinfo volume XMLs.
-
-        Returns:
-            Tuple of (total_xml_size, sections, chapter_word_counts).
-        """
-        all_sections = []
-        all_chapter_counts = defaultdict(int)
-        total_size = 0
-
-        for xml_content in xml_volumes:
-            size, sections, chapter_counts = self.extract_govinfo(xml_content, title_num)
-            total_size += size
-            all_sections.extend(sections)
-            for k, v in chapter_counts.items():
-                all_chapter_counts[k] += v
-
-        return total_size, all_sections, dict(all_chapter_counts)
+        """Extract sections from eCFR XML content."""
+        return self._extract_ecfr([xml_content], title_num)
 
     def extract_chunks(self, xml_chunks: list[bytes], title_num: int = None) -> tuple[int, list, dict]:
-        """Extract sections from multiple XML chunks.
+        """Extract sections from multiple XML chunks."""
+        return self._extract_ecfr(xml_chunks, title_num)
 
-        Returns:
-            Tuple of (total_xml_size, sections, chapter_word_counts).
-        """
-        all_sections = []
-        all_chapter_counts = defaultdict(int)
-        total_size = 0
+    def _extract_ecfr(self, xml_contents: list[bytes], title_num: int = None) -> tuple[int, list, dict]:
+        """Extract sections from eCFR-format XML (single or multiple chunks)."""
+        all_sections, chapter_wc, total_size = [], defaultdict(int), 0
         cfr_title = str(title_num) if title_num else None
 
-        for xml_content in xml_chunks:
-            root = etree.fromstring(xml_content)
-            chapter_word_counts = defaultdict(int)
-            section_builder = SectionBuilder()
+        for xml_content in xml_contents:
             total_size += len(xml_content)
+            root = etree.fromstring(xml_content)
+            current, text_parts = None, []
 
-            def process_element(elem, context):
-                tag = elem.tag
-                elem_type = elem.attrib.get("TYPE", "")
-                elem_n = elem.attrib.get("N", "")
+            def finalize():
+                nonlocal current, text_parts
+                if current:
+                    current["text"] = "\n".join(text_parts).strip()
+                    current["word_count"] = len(current["text"].split())
+                    all_sections.append(current)
+                    current, text_parts = None, []
 
-                new_context = context.copy()
-                if elem_type in TYPE_TO_LEVEL:
-                    if elem_type == "TITLE" and cfr_title:
-                        new_context["title"] = cfr_title
-                    else:
-                        new_context[TYPE_TO_LEVEL[elem_type]] = elem_n
+            def process(elem, ctx):
+                nonlocal current, text_parts
+                tag, etype, en = elem.tag, elem.attrib.get("TYPE", ""), elem.attrib.get("N", "")
+                new_ctx = dict(ctx)
+                if etype in TYPE_TO_LEVEL:
+                    new_ctx[TYPE_TO_LEVEL[etype]] = cfr_title if etype == "TITLE" and cfr_title else en
 
-                if elem_type == "SECTION":
-                    section_num = elem_n.lstrip("§ ").strip()
-                    section_builder.start_section(new_context, section_num)
+                if etype == "SECTION":
+                    finalize()
+                    current = {k: new_ctx.get(k, "") for k in ["title", "subtitle", "chapter", "subchapter", "part", "subpart"]}
+                    current["section"], current["heading"] = en.lstrip("§ ").strip(), ""
+                    text_parts = []
 
                 if tag == "HEAD":
                     text = get_element_text(elem).strip()
-                    if text:
-                        parent = elem.getparent()
-                        parent_type = parent.attrib.get("TYPE", "") if parent is not None else ""
-                        if parent_type == "SECTION":
-                            section_builder.set_heading(text)
+                    if text and current and elem.getparent() is not None and elem.getparent().attrib.get("TYPE") == "SECTION":
+                        current["heading"] = text
                     return
 
-                if tag == "P":
+                if tag in ("P", "FP", "NOTE", "EXTRACT", "GPOTABLE"):
                     text = get_element_text(elem).strip()
                     if text:
-                        chapter = new_context.get("chapter") or new_context.get("subtitle")
-                        if chapter:
-                            chapter_word_counts[chapter] += len(text.split())
-                        section_builder.add_text(text)
+                        ch = new_ctx.get("chapter") or new_ctx.get("subtitle")
+                        if ch:
+                            chapter_wc[ch] += len(text.split())
+                        if current:
+                            text_parts.append(text)
                     return
 
                 if tag in ("AUTH", "SOURCE"):
                     for child in elem:
-                        process_element(child, new_context)
-                    return
-
-                if tag in ("FP", "NOTE", "EXTRACT", "GPOTABLE"):
-                    text = get_element_text(elem).strip()
-                    if text:
-                        chapter = new_context.get("chapter") or new_context.get("subtitle")
-                        if chapter:
-                            chapter_word_counts[chapter] += len(text.split())
-                        section_builder.add_text(text)
+                        process(child, new_ctx)
                     return
 
                 for child in elem:
-                    process_element(child, new_context)
+                    process(child, new_ctx)
 
-            process_element(root, {})
-            all_sections.extend(section_builder.get_sections())
+            process(root, {})
+            finalize()
 
-            for k, v in chapter_word_counts.items():
-                all_chapter_counts[k] += v
+        return total_size, all_sections, dict(chapter_wc)
 
-        return total_size, all_sections, dict(all_chapter_counts)
+    def extract_govinfo(self, xml_content: bytes, title_num: int = None) -> tuple[int, list, dict]:
+        """Extract sections from govinfo CFR XML."""
+        root = etree.fromstring(xml_content)
+        sections, chapter_wc = [], defaultdict(int)
+        ctx = {"title": str(title_num) if title_num else ""}
+
+        for elem in root.iter():
+            tag = elem.tag
+            if tag in ("CHAPTER", "SUBCHAP", "PART", "SUBPART"):
+                hd = elem.find(".//HD")
+                if hd is not None and hd.text:
+                    patterns = {"CHAPTER": (r'CHAPTER\s+([IVXLCDM]+)', "chapter"), "PART": (r'PART\s+(\d+)', "part")}
+                    if tag in patterns:
+                        m = re.search(patterns[tag][0], hd.text)
+                        if m:
+                            ctx[patterns[tag][1]] = m.group(1)
+                    else:
+                        ctx[{"SUBCHAP": "subchapter", "SUBPART": "subpart"}[tag]] = hd.text.strip()
+
+            elif tag == "SECTION":
+                sectno = elem.find("SECTNO")
+                if sectno is None or not sectno.text:
+                    continue
+                subject = elem.find("SUBJECT")
+                text_parts = [get_element_text(p).strip() for p in elem.findall(".//P") if get_element_text(p).strip()]
+                full_text = "\n".join(text_parts)
+                wc = len(full_text.split())
+                ch = ctx.get("chapter", "")
+                if ch:
+                    chapter_wc[ch] += wc
+                sections.append({
+                    "title": ctx.get("title", ""), "subtitle": ctx.get("subtitle", ""), "chapter": ch,
+                    "subchapter": ctx.get("subchapter", ""), "part": ctx.get("part", ""), "subpart": ctx.get("subpart", ""),
+                    "section": sectno.text.lstrip("§ ").strip(), "heading": subject.text.strip() if subject is not None and subject.text else "",
+                    "text": full_text, "word_count": wc
+                })
+
+        return len(xml_content), sections, dict(chapter_wc)
+
+    def extract_govinfo_volumes(self, xml_volumes: list[bytes], title_num: int = None) -> tuple[int, list, dict]:
+        """Extract sections from multiple govinfo volume XMLs."""
+        all_sections, all_wc, total = [], defaultdict(int), 0
+        for xml in xml_volumes:
+            size, sections, wc = self.extract_govinfo(xml, title_num)
+            total += size
+            all_sections.extend(sections)
+            for k, v in wc.items():
+                all_wc[k] += v
+        return total, all_sections, dict(all_wc)

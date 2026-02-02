@@ -187,17 +187,18 @@ class TestECFRReaderSectionMethods:
 
     def test_get_section_heading(self, temp_db_with_data):
         """Get section heading."""
-        heading = temp_db_with_data.get_section_heading(title=1, section="1.1")
+        heading = temp_db_with_data.get_section(1, "1.1")["heading"]
         assert heading == "Definitions"
 
     def test_get_section_heading_not_found(self, temp_db_with_data):
         """Get heading for nonexistent section."""
-        heading = temp_db_with_data.get_section_heading(title=99, section="99.99")
+        section = temp_db_with_data.get_section(99, "99.99")
+        heading = section["heading"] if section else None
         assert heading is None
 
     def test_get_section_text(self, temp_db_with_data):
         """Get section text."""
-        text = temp_db_with_data.get_section_text(title=1, section="1.1")
+        text = temp_db_with_data.get_section(1, "1.1")["text"]
         assert "agencies" in text
 
     def test_get_section(self, temp_db_with_data):

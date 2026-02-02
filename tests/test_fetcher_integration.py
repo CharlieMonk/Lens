@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 
 from ecfr.database import ECFRDatabase
-from ecfr.fetcher import ECFRFetcher
-from ecfr.constants import HISTORICAL_YEARS
+from ecfr.fetcher import ECFRFetcher, HISTORICAL_YEARS
 
 
 PRODUCTION_DB_PATH = Path("ecfr/ecfr_data/ecfr.db")

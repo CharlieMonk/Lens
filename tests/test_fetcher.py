@@ -57,22 +57,6 @@ class TestECFRFetcherCache:
 
             assert not db_path.exists()
 
-    def test_is_file_fresh_new(self):
-        """New file is fresh."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir)
-            fetcher = ECFRFetcher(output_dir=output_dir)
-
-            test_file = output_dir / "test.txt"
-            test_file.write_text("test")
-
-            assert fetcher._is_file_fresh(test_file)
-
-    def test_is_file_fresh_nonexistent(self):
-        """Nonexistent file is not fresh."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fetcher = ECFRFetcher(output_dir=Path(tmpdir))
-            assert not fetcher._is_file_fresh(Path(tmpdir) / "nonexistent.txt")
 
 
 class TestECFRFetcherMetadata:
