@@ -40,6 +40,9 @@ class ECFRDatabase:
         self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._tfidf_cache = {}
+        self._stats_cache = {}
+        self._stats_cache_time = 0
+        self._stats_cache_ttl = 300  # 5 minutes
         self._init_schema()
 
     @contextmanager
@@ -61,8 +64,15 @@ class ECFRDatabase:
             c.executescript("""CREATE TABLE IF NOT EXISTS titles (number INTEGER PRIMARY KEY, name TEXT NOT NULL, latest_amended_on TEXT, latest_issue_date TEXT, up_to_date_as_of TEXT, reserved INTEGER DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS agencies (slug TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT, display_name TEXT, sortable_name TEXT, parent_slug TEXT);
                 CREATE TABLE IF NOT EXISTS cfr_references (id INTEGER PRIMARY KEY AUTOINCREMENT, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT, subtitle TEXT, subchapter TEXT);
-                CREATE TABLE IF NOT EXISTS agency_word_counts (agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (agency_slug, title, chapter));
+                CREATE TABLE IF NOT EXISTS agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter));
                 CREATE TABLE IF NOT EXISTS title_structures (title INTEGER NOT NULL, year INTEGER NOT NULL, structure_json TEXT NOT NULL, PRIMARY KEY (title, year));""")
+            # Migrate agency_word_counts if missing year column
+            c.execute("PRAGMA table_info(agency_word_counts)")
+            if "year" not in {r[1] for r in c.fetchall()}:
+                c.execute("ALTER TABLE agency_word_counts RENAME TO agency_word_counts_old")
+                c.execute("CREATE TABLE agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter))")
+                c.execute("INSERT INTO agency_word_counts (year, agency_slug, title, chapter, word_count) SELECT 0, agency_slug, title, chapter, word_count FROM agency_word_counts_old")
+                c.execute("DROP TABLE agency_word_counts_old")
             c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
             if c.fetchone():
                 c.execute("PRAGMA table_info(sections)")
@@ -118,8 +128,8 @@ class ECFRDatabase:
             if t and ch: lookup.setdefault((t, ch), []).append({"agency_slug": s, "agency_name": n, "parent_slug": ps, "parent_name": pn})
         return lookup
 
-    def get_agency_word_counts(self):
-        direct = {r[0]: r[1] for r in self._query("SELECT agency_slug, SUM(word_count) FROM agency_word_counts GROUP BY agency_slug")}
+    def get_agency_word_counts(self, year=0):
+        direct = {r[0]: r[1] for r in self._query("SELECT agency_slug, SUM(word_count) FROM agency_word_counts WHERE year=? GROUP BY agency_slug", (year,))}
         totals = dict(direct)
         for child, parent in {r[0]: r[1] for r in self._query("SELECT slug, parent_slug FROM agencies WHERE parent_slug IS NOT NULL")}.items():
             if child in direct: totals[parent] = totals.get(parent, 0) + direct[child]
@@ -137,12 +147,12 @@ class ECFRDatabase:
             for s in sections: cur.execute("INSERT OR REPLACE INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", (year, int(s.get("title", 0)), s.get("subtitle") or "", s.get("chapter") or "", s.get("subchapter") or "", s.get("part") or "", s.get("subpart") or "", s.get("section") or "", s.get("heading") or "", s.get("text") or "", s.get("word_count", 0)))
             c.commit()
 
-    def update_word_counts(self, title_num, chapter_wc, agency_lookup):
+    def update_word_counts(self, title_num, chapter_wc, agency_lookup, year=0):
         if not chapter_wc: return
         with self._connection() as c:
             cur = c.cursor()
             for ch, wc in chapter_wc.items():
-                for info in agency_lookup.get((title_num, ch), []): cur.execute("INSERT OR REPLACE INTO agency_word_counts VALUES (?,?,?,?)", (info["agency_slug"], title_num, ch, wc))
+                for info in agency_lookup.get((title_num, ch), []): cur.execute("INSERT OR REPLACE INTO agency_word_counts VALUES (?,?,?,?,?)", (year, info["agency_slug"], title_num, ch, wc))
             c.commit()
 
     def list_years(self): return [r[0] for r in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
@@ -200,6 +210,53 @@ class ECFRDatabase:
         rows = self._query(q, tuple(p)); return {"sections": {r[0]: r[1] for r in rows if r[0]}, "total": sum(r[1] for r in rows)}
 
     def get_total_words(self, title, year=0): return self.get_word_counts(title, year=year)["total"]
+
+    def get_all_title_word_counts(self, year=0):
+        """Get word counts for all titles in one query."""
+        return {r[0]: r[1] for r in self._query("SELECT title, SUM(word_count) FROM sections WHERE year=? GROUP BY title", (year,))}
+
+    def _get_cached_stats(self, key):
+        """Get cached statistics if still valid."""
+        import time
+        if time.time() - self._stats_cache_time > self._stats_cache_ttl:
+            self._stats_cache = {}
+            self._stats_cache_time = time.time()
+        return self._stats_cache.get(key)
+
+    def _set_cached_stats(self, key, value):
+        """Cache statistics value."""
+        import time
+        self._stats_cache[key] = value
+        self._stats_cache_time = time.time()
+        return value
+
+    def get_statistics_data(self):
+        """Get all statistics data in bulk with caching."""
+        cached = self._get_cached_stats("statistics")
+        if cached:
+            return cached
+
+        # Get all title word counts for current year (0) and 2020
+        title_counts_current = self.get_all_title_word_counts(0)
+        title_counts_2020 = self.get_all_title_word_counts(2020)
+
+        # Get all agency word counts for current year and 2020
+        agency_counts_current = self.get_agency_word_counts(0)
+        agency_counts_2020 = self.get_agency_word_counts(2020)
+
+        # Get agency details
+        agency_details = {r[0]: {"name": r[1], "short_name": r[2]} for r in self._query("SELECT slug, name, short_name FROM agencies")}
+
+        # Get title metadata
+        title_meta = self.get_titles()
+
+        result = {
+            "title_counts": {0: title_counts_current, 2020: title_counts_2020},
+            "agency_counts": {0: agency_counts_current, 2020: agency_counts_2020},
+            "agency_details": agency_details,
+            "title_meta": title_meta,
+        }
+        return self._set_cached_stats("statistics", result)
 
     def get_structure(self, title, year=0):
         wc = self.get_structure_word_counts(title, year)

@@ -113,7 +113,8 @@ class ECFRFetcher:
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
         title_nums = title_nums or [t for t in range(1, 51) if t != 35]
-        extractor = XMLExtractor()
+        agency_lookup = self._load_agency_lookup()
+        extractor = XMLExtractor(agency_lookup)
 
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
         if not years_to_fetch:
@@ -127,9 +128,11 @@ class ECFRFetcher:
             try:
                 volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
                 if volumes:
-                    size, sections, _ = extractor.extract_govinfo_volumes(volumes, title_num)
+                    size, sections, chapter_wc = extractor.extract_govinfo_volumes(volumes, title_num)
                     if sections:
                         self.db.save_sections(sections, year=year)
+                    if agency_lookup and chapter_wc:
+                        self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
                     return title_num, True, f"{size:,} bytes ({len(volumes)} vols)"
                 return title_num, False, "not available"
             except Exception as e:
