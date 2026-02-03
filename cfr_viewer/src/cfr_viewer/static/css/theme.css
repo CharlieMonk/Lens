@@ -88,19 +88,30 @@ nav strong a {
     align-items: start;
 }
 
-.section-layout > article > header {
-    height: 140px;
-    display: flex;
-    align-items: center;
+.section-layout > article > header,
+.section-layout > article > footer {
+    padding: 0.5rem 1rem;
+    margin: 0;
 }
 
-.section-layout > article > header .section-nav {
+.section-layout > article > header .section-nav,
+.section-layout > article > footer .section-nav {
     width: 100%;
+    margin: 0;
 }
 
 .section-layout .similar-sections {
     width: 280px;
     min-width: 200px;
+}
+
+.section-layout .similar-sections header {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.section-layout .similar-sections header strong {
+    font-size: 0.85rem;
 }
 
 @media (max-width: 768px) {
@@ -151,6 +162,13 @@ nav strong a {
     margin-bottom: 0.5rem;
     padding-top: 0;
     border-top: none;
+}
+
+/* ===== Compact Card Headers/Footers ===== */
+article > header,
+article > footer {
+    padding: 0.5rem 1rem;
+    margin: 0;
 }
 
 /* Compare page version cards */
@@ -214,7 +232,14 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 0.75rem 0;
+    margin: 0;
+    gap: 0.5rem;
+}
+
+.section-nav a[role="button"] {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.9rem;
+    margin: 0;
 }
 
 /* Reserved items styling */
@@ -929,5 +954,180 @@ table tbody tr {
 
     .section-controls > * {
         flex: 1 1 auto;
+    }
+}
+
+/* ===== Compare Page - Edge Case Banners ===== */
+/* Base banner styles */
+.no-changes-banner,
+.partial-data-banner,
+.not-found-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.banner-icon {
+    font-size: 1.75rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.banner-content {
+    flex: 1;
+}
+
+.banner-content strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.banner-content p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.banner-content .stability-info,
+.banner-content .banner-hint {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+
+/* No changes banner - green/success */
+.no-changes-banner {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+}
+
+.no-changes-banner .banner-icon {
+    color: #2e7d32;
+}
+
+.no-changes-banner .banner-content strong {
+    color: #1b5e20;
+}
+
+/* Partial data banner - yellow/warning */
+.partial-data-banner {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+}
+
+.partial-data-banner .banner-icon {
+    color: #f57c00;
+}
+
+.partial-data-banner .banner-content strong {
+    color: #e65100;
+}
+
+/* Not found banner - red/error */
+.not-found-banner {
+    background: #ffebee;
+    border: 1px solid #ef9a9a;
+}
+
+.not-found-banner .banner-icon {
+    color: #c62828;
+}
+
+.not-found-banner .banner-content strong {
+    color: #b71c1c;
+}
+
+/* Single version display (when no diff needed) */
+.version-card.single-version {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Year links for available years / alternatives */
+.available-years,
+.suggest-alternatives {
+    background: var(--pico-card-sectionning-background-color);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.available-years p,
+.suggest-alternatives p {
+    margin: 0 0 0.75rem 0;
+}
+
+.year-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.year-link {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    background: var(--pico-card-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.year-link:hover {
+    background: var(--pico-primary);
+    border-color: var(--pico-primary);
+    color: var(--pico-primary-inverse);
+}
+
+.year-link.current {
+    background: var(--pico-primary);
+    border-color: var(--pico-primary);
+    color: var(--pico-primary-inverse);
+    font-weight: bold;
+}
+
+/* No data message */
+.no-data-message {
+    text-align: center;
+    padding: 2rem;
+    background: var(--pico-card-sectionning-background-color);
+    border-radius: 8px;
+}
+
+.no-data-message p {
+    margin-bottom: 1rem;
+}
+
+/* Dark mode support for banners */
+@media (prefers-color-scheme: dark) {
+    .no-changes-banner {
+        background: rgba(46, 125, 50, 0.15);
+        border-color: rgba(46, 125, 50, 0.4);
+    }
+
+    .partial-data-banner {
+        background: rgba(245, 124, 0, 0.15);
+        border-color: rgba(245, 124, 0, 0.4);
+    }
+
+    .not-found-banner {
+        background: rgba(198, 40, 40, 0.15);
+        border-color: rgba(198, 40, 40, 0.4);
+    }
+
+    .no-changes-banner .banner-content strong {
+        color: #81c784;
+    }
+
+    .partial-data-banner .banner-content strong {
+        color: #ffb74d;
+    }
+
+    .not-found-banner .banner-content strong {
+        color: #ef9a9a;
     }
 }

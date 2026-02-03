@@ -3,6 +3,7 @@ from flask import current_app
 from ecfr.database import ECFRDatabase
 
 BASELINE_YEAR = 2010
+COMPARE_DEFAULT_YEAR = 2020
 
 def get_database() -> ECFRDatabase:
     return current_app.ecfr_database

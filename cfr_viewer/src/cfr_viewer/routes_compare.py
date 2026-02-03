@@ -3,7 +3,7 @@ import difflib
 import re
 from flask import Blueprint, redirect, render_template, request, url_for
 from markupsafe import Markup
-from .services import get_database
+from .services import get_database, COMPARE_DEFAULT_YEAR
 
 compare_bp = Blueprint("compare", __name__)
 
@@ -78,9 +78,16 @@ def diff(title_num: int, section: str):
             return redirect(url_for("compare.diff", title_num=other_title or title_num, section=other_section, year1=year1, year2=year2))
     years = db.list_years()
     if year2 is None:
-        year2 = next((y for y in years if y != year1 and y != 0), year1)
+        # Default to COMPARE_DEFAULT_YEAR if available, otherwise first different year
+        year2 = COMPARE_DEFAULT_YEAR if COMPARE_DEFAULT_YEAR in years else next((y for y in years if y != year1 and y != 0), year1)
     s1, s2 = db.get_section(title_num, section, year1), db.get_section(title_num, section, year2)
     prev_sec, next_sec = db.get_adjacent_sections(title_num, section, year1)
+
+    # Find which years have this section (for not-found cases)
+    available_years = []
+    for y in years:
+        if db.get_section(title_num, section, y):
+            available_years.append(y)
 
     # Generate side-by-side diff with inline highlighting (ignoring whitespace)
     old_html, new_html = None, None
@@ -88,4 +95,15 @@ def diff(title_num: int, section: str):
     if has_changes:
         old_html, new_html = side_by_side_diff(s2.get("text", ""), s1.get("text", ""))
 
-    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec)
+    # For no-changes case, find stability info (how long unchanged)
+    unchanged_since = None
+    if s1 and s2 and not has_changes:
+        # Find earliest year with same content as current
+        current_text = s1.get("text", "").split()
+        for y in sorted([y for y in available_years if y > 0]):
+            sec = db.get_section(title_num, section, y)
+            if sec and sec.get("text", "").split() == current_text:
+                unchanged_since = y
+                break
+
+    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec, available_years=available_years, unchanged_since=unchanged_since)

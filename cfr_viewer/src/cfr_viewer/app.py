@@ -1,9 +1,10 @@
 """Flask application factory."""
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template
+from flask import Flask, render_template, url_for
 from ecfr.database import ECFRDatabase
 from .routes_browse import browse_bp
 from .routes_statistics import statistics_bp
@@ -28,5 +29,17 @@ def create_app(db_path: str | None = None):
     @app.errorhandler(404)
     def page_not_found(e):
         return render_template("errors/404.html"), 404
+
+    @app.context_processor
+    def override_url_for():
+        def versioned_url_for(endpoint, **values):
+            if endpoint == "static":
+                filename = values.get("filename")
+                if filename:
+                    path = os.path.join(app.static_folder, filename)
+                    if os.path.isfile(path):
+                        values["v"] = int(os.path.getmtime(path))
+            return url_for(endpoint, **values)
+        return dict(url_for=versioned_url_for)
 
     return app
