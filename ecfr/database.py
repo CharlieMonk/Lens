@@ -779,11 +779,41 @@ class ECFRDatabase:
 
         return True
 
-    def has_similarity_index(self):
-        """Check if FAISS similarity index exists."""
+    def has_similarity_index(self, year=0):
+        """Check if FAISS similarity index exists and is up-to-date with database.
+
+        Returns True only if:
+        1. Index files exist
+        2. Index was built for the same year
+        3. Section count matches current database
+        """
         index_path = config.faiss_index_path
-        return (Path(str(index_path) + ".faiss").exists() and
-                Path(str(index_path) + ".pkl").exists())
+        faiss_file = Path(str(index_path) + ".faiss")
+        pkl_file = Path(str(index_path) + ".pkl")
+
+        if not faiss_file.exists() or not pkl_file.exists():
+            return False
+
+        # Load metadata to check if index matches current database state
+        try:
+            with open(pkl_file, 'rb') as f:
+                meta = pickle.load(f)
+
+            # Check year matches
+            if meta.get('year') != year:
+                return False
+
+            # Check section count matches current database
+            current_count = self._query_one(
+                "SELECT COUNT(*) FROM sections WHERE year=? AND section != '' AND text_hash != ''",
+                (year,)
+            )[0]
+            if meta.get('n_sections') != current_count:
+                return False
+
+            return True
+        except Exception:
+            return False
 
     def get_similar_sections_global(self, title, section, year=0, limit=None, min_similarity=None):
         """Find similar sections across the entire CFR using FAISS index.

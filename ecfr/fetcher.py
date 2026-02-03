@@ -22,6 +22,11 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
+def _log(msg, indent=0):
+    """Print a log message with optional indentation."""
+    print(f"{'  ' * indent}{msg}", flush=True)
+
+
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
@@ -275,72 +280,85 @@ class ECFRFetcher:
         print("\n" + "=" * 50 + "\nSync complete\n" + "=" * 50)
         return results
 
+    def ensure_metadata(self):
+        """Ensure titles and agencies metadata are loaded. Returns False if titles fail."""
+        for name, is_cached, load in [
+            ("Titles metadata", lambda: self.db.has_titles() and self.db.is_fresh(), self._load_titles_metadata),
+            ("Agencies metadata", lambda: self.db.has_agencies() and self.db.is_fresh(), self._load_agency_lookup),
+        ]:
+            if is_cached():
+                _log(f"{name}: already cached")
+            else:
+                _log(f"{name}: fetching...")
+                try:
+                    load()
+                    _log("Done", indent=1)
+                except Exception as e:
+                    is_critical = "Titles" in name
+                    _log(f"{'Error' if is_critical else 'Warning'}: {e}", indent=1)
+                    if is_critical:
+                        return False
+        return True
+
+    def ensure_current_sections(self, all_titles, max_retries=3):
+        """Fetch current sections with retry logic."""
+        for attempt in range(max_retries):
+            missing = all_titles - set(self.db.list_titles(0))
+            if not missing:
+                _log("Current sections (year=0): all titles present")
+                return
+            retry_msg = f" (attempt {attempt + 1}/{max_retries})" if attempt > 0 else ""
+            _log(f"Current sections: {len(missing)} titles missing{retry_msg}")
+            self.update_stale_titles(sorted(missing))
+
+        missing = all_titles - set(self.db.list_titles(0))
+        if missing:
+            _log(f"Warning: {len(missing)} titles still missing after {max_retries} attempts: {sorted(missing)}", indent=1)
+
+    def ensure_historical_sections(self, years):
+        """Fetch historical sections for specified years."""
+        for year in years:
+            if self.db.has_year_data(year):
+                _log(f"Historical sections ({year}): already in database")
+            else:
+                _log(f"Historical sections ({year}): fetching...")
+                self.fetch_historical([year])
+
+    def ensure_derived_data(self):
+        """Populate derived tables and build indexes."""
+        _log("Populating title word counts...")
+        self.db.populate_title_word_counts()
+
+        if self.db.has_similarity_index():
+            _log("Similarity index: already exists")
+        else:
+            _log("Building similarity index...")
+            try:
+                result = self.db.build_similarity_index()
+                _log(f"{result['sections_indexed']:,} sections indexed ({result['index_size_mb']:.1f} MB)", indent=1)
+            except Exception as e:
+                _log(f"Warning: Could not build similarity index: {e}", indent=1)
+
 
 def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
     historical_years = historical_years or HISTORICAL_YEARS
     all_titles = set(range(1, 51)) - {35}  # All CFR titles except 35 (reserved)
 
-    # Run at lowest CPU priority
     try:
-        os.nice(19)
+        os.nice(19)  # Run at lowest CPU priority
     except (OSError, AttributeError):
-        pass  # nice() not available on all platforms
+        pass
+
+    _log("=" * 50 + "\neCFR Database Population\n" + "=" * 50)
 
     fetcher = ECFRFetcher()
-    db = fetcher.db
-    print("=" * 50 + "\neCFR Database Population\n" + "=" * 50, flush=True)
+    if not fetcher.ensure_metadata():
+        return 1
+    fetcher.ensure_current_sections(all_titles, max_retries)
+    fetcher.ensure_historical_sections(historical_years)
+    fetcher.ensure_derived_data()
 
-    for name, check, action in [
-        ("Titles metadata", lambda: db.has_titles() and db.is_fresh(), fetcher._load_titles_metadata),
-        ("Agencies metadata", lambda: db.has_agencies() and db.is_fresh(), fetcher._load_agency_lookup),
-    ]:
-        if check():
-            print(f"{name}: already cached", flush=True)
-        else:
-            print(f"{name}: fetching...", flush=True)
-            try:
-                action()
-                print("  Done", flush=True)
-            except Exception as e:
-                print(f"  {'Error' if 'Titles' in name else 'Warning'}: {e}", flush=True)
-                if "Titles" in name:
-                    return 1
-
-    # Fetch current sections with retry logic
-    for attempt in range(max_retries):
-        stored_titles = set(db.list_titles(0))
-        missing_titles = all_titles - stored_titles
-        if not missing_titles:
-            print("Current sections (year=0): all titles present", flush=True)
-            break
-        print(f"Current sections: {len(missing_titles)} titles missing{f' (attempt {attempt + 1}/{max_retries})' if attempt > 0 else ''}", flush=True)
-        fetcher.update_stale_titles(sorted(missing_titles))
-    else:
-        missing = all_titles - set(db.list_titles(0))
-        if missing:
-            print(f"  Warning: {len(missing)} titles still missing after {max_retries} attempts: {sorted(missing)}", flush=True)
-
-    # Fetch historical years
-    for year in historical_years:
-        if db.has_year_data(year):
-            print(f"Historical sections ({year}): already in database", flush=True)
-        else:
-            print(f"Historical sections ({year}): fetching...", flush=True)
-            fetcher.fetch_historical([year])
-
-    # Populate derived tables from sections data
-    print("Populating title word counts...", flush=True)
-    db.populate_title_word_counts()
-
-    # Build similarity index for global search
-    print("Building similarity index...", flush=True)
-    try:
-        result = db.build_similarity_index()
-        print(f"  {result['sections_indexed']:,} sections indexed ({result['index_size_mb']:.1f} MB)", flush=True)
-    except Exception as e:
-        print(f"  Warning: Could not build similarity index: {e}", flush=True)
-
-    print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50, flush=True)
+    _log("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50)
     return 0
 
 if __name__ == "__main__":
