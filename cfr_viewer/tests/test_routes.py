@@ -42,7 +42,7 @@ class TestBrowseRoutes:
 
 
 class TestStatisticsRoutes:
-    """Test statistics routes."""
+    """Test statistics routes - all redirect to new locations."""
 
     def test_statistics_index_redirects(self, client):
         """Test statistics index redirects to homepage."""
@@ -50,18 +50,28 @@ class TestStatisticsRoutes:
         assert response.status_code == 301
         assert response.location.endswith("/")
 
-    def test_agencies_statistics(self, client):
-        """Test agencies by word count page."""
+    def test_statistics_agencies_redirects(self, client):
+        """Test statistics agencies redirects to agencies page."""
         response = client.get("/statistics/agencies")
-        assert response.status_code == 200
-        assert b"Agencies" in response.data
-        assert b"Word Count" in response.data
+        assert response.status_code == 301
+        assert "/agencies" in response.location
 
     def test_titles_statistics_redirects(self, client):
         """Test titles statistics redirects to browse titles."""
         response = client.get("/statistics/titles")
         assert response.status_code == 301
         assert "/titles" in response.location
+
+
+class TestAgenciesRoutes:
+    """Test agencies routes."""
+
+    def test_agencies_index(self, client):
+        """Test agencies list page."""
+        response = client.get("/agencies/")
+        assert response.status_code == 200
+        assert b"Agencies" in response.data
+        assert b"Word Count" in response.data
 
 
 class TestCompareRoutes:
