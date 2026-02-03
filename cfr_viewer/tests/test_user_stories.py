@@ -325,7 +325,7 @@ class TestUserStory6_ViewStatistics:
         """Steps 3-4: View agency statistics."""
         page.goto(f"{BASE_URL}/statistics/")
 
-        agency_link = page.locator("a", has_text="View Agency Statistics")
+        agency_link = page.locator("a", has_text="View all agencies")
         agency_link.click()
 
         page.screenshot(path=f"{SCREENSHOT_DIR}/06b_agency_statistics.png", full_page=True)
@@ -347,7 +347,7 @@ class TestUserStory6_ViewStatistics:
         """Steps 5-6: View title statistics."""
         page.goto(f"{BASE_URL}/statistics/")
 
-        title_link = page.locator("a", has_text="View Title Statistics")
+        title_link = page.locator("a", has_text="View all titles")
         title_link.click()
 
         page.screenshot(path=f"{SCREENSHOT_DIR}/06c_title_statistics.png", full_page=True)
