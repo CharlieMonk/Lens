@@ -20,7 +20,7 @@
             <td><a href="{{ url_for('browse.section', title_num=title_num, section=node.identifier, year=year) }}">{% if node.heading %}{{ node.heading }}{% else %}&sect; {{ node.identifier }}{% endif %}</a></td>
             <td class="numeric" data-value="{{ node.word_count or 0 }}">{{ "{:,}".format(node.word_count or 0) }}</td>
             <td class="numeric">—</td>
-            {{ change_cell(node.change_pct, show_new=true) }}
+            {{ change_cell(node.change_pct, show_new=true, is_before_baseline=(year and year < baseline_year)) }}
             {% else %}
             {% set prefix_map = {'subtitle': 'Subtitle', 'chapter': 'Chapter', 'subchapter': 'Subchapter', 'part': 'Part', 'subpart': 'Subpart'} %}
             {% set prefix = prefix_map.get(node.type, '') %}
@@ -34,7 +34,7 @@
             </td>
             <td class="numeric" data-value="{{ node.word_count or 0 }}">{{ "{:,}".format(node.word_count or 0) }}</td>
             <td class="numeric" data-value="{{ node.section_count or 0 }}">{{ "{:,}".format(node.section_count or 0) }}</td>
-            {{ change_cell(node.change_pct, show_new=true) }}
+            {{ change_cell(node.change_pct, show_new=true, is_before_baseline=(year and year < baseline_year)) }}
             {% endif %}
         </tr>
         {% endfor %}
