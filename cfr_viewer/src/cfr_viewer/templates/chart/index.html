@@ -1,0 +1,574 @@
+{% extends "base.html" %}
+
+{% block title %}Word Count Trends - CFR Viewer{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .selectors-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .selectors-grid label {
+        margin-bottom: 0;
+    }
+    .selectors-grid select {
+        width: 100%;
+    }
+    .chart-container {
+        position: relative;
+        height: 400px;
+    }
+    .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+        font-size: 0.95rem;
+    }
+    .breadcrumb-item {
+        background: var(--pico-secondary-background);
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+    }
+    .breadcrumb-separator {
+        color: var(--pico-muted-color);
+    }
+    .stats-card {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--pico-card-background-color);
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+    .stat {
+        text-align: center;
+    }
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--pico-primary);
+    }
+    .stat-value.positive { color: #d32f2f; }
+    .stat-value.negative { color: #388e3c; }
+    .stat-label {
+        font-size: 0.85rem;
+        color: var(--pico-muted-color);
+    }
+    .chart-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 0.5rem;
+    }
+    .chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+    .placeholder-message {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 300px;
+        color: var(--pico-muted-color);
+        font-size: 1.1rem;
+    }
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--pico-secondary-background);
+        border-top-color: var(--pico-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .hidden { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Word Count Trends</h1>
+    <p>View how CFR content has changed over time</p>
+</hgroup>
+
+<div class="selectors-grid">
+    <label>
+        Title
+        <select id="select-title">
+            <option value="">Select a title...</option>
+            {% for num, meta in titles.items()|sort %}
+            <option value="{{ num }}">{{ num }} - {{ meta.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label id="label-chapter" class="hidden">
+        Chapter
+        <select id="select-chapter">
+            <option value="">All chapters</option>
+        </select>
+    </label>
+    <label id="label-subchapter" class="hidden">
+        Subchapter
+        <select id="select-subchapter">
+            <option value="">All subchapters</option>
+        </select>
+    </label>
+    <label id="label-part" class="hidden">
+        Part
+        <select id="select-part">
+            <option value="">All parts</option>
+        </select>
+    </label>
+    <label id="label-subpart" class="hidden">
+        Subpart
+        <select id="select-subpart">
+            <option value="">All subparts</option>
+        </select>
+    </label>
+    <label id="label-section" class="hidden">
+        Section
+        <select id="select-section">
+            <option value="">All sections</option>
+        </select>
+    </label>
+</div>
+
+<div id="breadcrumb" class="breadcrumb hidden"></div>
+
+<div id="stats-card" class="stats-card hidden">
+    <div class="stat">
+        <div class="stat-value" id="stat-first">—</div>
+        <div class="stat-label" id="stat-first-label">2000</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-last">—</div>
+        <div class="stat-label" id="stat-last-label">2025</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-change">—</div>
+        <div class="stat-label">Change</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-cagr">—</div>
+        <div class="stat-label">Avg/Year</div>
+    </div>
+</div>
+
+<div id="placeholder" class="placeholder-message">
+    Select a title to view word count trends over time
+</div>
+
+<div id="chart-wrapper" class="hidden">
+    <div class="chart-controls">
+        <label>
+            <input type="checkbox" id="zoom-toggle" role="switch">
+            Zoom to data range
+        </label>
+    </div>
+    <div class="chart-container">
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="spinner"></div>
+        </div>
+        <canvas id="wordCountChart"></canvas>
+    </div>
+</div>
+
+<script>
+const LEVELS = ['title', 'chapter', 'subchapter', 'part', 'subpart', 'section'];
+const selectors = {};
+const labels = {};
+
+LEVELS.forEach(level => {
+    selectors[level] = document.getElementById(`select-${level}`);
+    labels[level] = document.getElementById(`label-${level}`);
+});
+
+const breadcrumb = document.getElementById('breadcrumb');
+const statsCard = document.getElementById('stats-card');
+const placeholder = document.getElementById('placeholder');
+const chartWrapper = document.getElementById('chart-wrapper');
+const loadingOverlay = document.getElementById('loading-overlay');
+const zoomToggle = document.getElementById('zoom-toggle');
+const ctx = document.getElementById('wordCountChart').getContext('2d');
+
+let chart = null;
+let currentData = {};
+
+// Initialize chart
+function initChart() {
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Word Count',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ctx.parsed.y.toLocaleString() + ' words'
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: v => v >= 1000000 ? (v/1000000).toFixed(1) + 'M' : v >= 1000 ? (v/1000).toFixed(0) + 'K' : v
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Build path from current selections
+function buildPath() {
+    let path = '';
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const value = selectors[level].value;
+        if (!value) break;
+        path += (path ? '/' : '') + value;
+    }
+    return path;
+}
+
+// Update breadcrumb display
+function updateBreadcrumb() {
+    const titleNum = selectors.title.value;
+    if (!titleNum) {
+        breadcrumb.classList.add('hidden');
+        return;
+    }
+
+    const titleText = selectors.title.options[selectors.title.selectedIndex].text;
+    let items = [`<span class="breadcrumb-item">${titleText}</span>`];
+
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const select = selectors[level];
+        if (!select.value || select.classList.contains('hidden')) break;
+
+        const text = select.options[select.selectedIndex].text;
+        if (text && !text.startsWith('All ')) {
+            items.push(`<span class="breadcrumb-separator">→</span>`);
+            items.push(`<span class="breadcrumb-item">${text}</span>`);
+        }
+    }
+
+    breadcrumb.innerHTML = items.join('');
+    breadcrumb.classList.remove('hidden');
+}
+
+// Update statistics card
+function updateStats(data) {
+    const years = Object.keys(data).sort((a,b) => parseInt(a) - parseInt(b));
+    if (years.length < 2) {
+        statsCard.classList.add('hidden');
+        return;
+    }
+
+    const firstYear = years[0];
+    const lastYear = years[years.length - 1];
+    const firstVal = data[firstYear];
+    const lastVal = data[lastYear];
+    const change = ((lastVal - firstVal) / firstVal) * 100;
+    const numYears = parseInt(lastYear) - parseInt(firstYear);
+    const cagr = numYears > 0 ? (Math.pow(lastVal / firstVal, 1/numYears) - 1) * 100 : 0;
+
+    document.getElementById('stat-first').textContent = firstVal >= 1000000 ? (firstVal/1000000).toFixed(1) + 'M' : firstVal >= 1000 ? Math.round(firstVal/1000) + 'K' : firstVal;
+    document.getElementById('stat-first-label').textContent = firstYear;
+    document.getElementById('stat-last').textContent = lastVal >= 1000000 ? (lastVal/1000000).toFixed(1) + 'M' : lastVal >= 1000 ? Math.round(lastVal/1000) + 'K' : lastVal;
+    document.getElementById('stat-last-label').textContent = lastYear;
+
+    const changeEl = document.getElementById('stat-change');
+    changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
+    changeEl.className = 'stat-value ' + (change > 0 ? 'positive' : change < 0 ? 'negative' : '');
+
+    document.getElementById('stat-cagr').textContent = (cagr >= 0 ? '+' : '') + cagr.toFixed(1) + '%';
+
+    statsCard.classList.remove('hidden');
+}
+
+// Update chart with data
+function updateChart(data) {
+    currentData = data;
+    const years = Object.keys(data).sort((a,b) => parseInt(a) - parseInt(b));
+    const counts = years.map(y => data[y]);
+
+    chart.data.labels = years;
+    chart.data.datasets[0].data = counts;
+
+    // Apply zoom setting
+    chart.options.scales.y.beginAtZero = !zoomToggle.checked;
+
+    chart.update();
+}
+
+// Fetch chart data
+async function fetchChartData() {
+    const titleNum = selectors.title.value;
+    if (!titleNum) return;
+
+    loadingOverlay.classList.remove('hidden');
+
+    const path = buildPath();
+    const url = path ? `/chart/data/${titleNum}/${path}` : `/chart/data/${titleNum}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        placeholder.classList.add('hidden');
+        chartWrapper.classList.remove('hidden');
+
+        updateChart(data);
+        updateStats(data);
+        updateBreadcrumb();
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+// Load children for a selector
+async function loadChildren(level) {
+    const titleNum = selectors.title.value;
+    if (!titleNum) return [];
+
+    const path = buildPath();
+    const url = path ? `/chart/structure/${titleNum}/${path}` : `/chart/structure/${titleNum}`;
+
+    try {
+        const response = await fetch(url);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching structure:', error);
+        return [];
+    }
+}
+
+// Populate a selector with options
+function populateSelector(level, children) {
+    const select = selectors[level];
+    const label = labels[level];
+
+    // Clear existing options except first
+    while (select.options.length > 1) {
+        select.remove(1);
+    }
+
+    if (children.length === 0) {
+        label.classList.add('hidden');
+        return false;
+    }
+
+    // Update "All X" text
+    select.options[0].text = `All ${children[0].type}s`;
+
+    children.forEach(child => {
+        const option = document.createElement('option');
+        option.value = `${child.type}/${child.identifier}`;
+        option.text = child.label;
+        option.dataset.hasChildren = child.has_children;
+        select.appendChild(option);
+    });
+
+    label.classList.remove('hidden');
+    return true;
+}
+
+// Hide all selectors from a level onwards
+function hideSelectorsFrom(levelIndex) {
+    for (let i = levelIndex; i < LEVELS.length; i++) {
+        labels[LEVELS[i]].classList.add('hidden');
+        selectors[LEVELS[i]].value = '';
+    }
+}
+
+// Handle selector change
+async function handleSelectorChange(levelIndex) {
+    const level = LEVELS[levelIndex];
+    const select = selectors[level];
+
+    // Hide all selectors after this one
+    hideSelectorsFrom(levelIndex + 1);
+
+    // Fetch chart data for current selection
+    await fetchChartData();
+
+    // If something is selected and it might have children, load them
+    if (select.value && levelIndex < LEVELS.length - 1) {
+        const selectedOption = select.options[select.selectedIndex];
+        if (selectedOption.dataset.hasChildren === 'true') {
+            const children = await loadChildren(levelIndex + 1);
+            if (children.length > 0) {
+                populateSelector(LEVELS[levelIndex + 1], children);
+            }
+        }
+    }
+}
+
+// Update URL with current selections
+function updateURL() {
+    const params = new URLSearchParams();
+
+    if (selectors.title.value) {
+        params.set('title', selectors.title.value);
+    }
+
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const value = selectors[level].value;
+        if (!value) break;
+        // Value is like "chapter/I" - extract just the identifier
+        const identifier = value.split('/')[1];
+        if (identifier) {
+            params.set(level, identifier);
+        }
+    }
+
+    if (zoomToggle.checked) {
+        params.set('zoom', '1');
+    }
+
+    const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    history.replaceState(null, '', newURL);
+}
+
+// Restore selections from URL
+async function restoreFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const titleNum = params.get('title');
+
+    if (!titleNum) return;
+
+    // Set title
+    selectors.title.value = titleNum;
+    if (!selectors.title.value) return; // Title not found in options
+
+    await fetchChartData();
+
+    // Load and set each level
+    const levelParams = ['chapter', 'subchapter', 'part', 'subpart', 'section'];
+
+    for (let i = 0; i < levelParams.length; i++) {
+        const level = levelParams[i];
+        const identifier = params.get(level);
+
+        // Load children for this level
+        const children = await loadChildren(i);
+        if (children.length === 0) break;
+
+        populateSelector(level, children);
+
+        if (!identifier) break;
+
+        // Find and select the matching option
+        const select = selectors[level];
+        const optionValue = `${level}/${identifier}`;
+
+        let found = false;
+        for (const option of select.options) {
+            if (option.value === optionValue) {
+                select.value = optionValue;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) break;
+
+        // Fetch updated chart data
+        await fetchChartData();
+    }
+
+    // Restore zoom setting
+    if (params.get('zoom') === '1') {
+        zoomToggle.checked = true;
+        chart.options.scales.y.beginAtZero = false;
+        chart.update();
+    }
+}
+
+// Title change - special handling
+selectors.title.addEventListener('change', async () => {
+    hideSelectorsFrom(1);
+
+    if (!selectors.title.value) {
+        placeholder.classList.remove('hidden');
+        chartWrapper.classList.add('hidden');
+        statsCard.classList.add('hidden');
+        breadcrumb.classList.add('hidden');
+        updateURL();
+        return;
+    }
+
+    await fetchChartData();
+    updateURL();
+
+    const children = await loadChildren(0);
+    if (children.length > 0) {
+        populateSelector('chapter', children);
+    }
+});
+
+// Set up change handlers for other selectors
+LEVELS.slice(1).forEach((level, idx) => {
+    selectors[level].addEventListener('change', async () => {
+        await handleSelectorChange(idx + 1);
+        updateURL();
+    });
+});
+
+// Zoom toggle
+zoomToggle.addEventListener('change', () => {
+    if (chart && currentData) {
+        chart.options.scales.y.beginAtZero = !zoomToggle.checked;
+        chart.update();
+    }
+    updateURL();
+});
+
+// Initialize
+initChart();
+restoreFromURL();
+</script>
+{% endblock %}
