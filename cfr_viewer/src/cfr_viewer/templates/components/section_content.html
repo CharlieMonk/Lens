@@ -1,4 +1,8 @@
 {# Partial template for section content - used by HTMX navigation #}
+{# Helper macros for empty/reserved sections #}
+{% set is_reserved = section and section.heading and 'reserved' in section.heading.lower() %}
+{% set is_empty = section and (section.word_count or 0) == 0 %}
+
 <nav aria-label="breadcrumb">
     <ul>
         <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
@@ -9,7 +13,7 @@
 
 {% if section %}
 <hgroup id="section-heading">
-    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}</h1>
+    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}{% if is_reserved %} <span class="reserved-badge">[Reserved]</span>{% endif %}</h1>
     <p>Title {{ title_num }}: {{ title_name }}</p>
 </hgroup>
 
@@ -51,13 +55,30 @@
 {% endmacro %}
 
 <div id="section-layout" class="section-layout">
-    <article>
+    <article{% if is_empty %} class="empty-section"{% endif %}>
         <header>
             {{ section_nav() }}
         </header>
+        {% if is_empty %}
+        <div class="empty-section-content">
+            <div class="empty-icon">📄</div>
+            <strong>No Content</strong>
+            <p>This section contains no regulatory text.</p>
+            {% if is_reserved %}
+            <p class="empty-hint">This section is reserved for future use.</p>
+            {% else %}
+            <ul class="empty-reasons">
+                <li>Reserved for future regulations</li>
+                <li>References another section</li>
+                <li>Content removed but entry retained</li>
+            </ul>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="section-text">
             {{ section.text | safe }}
         </div>
+        {% endif %}
         <footer>
             {{ section_nav() }}
         </footer>

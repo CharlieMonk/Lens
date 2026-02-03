@@ -961,7 +961,10 @@ table tbody tr {
 /* Base banner styles */
 .no-changes-banner,
 .partial-data-banner,
-.not-found-banner {
+.not-found-banner,
+.empty-banner,
+.added-banner,
+.removed-banner {
     display: flex;
     align-items: flex-start;
     gap: 1rem;
@@ -1102,6 +1105,134 @@ table tbody tr {
     margin-bottom: 1rem;
 }
 
+/* Empty/No content banner - gray/neutral */
+.empty-banner {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+}
+
+.empty-banner .banner-icon {
+    color: #757575;
+}
+
+.empty-banner .banner-content strong {
+    color: #424242;
+}
+
+/* Added banner - blue/info */
+.added-banner {
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+}
+
+.added-banner .banner-icon {
+    color: #1565c0;
+    font-weight: bold;
+}
+
+.added-banner .banner-content strong {
+    color: #0d47a1;
+}
+
+/* Removed banner - orange/warning */
+.removed-banner {
+    background: #fff3e0;
+    border: 1px solid #ffcc80;
+}
+
+.removed-banner .banner-icon {
+    color: #e65100;
+    font-weight: bold;
+}
+
+.removed-banner .banner-content strong {
+    color: #bf360c;
+}
+
+/* ===== Empty Section Styling ===== */
+/* Reserved badge in headings */
+.reserved-badge {
+    font-size: 0.65em;
+    font-weight: normal;
+    color: #757575;
+    background: #f5f5f5;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+}
+
+/* Empty section content on browse page */
+.empty-section-content {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #757575;
+}
+
+.empty-section-content .empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.6;
+}
+
+.empty-section-content strong {
+    display: block;
+    font-size: 1.1rem;
+    color: #424242;
+    margin-bottom: 0.25rem;
+}
+
+.empty-section-content p {
+    margin: 0.25rem 0;
+}
+
+.empty-section-content .empty-hint {
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+.empty-section-content .empty-reasons {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0 0;
+    font-size: 0.85rem;
+}
+
+.empty-section-content .empty-reasons li {
+    padding: 0.15rem 0;
+}
+
+.empty-section-content .empty-reasons li::before {
+    content: "•";
+    margin-right: 0.5rem;
+    color: #bdbdbd;
+}
+
+/* Empty version in compare view */
+.empty-version .empty-version-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    background: #fafafa;
+    border-top: 1px dashed #e0e0e0;
+}
+
+.empty-version .empty-label {
+    color: #9e9e9e;
+    font-style: italic;
+    font-size: 0.95rem;
+}
+
+/* Muted styling for empty sections in listings */
+.empty-section {
+    opacity: 0.85;
+}
+
+.empty-section .section-text {
+    background: #fafafa;
+}
+
 /* Dark mode support for banners */
 @media (prefers-color-scheme: dark) {
     .no-changes-banner {
@@ -1119,6 +1250,21 @@ table tbody tr {
         border-color: rgba(198, 40, 40, 0.4);
     }
 
+    .empty-banner {
+        background: rgba(117, 117, 117, 0.15);
+        border-color: rgba(117, 117, 117, 0.4);
+    }
+
+    .added-banner {
+        background: rgba(21, 101, 192, 0.15);
+        border-color: rgba(21, 101, 192, 0.4);
+    }
+
+    .removed-banner {
+        background: rgba(230, 81, 0, 0.15);
+        border-color: rgba(230, 81, 0, 0.4);
+    }
+
     .no-changes-banner .banner-content strong {
         color: #81c784;
     }
@@ -1129,5 +1275,35 @@ table tbody tr {
 
     .not-found-banner .banner-content strong {
         color: #ef9a9a;
+    }
+
+    .empty-banner .banner-content strong {
+        color: #bdbdbd;
+    }
+
+    .added-banner .banner-content strong {
+        color: #90caf9;
+    }
+
+    .removed-banner .banner-content strong {
+        color: #ffcc80;
+    }
+
+    .reserved-badge {
+        background: #424242;
+        color: #bdbdbd;
+    }
+
+    .empty-section-content {
+        color: #9e9e9e;
+    }
+
+    .empty-section-content strong {
+        color: #bdbdbd;
+    }
+
+    .empty-version .empty-version-content {
+        background: #2a2a2a;
+        border-top-color: #424242;
     }
 }
