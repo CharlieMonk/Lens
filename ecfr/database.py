@@ -333,6 +333,25 @@ class ECFRDatabase:
                 count += 1
         return count
 
+    def get_node_word_counts_by_year(self, title, path=""):
+        """Get word counts for a node across all years. Path format: 'chapter/I/part/1'."""
+        filters = {"title": title}
+        if path:
+            parts = path.strip("/").split("/")
+            for i in range(0, len(parts), 2):
+                if i + 1 < len(parts):
+                    filters[parts[i]] = parts[i + 1]
+
+        q = "SELECT year, SUM(word_count) FROM sections WHERE title=?"
+        p = [title]
+        for col in ["subtitle", "chapter", "subchapter", "part", "subpart", "section"]:
+            if col in filters:
+                q += f" AND {col}=?"
+                p.append(filters[col])
+        q += " GROUP BY year ORDER BY year"
+
+        return {r[0]: r[1] for r in self._query(q, tuple(p))}
+
     def get_similar_sections(self, title, section, year=0, limit=10, min_similarity=0.1):
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
