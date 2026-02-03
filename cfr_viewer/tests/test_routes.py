@@ -7,10 +7,17 @@ class TestBrowseRoutes:
     """Test browse routes."""
 
     def test_index(self, client):
-        """Test home page lists titles."""
+        """Test home page shows dashboard."""
         response = client.get("/")
         assert response.status_code == 200
-        # Only Title 1 has section data in the test DB
+        assert b"Code of Federal Regulations" in response.data
+        # Dashboard should have aggregate stats and preview sections
+        assert b"Words" in response.data or b"Sections" in response.data
+
+    def test_titles_page(self, client):
+        """Test titles list page."""
+        response = client.get("/titles")
+        assert response.status_code == 200
         assert b"General Provisions" in response.data
 
     def test_title_page(self, client):
@@ -37,13 +44,11 @@ class TestBrowseRoutes:
 class TestStatisticsRoutes:
     """Test statistics routes."""
 
-    def test_statistics_index(self, client):
-        """Test statistics dashboard."""
+    def test_statistics_index_redirects(self, client):
+        """Test statistics index redirects to homepage."""
         response = client.get("/statistics/")
-        assert response.status_code == 200
-        assert b"Statistics" in response.data
-        assert b"Agency" in response.data
-        assert b"Title" in response.data
+        assert response.status_code == 301
+        assert response.location.endswith("/")
 
     def test_agencies_statistics(self, client):
         """Test agencies by word count page."""
@@ -52,11 +57,11 @@ class TestStatisticsRoutes:
         assert b"Agencies" in response.data
         assert b"Word Count" in response.data
 
-    def test_titles_statistics(self, client):
-        """Test titles by word count page."""
+    def test_titles_statistics_redirects(self, client):
+        """Test titles statistics redirects to browse titles."""
         response = client.get("/statistics/titles")
-        assert response.status_code == 200
-        assert b"Titles" in response.data
+        assert response.status_code == 301
+        assert "/titles" in response.location
 
 
 class TestCompareRoutes:

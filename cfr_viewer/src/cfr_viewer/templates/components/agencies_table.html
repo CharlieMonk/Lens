@@ -13,8 +13,8 @@
     <tbody>
         {% for agency in agencies %}
         <tr>
-            <td><a href="{{ url_for('statistics.agency_detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
-            <td><a href="{{ url_for('statistics.agency_detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
+            <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
+            <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
             <td class="numeric" data-value="{{ agency.word_count }}">{{ "{:,}".format(agency.word_count) }}</td>
             {{ change_cell(agency.change_pct) }}
         </tr>

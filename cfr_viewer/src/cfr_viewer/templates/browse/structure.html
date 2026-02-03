@@ -7,7 +7,7 @@
 {% block content %}
 <nav aria-label="breadcrumb">
     <ul>
-        <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
+        <li><a href="{{ url_for('browse.titles', year=year) }}">All Titles</a></li>
         <li><a href="{{ url_for('browse.title', title_num=title_num, year=year) }}">Title {{ title_num }}</a></li>
         {% for crumb in breadcrumb[:-1] %}
         <li><a href="{{ url_for('browse.structure', title_num=title_num, path=crumb.path, year=year) }}">{{ crumb.label }}</a></li>

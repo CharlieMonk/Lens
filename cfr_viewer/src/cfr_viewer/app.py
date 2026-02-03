@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Flask, render_template, url_for
 from ecfr.database import ECFRDatabase
 from .routes_browse import browse_bp
-from .routes_statistics import statistics_bp
+from .routes_agencies import agencies_bp
 from .routes_compare import compare_bp
 from .routes_chart import chart_bp
 from .routes_api import api_bp
@@ -21,7 +21,7 @@ def create_app(db_path: str | None = None):
     app.jinja_env.globals["BASELINE_YEAR"] = BASELINE_YEAR
     app.jinja_env.globals["now"] = datetime.now
     app.register_blueprint(browse_bp)
-    app.register_blueprint(statistics_bp, url_prefix="/statistics")
+    app.register_blueprint(agencies_bp, url_prefix="/agencies")
     app.register_blueprint(compare_bp, url_prefix="/compare")
     app.register_blueprint(chart_bp, url_prefix="/chart")
     app.register_blueprint(api_bp, url_prefix="/api")
