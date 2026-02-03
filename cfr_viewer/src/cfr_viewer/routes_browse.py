@@ -144,3 +144,24 @@ def structure(title_num: int, path: str):
         return redirect(url_for("browse.title", title_num=title_num, year=year))
     return render_template("browse/structure.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"),
                            node=node, breadcrumb=breadcrumb, year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
+
+
+# Backwards compatibility redirects for old /statistics/ URLs
+@browse_bp.route("/statistics/")
+def statistics_index():
+    return redirect(url_for("browse.index"), code=301)
+
+
+@browse_bp.route("/statistics/titles")
+def statistics_titles():
+    return redirect(url_for("browse.titles"), code=301)
+
+
+@browse_bp.route("/statistics/agencies")
+def statistics_agencies():
+    return redirect(url_for("agencies.index"), code=301)
+
+
+@browse_bp.route("/statistics/agencies/<slug>")
+def statistics_agency_detail(slug: str):
+    return redirect(url_for("agencies.detail", slug=slug), code=301)
