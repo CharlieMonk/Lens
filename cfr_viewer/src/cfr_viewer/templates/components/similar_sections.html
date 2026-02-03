@@ -38,14 +38,8 @@
         </div>
         {% endif %}
 
-        {# Action buttons (#6, #10, #2) #}
+        {# Action buttons (#10, #2) #}
         <div class="similar-actions">
-            <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}"
-               target="_blank"
-               class="action-btn"
-               title="Open in new tab">
-                &#x2197; New tab
-            </a>
             <a href="{{ url_for('compare.compare_sections', title1=source_title, section1=source_section, title2=s.title, section2=s.section, year=year) }}"
                class="action-btn"
                title="Compare with this section">
@@ -57,7 +51,7 @@
                     data-section="{{ s.section }}"
                     data-year="{{ year }}"
                     title="Preview section text">
-                Preview
+                &#x1F441; Preview
             </button>
         </div>
 
