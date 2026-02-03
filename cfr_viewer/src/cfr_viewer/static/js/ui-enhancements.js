@@ -142,59 +142,71 @@ function initTableFilters() {
 }
 
 // Count-up animation for statistics
-function initCountUp() {
-    const elements = document.querySelectorAll('[data-count]');
-    if (!elements.length) return;
+const CountUp = {
+    duration: 1000,
+    frameDuration: 1000 / 60,
 
-    const duration = 1000; // Animation duration in ms
-    const frameDuration = 1000 / 60; // 60fps
-    const totalFrames = Math.round(duration / frameDuration);
-
-    function easeOutQuart(t) {
+    easeOutQuart(t) {
         return 1 - Math.pow(1 - t, 4);
-    }
+    },
 
-    function formatNumber(value, decimals, format, prefix, suffix) {
+    format(value, options = {}) {
+        const { decimals, comma, prefix = '', suffix = '' } = options;
         let formatted = decimals !== undefined ? value.toFixed(decimals) : Math.round(value).toString();
-        if (format === 'comma') {
+        if (comma) {
             formatted = Math.round(value).toLocaleString();
         }
-        return (prefix || '') + formatted + (suffix || '');
-    }
+        return prefix + formatted + suffix;
+    },
 
-    function animateCount(el) {
-        const target = parseFloat(el.dataset.count);
-        const decimals = el.dataset.decimals !== undefined ? parseInt(el.dataset.decimals) : undefined;
-        const format = el.dataset.format;
-        const prefix = el.dataset.prefix || '';
-        const suffix = el.dataset.suffix || '';
+    // Animate a single element to a target value
+    // el: DOM element, target: number, options: { decimals, comma, prefix, suffix }
+    animate(el, target, options = {}) {
+        const totalFrames = Math.round(this.duration / this.frameDuration);
         let frame = 0;
 
-        const counter = setInterval(() => {
+        // Cancel any existing animation
+        if (el._countUpInterval) clearInterval(el._countUpInterval);
+
+        el._countUpInterval = setInterval(() => {
             frame++;
-            const progress = easeOutQuart(frame / totalFrames);
+            const progress = this.easeOutQuart(frame / totalFrames);
             const current = target * progress;
-            el.textContent = formatNumber(current, decimals, format, prefix, suffix);
+            el.textContent = this.format(current, options);
 
             if (frame === totalFrames) {
-                clearInterval(counter);
-                el.textContent = formatNumber(target, decimals, format, prefix, suffix);
+                clearInterval(el._countUpInterval);
+                el._countUpInterval = null;
+                el.textContent = this.format(target, options);
             }
-        }, frameDuration);
+        }, this.frameDuration);
+    },
+
+    // Auto-initialize elements with data-count attribute
+    initFromDataAttributes() {
+        const elements = document.querySelectorAll('[data-count]');
+        if (!elements.length) return;
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const el = entry.target;
+                    const target = parseFloat(el.dataset.count);
+                    const options = {
+                        decimals: el.dataset.decimals !== undefined ? parseInt(el.dataset.decimals) : undefined,
+                        comma: el.dataset.format === 'comma',
+                        prefix: el.dataset.prefix || '',
+                        suffix: el.dataset.suffix || ''
+                    };
+                    this.animate(el, target, options);
+                    observer.unobserve(el);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        elements.forEach(el => observer.observe(el));
     }
-
-    // Use IntersectionObserver to trigger animation when visible
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                animateCount(entry.target);
-                observer.unobserve(entry.target);
-            }
-        });
-    }, { threshold: 0.5 });
-
-    elements.forEach(el => observer.observe(el));
-}
+};
 
 // Initialize all enhancements
 document.addEventListener('DOMContentLoaded', () => {
@@ -202,5 +214,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initHTMXLoadingStates();
     initSmoothScroll();
     initTableFilters();
-    initCountUp();
+    CountUp.initFromDataAttributes();
 });

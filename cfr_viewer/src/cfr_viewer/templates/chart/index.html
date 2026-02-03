@@ -297,16 +297,27 @@ function updateStats(data) {
     const numYears = parseInt(lastYear) - parseInt(firstYear);
     const cagr = numYears > 0 ? (Math.pow(lastVal / firstVal, 1/numYears) - 1) * 100 : 0;
 
-    document.getElementById('stat-first').textContent = firstVal >= 1000000 ? (firstVal/1000000).toFixed(1) + 'M' : firstVal >= 1000 ? Math.round(firstVal/1000) + 'K' : firstVal;
+    // Helper for adaptive word count formatting
+    function wordCountOptions(val) {
+        if (val >= 1000000) return { value: val / 1000000, decimals: 1, suffix: 'M' };
+        if (val >= 1000) return { value: val / 1000, decimals: 0, suffix: 'K' };
+        return { value: val, decimals: 0, suffix: '' };
+    }
+
+    const firstOpts = wordCountOptions(firstVal);
+    const lastOpts = wordCountOptions(lastVal);
+
+    CountUp.animate(document.getElementById('stat-first'), firstOpts.value, { decimals: firstOpts.decimals, suffix: firstOpts.suffix });
     document.getElementById('stat-first-label').textContent = firstYear;
-    document.getElementById('stat-last').textContent = lastVal >= 1000000 ? (lastVal/1000000).toFixed(1) + 'M' : lastVal >= 1000 ? Math.round(lastVal/1000) + 'K' : lastVal;
+
+    CountUp.animate(document.getElementById('stat-last'), lastOpts.value, { decimals: lastOpts.decimals, suffix: lastOpts.suffix });
     document.getElementById('stat-last-label').textContent = lastYear;
 
     const changeEl = document.getElementById('stat-change');
-    changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(1) + '%';
     changeEl.className = 'stat-value ' + (change > 0 ? 'positive' : change < 0 ? 'negative' : '');
+    CountUp.animate(changeEl, Math.abs(change), { decimals: 1, prefix: change >= 0 ? '+' : '−', suffix: '%' });
 
-    document.getElementById('stat-cagr').textContent = (cagr >= 0 ? '+' : '') + cagr.toFixed(1) + '%';
+    CountUp.animate(document.getElementById('stat-cagr'), Math.abs(cagr), { decimals: 1, prefix: cagr >= 0 ? '+' : '−', suffix: '%' });
 
     statsCard.classList.remove('hidden');
 }
