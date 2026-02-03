@@ -240,7 +240,10 @@ class ECFRDatabase:
 
     def get_all_title_word_counts(self, year=0):
         """Get word counts for all titles in one query."""
-        return {r[0]: r[1] for r in self._query("SELECT title, SUM(word_count) FROM sections WHERE year=? GROUP BY title", (year,))}
+        result = {r[0]: r[1] for r in self._query("SELECT title, word_count FROM title_word_counts WHERE year=?", (year,))}
+        if not result and self.has_year_data(year):
+            result = {r[0]: r[1] for r in self._query("SELECT title, SUM(word_count) FROM sections WHERE year=? GROUP BY title", (year,))}
+        return result
 
     def _get_cached_stats(self, key):
         """Get cached statistics if still valid."""

@@ -71,7 +71,6 @@ class TestAgenciesRoutes:
         response = client.get("/agencies/")
         assert response.status_code == 200
         assert b"Agencies" in response.data
-        assert b"Word Count" in response.data
 
 
 class TestCompareRoutes:

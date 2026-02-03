@@ -752,6 +752,7 @@ table tbody tr {
 }
 
 .table-filter input[type="search"] {
+    width: 100%;
     max-width: 400px;
     margin: 0;
 }
@@ -759,6 +760,26 @@ table tbody tr {
 .table-filter input[type="search"]:focus {
     border-color: var(--pico-primary);
     box-shadow: 0 0 0 3px var(--pico-primary-focus);
+}
+
+/* Filter toolbar - searchbox left, year selector right */
+.filter-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.filter-toolbar .table-filter {
+    flex: 1;
+    max-width: 400px;
+    margin-bottom: 0;
+}
+
+.filter-toolbar .year-selector {
+    margin-bottom: 0;
 }
 
 /* ===== Statistics Dashboard ===== */

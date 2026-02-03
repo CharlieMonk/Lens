@@ -17,8 +17,9 @@
     <p>{{ "{:,}".format(word_count) }} words{% if structure %}, {{ structure.section_count }} sections{% endif %}</p>
 </hgroup>
 
-{% include "components/year_selector.html" %}
-
-{{ table_filter("structure-table", "0", "Filter...") }}
+<div class="filter-toolbar">
+    {{ table_filter("structure-table", "0", "Filter...") }}
+    {% include "components/year_selector.html" %}
+</div>
 {{ structure_table(structure.children if structure else [], title_num, year, baseline_year=BASELINE_YEAR, table_id="structure-table") }}
 {% endblock %}

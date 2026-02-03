@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/citation_input.html" import citation_input %}
 
 {% block title %}Compare &sect; {{ section_id }} - Lens{% endblock %}
 
@@ -14,10 +15,7 @@
 
 <form method="get" action="{{ url_for('compare.diff', title_num=title_num, section=section_id) }}" class="compare-form">
     <div class="compare-toolbar">
-        <div class="citation-row">
-            <input type="text" name="other" value="{{ title_num }} CFR § {{ section_id }}" class="citation-input" placeholder="e.g., 29 CFR 1910.134">
-            <button type="submit" class="citation-go">Go</button>
-        </div>
+        {{ citation_input(name="other", value=title_num ~ " CFR § " ~ section_id, placeholder="e.g., 29 CFR 1910.134") }}
         <div class="compare-controls">
             <select name="year2" onchange="this.form.submit()">
                 {% for y in years %}

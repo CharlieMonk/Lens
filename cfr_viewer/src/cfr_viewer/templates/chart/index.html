@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/citation_input.html" import citation_input %}
 
 {% block title %}Word Count Trends - Lens{% endblock %}
 
@@ -116,27 +117,6 @@
         to { transform: rotate(360deg); }
     }
     .hidden { display: none !important; }
-    .chart-toolbar {
-        margin-bottom: 1rem;
-    }
-    .citation-form {
-        margin: 0 0 1rem 0;
-    }
-    .citation-form .citation-row {
-        display: flex;
-        gap: 0;
-    }
-    .citation-form .citation-input {
-        margin: 0;
-        padding: 0.5rem 0.75rem;
-        border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);
-        border-right: none;
-        width: 180px;
-    }
-    .citation-form .citation-go {
-        margin: 0;
-        border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0;
-    }
 </style>
 {% endblock %}
 
@@ -146,13 +126,11 @@
     <p>View how CFR content has changed over time</p>
 </hgroup>
 
+<form id="citation-form" class="compare-form" onsubmit="return handleCitationSubmit(event)">
+    {{ citation_input(id="citation-input") }}
+</form>
+
 <div class="chart-toolbar">
-    <form id="citation-form" class="citation-form" onsubmit="return handleCitationSubmit(event)">
-        <div class="citation-row">
-            <input type="text" id="citation-input" class="citation-input" placeholder="e.g., 42 CFR § 2.2">
-            <button type="submit" class="citation-go">Go</button>
-        </div>
-    </form>
     <div id="breadcrumb-selector" class="breadcrumb-selector">
     <select id="select-title">
         <option value="all">All CFR Titles</option>

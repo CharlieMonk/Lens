@@ -24,9 +24,10 @@
     <p>{{ "{:,}".format(node.word_count or 0) }} words, {{ node.section_count or 0 }} sections</p>
 </hgroup>
 
-{% include "components/year_selector.html" %}
-
-{{ table_filter("structure-table", "0", "Filter...") }}
+<div class="filter-toolbar">
+    {{ table_filter("structure-table", "0", "Filter...") }}
+    {% include "components/year_selector.html" %}
+</div>
 {{ structure_table(node.children if node else [], title_num, year, breadcrumb[-1].path if breadcrumb else "", baseline_year=BASELINE_YEAR, table_id="structure-table") }}
 {% else %}
 <h1>Not Found</h1>

@@ -10,8 +10,9 @@
     <p>All 50 CFR Titles</p>
 </hgroup>
 
-{% include "components/year_selector.html" %}
-
-{{ table_filter("titles-table", "0,1", "Filter by number or name...") }}
+<div class="filter-toolbar">
+    {{ table_filter("titles-table", "0,1", "Filter by number or name...") }}
+    {% include "components/year_selector.html" %}
+</div>
 {{ titles_table(titles, year, BASELINE_YEAR, table_id="titles-table") }}
 {% endblock %}
