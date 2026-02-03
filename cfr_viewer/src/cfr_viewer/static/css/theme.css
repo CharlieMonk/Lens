@@ -256,10 +256,10 @@ tr.reserved {
 /* Action buttons in similar sections */
 .similar-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.25rem;
     margin-top: 0.35rem;
-    align-items: stretch;
+    align-items: center;
 }
 
 .similar-actions .action-btn {
@@ -387,19 +387,33 @@ tr.reserved {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-.similar-item .similar-meta {
-    float: right;
-    margin-left: 0.5rem;
-}
-
-.similar-item .similarity-badge {
-    display: inline-block;
+.similar-actions .similarity-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--pico-primary);
     color: var(--pico-primary-inverse);
-    padding: 0.15rem 0.4rem;
+    padding: 0 0.4rem;
     border-radius: 3px;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 600;
+    height: 1.5rem;
+    box-sizing: border-box;
+    margin-left: auto;
+}
+
+/* Responsive: consistent height for action row on all screen sizes */
+@media (max-width: 768px) {
+    .similar-actions {
+        align-items: center;
+    }
+    .similar-actions .action-btn,
+    .similar-actions .similarity-badge {
+        min-height: 2rem;
+        height: 2rem;
+        min-width: auto;
+        font-size: 0.75rem;
+    }
 }
 
 .no-similar-message,

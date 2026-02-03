@@ -25,10 +25,6 @@
             {% endif %}
         </div>
 
-        <div class="similar-meta">
-            <span class="similarity-badge">{{ "%.0f" | format(s.similarity * 100) }}%</span>
-        </div>
-
         {# Keywords if available (#9) #}
         {% if s.keywords %}
         <div class="similar-keywords">
@@ -38,7 +34,7 @@
         </div>
         {% endif %}
 
-        {# Action buttons (#10, #2) #}
+        {# Action buttons and similarity badge in a row #}
         <div class="similar-actions">
             <a href="{{ url_for('compare.compare_sections', title1=source_title, section1=source_section, title2=s.title, section2=s.section, year=year) }}"
                class="action-btn"
@@ -53,6 +49,7 @@
                     title="Preview section text">
                 &#x1F441; Preview
             </button>
+            <span class="similarity-badge">{{ "%.0f" | format(s.similarity * 100) }}%</span>
         </div>
 
         {# Preview area - loaded on demand (#2) #}
