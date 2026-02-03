@@ -114,12 +114,21 @@ def compare_sections():
     db = get_database()
     year = request.args.get("year", 0, type=int)
 
-    # Parse citation inputs
-    cite1 = request.args.get("cite1", "").strip()
-    cite2 = request.args.get("cite2", "").strip()
+    # Accept direct title/section params or citation strings
+    title1 = request.args.get("title1", type=int)
+    section1 = request.args.get("section1", "").strip() or None
+    title2 = request.args.get("title2", type=int)
+    section2 = request.args.get("section2", "").strip() or None
 
-    title1, section1 = parse_citation(cite1) if cite1 else (None, None)
-    title2, section2 = parse_citation(cite2) if cite2 else (None, None)
+    # Fall back to parsing citation strings if direct params not provided
+    if not (title1 and section1):
+        cite1 = request.args.get("cite1", "").strip()
+        if cite1:
+            title1, section1 = parse_citation(cite1)
+    if not (title2 and section2):
+        cite2 = request.args.get("cite2", "").strip()
+        if cite2:
+            title2, section2 = parse_citation(cite2)
 
     s1 = db.get_section(title1, section1, year) if title1 and section1 else None
     s2 = db.get_section(title2, section2, year) if title2 and section2 else None

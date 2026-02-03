@@ -39,8 +39,8 @@
     <tbody>
         {% for ch in chapter_stats %}
         <tr>
-            <td data-value="{{ ch.title }}"><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.title }}</a></td>
-            <td><a href="{{ url_for('browse.title', title_num=ch.title) }}#chapter-{{ ch.chapter }}">{{ ch.chapter }}</a></td>
+            <td data-value="{{ ch.title }}"><a href="{{ url_for('browse.title', title_num=ch.title, year=year) }}#chapter-{{ ch.chapter }}">{{ ch.title }}</a></td>
+            <td><a href="{{ url_for('browse.title', title_num=ch.title, year=year) }}#chapter-{{ ch.chapter }}">{{ ch.chapter }}</a></td>
             <td class="numeric" data-value="{{ ch.word_count }}">{{ "{:,}".format(ch.word_count) }}</td>
             {{ change_cell(ch.change_pct, show_new=true) }}
         </tr>
