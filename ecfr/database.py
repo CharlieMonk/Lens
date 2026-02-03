@@ -58,7 +58,7 @@ class ECFRDatabase:
         self._stats_cache_ttl = config.cache_stats_ttl
         self._structure_cache = {}
         self._structure_cache_time = 0
-        self._init_schema()
+        self._ensure_schema()
 
     @contextmanager
     def _connection(self):
@@ -72,6 +72,17 @@ class ECFRDatabase:
         with self._connection() as c: return c.cursor().execute(sql, params).fetchone()
     def _execute(self, sql, params=()):
         with self._connection() as c: c.cursor().execute(sql, params); c.commit()
+
+    def _ensure_schema(self):
+        """Initialize schema only if database is new or missing tables."""
+        if not self.db_path.exists() or self.db_path.stat().st_size == 0:
+            self._init_schema()
+            return
+        # Check if key table exists
+        with self._connection() as c:
+            result = c.cursor().execute("SELECT name FROM sqlite_master WHERE type='table' AND name='titles'").fetchone()
+        if not result:
+            self._init_schema()
 
     def _init_schema(self):
         with self._connection() as conn:
@@ -295,10 +306,6 @@ class ECFRDatabase:
                 for info in agency_lookup.get((title_num, ch), []): cur.execute("INSERT OR REPLACE INTO agency_word_counts VALUES (?,?,?,?,?)", (year, info["agency_slug"], title_num, ch, wc))
             c.commit()
 
-    def update_title_word_count(self, title_num, word_count, year=0):
-        """Update pre-aggregated word count for a title."""
-        self._execute("INSERT OR REPLACE INTO title_word_counts VALUES (?,?,?)", (year, title_num, word_count))
-
     def populate_title_word_counts(self):
         """Populate title_word_counts from existing section data (for migration)."""
         self._execute("DELETE FROM title_word_counts")
@@ -411,19 +418,19 @@ class ECFRDatabase:
         self._stats_cache_time = time.time()
         return value
 
-    def get_statistics_data(self, baseline_year: int = 2010):
+    def get_statistics_data(self, baseline_year: int = 2010, year: int = 0):
         """Get all statistics data in bulk with caching."""
-        cache_key = f"statistics_{baseline_year}"
+        cache_key = f"statistics_{baseline_year}_{year}"
         cached = self._get_cached_stats(cache_key)
         if cached:
             return cached
 
-        # Get all title word counts for current year (0) and baseline
-        title_counts_current = self.get_all_title_word_counts(0)
+        # Get all title word counts for selected year and baseline
+        title_counts_year = self.get_all_title_word_counts(year)
         title_counts_baseline = self.get_all_title_word_counts(baseline_year)
 
-        # Get all agency word counts for current year and baseline
-        agency_counts_current = self.get_agency_word_counts(0)
+        # Get all agency word counts for selected year and baseline
+        agency_counts_year = self.get_agency_word_counts(year)
         agency_counts_baseline = self.get_agency_word_counts(baseline_year)
 
         # Get agency details
@@ -433,8 +440,8 @@ class ECFRDatabase:
         title_meta = self.get_titles()
 
         result = {
-            "title_counts": {0: title_counts_current, baseline_year: title_counts_baseline},
-            "agency_counts": {0: agency_counts_current, baseline_year: agency_counts_baseline},
+            "title_counts": {year: title_counts_year, baseline_year: title_counts_baseline},
+            "agency_counts": {year: agency_counts_year, baseline_year: agency_counts_baseline},
             "agency_details": agency_details,
             "title_meta": title_meta,
         }

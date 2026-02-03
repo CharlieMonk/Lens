@@ -7,7 +7,7 @@
 {% block content %}
 <nav aria-label="breadcrumb">
     <ul>
-        <li><a href="{{ url_for('agencies.index') }}">Agencies</a></li>
+        <li><a href="{{ url_for('agencies.index', year=year) }}">Agencies</a></li>
         <li>{{ agency.name if agency else "Not Found" }}</li>
     </ul>
 </nav>
@@ -23,14 +23,17 @@
 <h2>CFR Chapters</h2>
 
 {% if chapter_stats %}
-{{ table_filter("chapters-table", "0,1", "Filter by title or chapter...") }}
+<div class="filter-toolbar">
+    {{ table_filter("chapters-table", "0,1", "Filter by title or chapter...") }}
+    {% include "components/year_selector.html" %}
+</div>
 <table class="striped sortable" id="chapters-table">
     <thead>
         <tr>
             <th scope="col" data-sort="number">Title</th>
             <th scope="col" data-sort="string">Chapter</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number">Since {{ BASELINE_YEAR }}</th>
+            <th scope="col" class="numeric" data-sort="number">{{ "To" if year and year < BASELINE_YEAR else "Since" }} {{ BASELINE_YEAR }}</th>
         </tr>
     </thead>
     <tbody>

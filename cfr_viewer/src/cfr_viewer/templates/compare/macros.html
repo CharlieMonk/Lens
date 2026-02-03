@@ -13,10 +13,10 @@
 
 {% macro banner(icon, title, message, hint=None, class="") %}
 <article class="{{ class }}-banner">
-    <div class="banner-icon">{{ icon }}</div>
+    <div class="banner-icon">{{ icon | safe }}</div>
     <div class="banner-content">
         <strong>{{ title }}</strong>
-        <p>{{ message }}</p>
+        <p>{{ message | safe }}</p>
         {% if hint %}
         <p class="banner-hint">{{ hint }}</p>
         {% endif %}

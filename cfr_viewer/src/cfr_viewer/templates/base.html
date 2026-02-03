@@ -21,10 +21,18 @@
         </ul>
         <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('nav > ul:last-child').classList.toggle('nav-open')">☰</button>
         <ul>
-            <li><a href="{{ url_for('browse.titles') }}" {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}class="nav-active"{% endif %}>Titles</a></li>
-            <li><a href="{{ url_for('agencies.index') }}" {% if request.endpoint and request.endpoint.startswith('agencies') %}class="nav-active"{% endif %}>Agencies</a></li>
-            <li><a href="{{ url_for('compare.index') }}" {% if request.endpoint and request.endpoint.startswith('compare') %}class="nav-active"{% endif %}>Compare</a></li>
-            <li><a href="{{ url_for('chart.index') }}" {% if request.endpoint and request.endpoint.startswith('chart') %}class="nav-active"{% endif %}>Trends</a></li>
+            <li><button type="button" class="nav-link {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}nav-active{% endif %}" data-href="{{ url_for('browse.titles') }}">Titles</button></li>
+            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('agencies') %}nav-active{% endif %}" data-href="{{ url_for('agencies.index') }}">Agencies</button></li>
+            <li class="nav-dropdown" data-dropdown>
+                <button type="button" class="nav-dropdown-toggle {% if request.endpoint and request.endpoint.startswith('compare') %}nav-active{% endif %}" aria-expanded="false" aria-haspopup="true">
+                    <span>Compare</span> <span class="dropdown-arrow">▾</span>
+                </button>
+                <ul class="nav-dropdown-menu" role="menu">
+                    <li role="none"><a href="{{ url_for('compare.index') }}" role="menuitem" {% if request.endpoint == 'compare.index' or request.endpoint == 'compare.diff' %}class="dropdown-active"{% endif %}>Historical</a></li>
+                    <li role="none"><a href="{{ url_for('compare.compare_sections') }}" role="menuitem" {% if request.endpoint == 'compare.compare_sections' %}class="dropdown-active"{% endif %}>Cross-Section</a></li>
+                </ul>
+            </li>
+            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('chart') %}nav-active{% endif %}" data-href="{{ url_for('chart.index') }}">Trends</button></li>
         </ul>
     </nav>
 

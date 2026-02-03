@@ -60,8 +60,6 @@ class ECFRFetcher:
             self.db.save_sections(sections, year=year)
             word_count = sum(s.get("word_count", 0) for s in sections)
             del sections  # Free sections memory after saving
-
-            self.db.update_title_word_count(title_num, word_count, year=year)
             if agency_lookup and chapter_wc:
                 self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
             return True, f"{size:,} bytes", word_count
@@ -147,10 +145,8 @@ class ECFRFetcher:
                     volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
                     if volumes:
                         size, sections, chapter_wc = extractor.extract_govinfo_volumes(volumes, title_num)
-                        word_count = sum(s.get("word_count", 0) for s in sections) if sections else 0
                         if sections:
                             self.db.save_sections(sections, year=year)
-                        self.db.update_title_word_count(title_num, word_count, year=year)
                         if agency_lookup and chapter_wc:
                             self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
                         del volumes, sections  # Free memory immediately
@@ -159,10 +155,8 @@ class ECFRFetcher:
                     date = f"{year}-01-01"
                     source, xml = await self.client.fetch_title_racing(session, title_num, date)
                     size, sections, chapter_wc = extractor.extract(xml, title_num)
-                    word_count = sum(s.get("word_count", 0) for s in sections) if sections else 0
                     if sections:
                         self.db.save_sections(sections, year=year)
-                    self.db.update_title_word_count(title_num, word_count, year=year)
                     if agency_lookup and chapter_wc:
                         self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
                     return title_num, True, f"{size:,} bytes ({source})"
@@ -273,6 +267,11 @@ class ECFRFetcher:
         else:
             print("   All titles have section data")
 
+        # Refresh derived tables
+        if stale or missing:
+            print("\n4. Refreshing title word counts...")
+            self.db.populate_title_word_counts()
+
         print("\n" + "=" * 50 + "\nSync complete\n" + "=" * 50)
         return results
 
@@ -328,6 +327,10 @@ def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
         else:
             print(f"Historical sections ({year}): fetching...", flush=True)
             fetcher.fetch_historical([year])
+
+    # Populate derived tables from sections data
+    print("Populating title word counts...", flush=True)
+    db.populate_title_word_counts()
 
     print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50, flush=True)
     return 0

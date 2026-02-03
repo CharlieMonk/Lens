@@ -1,16 +1,19 @@
 """Chart routes for visualizing CFR word count trends over time."""
+from datetime import datetime
 from flask import Blueprint, render_template, jsonify, request
 from .services import get_database
 
 chart_bp = Blueprint("chart", __name__)
+
+CURRENT_YEAR = datetime.now().year
 
 
 @chart_bp.route("/")
 def index():
     db = get_database()
     titles = db.get_titles()
-    years = [y for y in db.list_years() if y > 0]
-    return render_template("chart/index.html", titles=titles, years=years)
+    historical_years = sorted([y for y in db.list_years() if y > 0])
+    return render_template("chart/index.html", titles=titles, historical_years=historical_years, current_year=CURRENT_YEAR)
 
 
 @chart_bp.route("/data/total")
@@ -18,7 +21,12 @@ def data_total():
     """Return total CFR word count across all titles by year as JSON."""
     db = get_database()
     counts = db.get_total_word_counts_by_year()
-    result = {str(y): c for y, c in counts.items() if y > 0}
+    result = {}
+    for y, c in counts.items():
+        if y == 0:
+            result[str(CURRENT_YEAR)] = c
+        elif y > 0:
+            result[str(y)] = c
     return jsonify(result)
 
 
@@ -28,8 +36,12 @@ def data(title_num: int, path: str = ""):
     """Return word count data for a node across all years as JSON."""
     db = get_database()
     counts = db.get_node_word_counts_by_year(title_num, path)
-    # Convert year 0 to current year label, filter out year 0 for chart
-    result = {str(y): c for y, c in counts.items() if y > 0}
+    result = {}
+    for y, c in counts.items():
+        if y == 0:
+            result[str(CURRENT_YEAR)] = c
+        elif y > 0:
+            result[str(y)] = c
     return jsonify(result)
 
 

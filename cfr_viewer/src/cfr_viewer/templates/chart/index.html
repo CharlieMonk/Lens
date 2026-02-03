@@ -5,6 +5,7 @@
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 <style>
     .chart-container {
         position: relative;
@@ -223,13 +224,14 @@ const ctx = document.getElementById('wordCountChart').getContext('2d');
 
 let chart = null;
 let currentData = {};
+const defined_years = {{ historical_years | tojson }};
+const current_year = {{ current_year }};
 
 // Initialize chart
 function initChart() {
     chart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: [],
             datasets: [{
                 label: 'Word Count',
                 data: [],
@@ -252,15 +254,38 @@ function initChart() {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
+                        title: ctx => ctx[0].raw.x,
                         label: ctx => ctx.parsed.y.toLocaleString() + ' words'
                     }
                 }
             },
             scales: {
+                x: {
+                    type: 'linear',
+                    min: Math.min(...defined_years) - 1,
+                    max: current_year + 1,
+                    ticks: {
+                        callback: v => defined_years.includes(v) ? v : '',
+                        stepSize: 1
+                    },
+                    afterBuildTicks: axis => {
+                        axis.ticks = defined_years.sort((a,b) => a-b).map(y => ({ value: y }));
+                    },
+                    title: {
+                        display: true,
+                        text: 'Year',
+                        font: { size: 14 }
+                    }
+                },
                 y: {
                     beginAtZero: true,
                     ticks: {
                         callback: v => v >= 1000000 ? (v/1000000).toFixed(1) + 'M' : v >= 1000 ? (v/1000).toFixed(0) + 'K' : v
+                    },
+                    title: {
+                        display: true,
+                        text: 'Word Count',
+                        font: { size: 14 }
                     }
                 }
             }
@@ -283,7 +308,11 @@ function buildPath() {
 
 // Update statistics card
 function updateStats(data) {
-    const years = Object.keys(data).sort((a,b) => parseInt(a) - parseInt(b));
+    // Include all years > 0
+    const years = Object.keys(data)
+        .map(y => parseInt(y))
+        .filter(y => y > 0)
+        .sort((a,b) => a - b);
     if (years.length < 2) {
         statsCard.classList.add('hidden');
         return;
@@ -291,8 +320,8 @@ function updateStats(data) {
 
     const firstYear = years[0];
     const lastYear = years[years.length - 1];
-    const firstVal = data[firstYear];
-    const lastVal = data[lastYear];
+    const firstVal = data[firstYear] || data[String(firstYear)];
+    const lastVal = data[lastYear] || data[String(lastYear)];
     const change = ((lastVal - firstVal) / firstVal) * 100;
     const numYears = parseInt(lastYear) - parseInt(firstYear);
     const cagr = numYears > 0 ? (Math.pow(lastVal / firstVal, 1/numYears) - 1) * 100 : 0;
@@ -326,11 +355,19 @@ function updateStats(data) {
 // Update chart with data
 function updateChart(data) {
     currentData = data;
-    const years = Object.keys(data).sort((a,b) => parseInt(a) - parseInt(b));
-    const counts = years.map(y => data[y]);
+    // Include all years, sort numerically
+    const years = Object.keys(data)
+        .map(y => parseInt(y))
+        .filter(y => y > 0)
+        .sort((a,b) => a - b);
 
-    chart.data.labels = years;
-    chart.data.datasets[0].data = counts;
+    // Convert to {x: year, y: count} format for linear scale
+    const chartData = years.map(y => ({
+        x: y,
+        y: data[y] || data[String(y)]
+    }));
+
+    chart.data.datasets[0].data = chartData;
 
     // Apply zoom setting
     chart.options.scales.y.beginAtZero = !zoomToggle.checked;

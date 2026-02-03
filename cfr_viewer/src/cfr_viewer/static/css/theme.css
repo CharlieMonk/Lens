@@ -685,6 +685,61 @@ footer {
     margin-bottom: 0.25rem;
 }
 
+/* Sections compare toolbar */
+.sections-compare-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 1rem;
+    align-items: end;
+}
+
+.sections-cite-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.sections-cite-field label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--pico-muted-color);
+    margin: 0;
+}
+
+.sections-cite-field .citation-input {
+    width: 100%;
+    font-size: 1.25rem;
+    font-weight: bold;
+    padding: 0.5rem 0.75rem;
+    border: 2px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-background-color);
+}
+
+.sections-cite-field .citation-input:focus {
+    border-color: var(--pico-primary);
+    box-shadow: 0 0 0 3px var(--pico-primary-focus);
+    outline: none;
+}
+
+.sections-compare-go {
+    height: calc(1.25rem * 1.5 + 1rem + 4px);
+    padding: 0 1.5rem;
+    font-size: 1rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .sections-compare-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .sections-compare-go {
+        width: 100%;
+    }
+}
+
 .compare-controls {
     display: flex;
     align-items: center;
@@ -757,6 +812,115 @@ nav ul li a.nav-active {
     text-underline-offset: 4px;
 }
 
+/* Navigation buttons */
+.nav-link,
+.nav-dropdown-toggle {
+    background: none;
+    border: none;
+    color: var(--pico-primary);
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+}
+
+.nav-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.nav-link.nav-active {
+    font-weight: bold;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+/* Navigation dropdown */
+.nav-dropdown {
+    position: relative;
+}
+
+.nav-dropdown-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.nav-dropdown-toggle:hover span:first-child {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.nav-dropdown-toggle.nav-active span:first-child {
+    font-weight: bold;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.dropdown-arrow {
+    font-size: 0.7em;
+}
+
+.nav-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--pico-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    min-width: 180px;
+    padding: 0.75rem 0;
+    margin: 0;
+    z-index: 1000;
+    flex-direction: column;
+    list-style: none;
+}
+
+.nav-dropdown.open .nav-dropdown-menu {
+    display: flex;
+}
+
+.nav-dropdown-menu li {
+    padding: 0.6rem;
+}
+
+.nav-dropdown-menu li a {
+    display: block;
+    padding: 0.2rem 1rem;
+    white-space: nowrap;
+    color: var(--pico-color);
+    text-decoration: none;
+    font-size: 0.95rem;
+}
+
+.nav-dropdown-menu li a:hover,
+.nav-dropdown-menu li a:focus {
+    background: var(--pico-primary-focus);
+    color: var(--pico-primary);
+    outline: none;
+}
+
+.nav-dropdown-menu li a.dropdown-active {
+    font-weight: bold;
+    color: var(--pico-primary);
+    background: var(--pico-primary-focus);
+}
+
+/* Focus visible for keyboard navigation */
+.nav-dropdown-toggle:focus-visible {
+    outline: 2px solid var(--pico-primary);
+    outline-offset: 2px;
+}
+
+.nav-dropdown-menu li a:focus-visible {
+    outline: 2px solid var(--pico-primary);
+    outline-offset: -2px;
+}
+
 /* Mobile hamburger menu */
 .nav-toggle {
     display: none;
@@ -795,6 +959,41 @@ nav ul li a.nav-active {
     nav > ul:last-child li a {
         display: block;
         padding: 0.5rem 0;
+    }
+
+    /* Mobile dropdown - show inline */
+    .nav-dropdown {
+        width: 100%;
+    }
+
+    .nav-dropdown-toggle {
+        width: 100%;
+        text-align: left;
+        padding: 0.5rem 0;
+    }
+
+    .nav-dropdown-menu {
+        position: static;
+        transform: none;
+        box-shadow: none;
+        border: none;
+        background: transparent;
+        padding: 0;
+        padding-left: 1rem;
+        display: none;
+    }
+
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: flex;
+    }
+
+    .nav-dropdown-menu li a {
+        padding: 0.5rem 0;
+    }
+
+    .nav-dropdown-menu li a:hover,
+    .nav-dropdown-menu li a:focus {
+        background: transparent;
     }
 }
 
@@ -1297,6 +1496,7 @@ table tbody tr {
     }
 }
 
+
 /* ===== Compare Page - Edge Case Banners ===== */
 /* Base banner styles */
 .no-changes-banner,
@@ -1381,6 +1581,34 @@ table tbody tr {
 
 .not-found-banner .banner-content strong {
     color: #b71c1c;
+}
+
+/* Removed banner - green to match diff legend (regulatory reduction) */
+.removed-banner {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+}
+
+.removed-banner .banner-icon {
+    color: #2e7d32;
+}
+
+.removed-banner .banner-content strong {
+    color: #1b5e20;
+}
+
+/* Added banner - pink to match diff legend (regulatory growth) */
+.added-banner {
+    background: #fce4ec;
+    border: 1px solid #f48fb1;
+}
+
+.added-banner .banner-icon {
+    color: #c2185b;
+}
+
+.added-banner .banner-content strong {
+    color: #ad1457;
 }
 
 /* Single version display (when no diff needed) */
@@ -1472,21 +1700,6 @@ table tbody tr {
 
 .added-banner .banner-content strong {
     color: #0d47a1;
-}
-
-/* Removed banner - orange/warning */
-.removed-banner {
-    background: #fff3e0;
-    border: 1px solid #ffcc80;
-}
-
-.removed-banner .banner-icon {
-    color: #e65100;
-    font-weight: bold;
-}
-
-.removed-banner .banner-content strong {
-    color: #bf360c;
 }
 
 /* ===== Empty Section Styling ===== */
@@ -1601,8 +1814,8 @@ table tbody tr {
     }
 
     .removed-banner {
-        background: rgba(230, 81, 0, 0.15);
-        border-color: rgba(230, 81, 0, 0.4);
+        background: rgba(46, 125, 50, 0.15);
+        border-color: rgba(46, 125, 50, 0.4);
     }
 
     .no-changes-banner .banner-content strong {
@@ -1626,7 +1839,7 @@ table tbody tr {
     }
 
     .removed-banner .banner-content strong {
-        color: #ffcc80;
+        color: #81c784;
     }
 
     .reserved-badge {

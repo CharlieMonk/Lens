@@ -1,5 +1,5 @@
 {# Macro for rendering a table of agencies with word counts #}
-{% macro agencies_table(agencies, baseline_year=2010, table_id="") %}
+{% macro agencies_table(agencies, baseline_year=2010, table_id="", year=0) %}
 {% from "components/change_cell.html" import change_cell %}
 <table class="sortable"{% if table_id %} id="{{ table_id }}"{% endif %}>
     <thead>
@@ -7,14 +7,14 @@
             <th scope="col" data-sort="string" style="width: 9rem">Abbreviation</th>
             <th scope="col" data-sort="string">Agency</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number">Since {{ baseline_year }}</th>
+            <th scope="col" class="numeric" data-sort="number">{{ "To" if year and year < baseline_year else "Since" }} {{ baseline_year }}</th>
         </tr>
     </thead>
     <tbody>
         {% for agency in agencies %}
         <tr>
-            <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
-            <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
+            <td><a href="{{ url_for('agencies.detail', slug=agency.slug, year=year) }}">{{ agency.abbreviation }}</a></td>
+            <td><a href="{{ url_for('agencies.detail', slug=agency.slug, year=year) }}">{{ agency.name }}</a></td>
             <td class="numeric" data-value="{{ agency.word_count }}">{{ "{:,}".format(agency.word_count) }}</td>
             {{ change_cell(agency.change_pct) }}
         </tr>

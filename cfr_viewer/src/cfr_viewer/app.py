@@ -16,7 +16,7 @@ from .services import BASELINE_YEAR
 
 def create_app(db_path: str | None = None):
     app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"), static_folder=str(Path(__file__).parent / "static"))
-    app.ecfr_database = ECFRDatabase(db_path or Path(__file__).parent.parent.parent.parent / "ecfr" / "ecfr_data" / "ecfr.db")
+    app.ecfr_database = ECFRDatabase(db_path)  # Uses config.database_path if db_path is None
     app.jinja_env.filters["strip_section_prefix"] = lambda h, s: re.sub(rf"^§\s*{re.escape(s)}\s+", "", h) if h else h
     app.jinja_env.globals["BASELINE_YEAR"] = BASELINE_YEAR
     app.jinja_env.globals["now"] = datetime.now

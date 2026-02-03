@@ -112,26 +112,19 @@ def diff(title_num: int, section: str):
 def compare_sections():
     """Compare two different sections side by side."""
     db = get_database()
-    title1 = request.args.get("title1", type=int)
-    section1 = request.args.get("section1", "")
-    title2 = request.args.get("title2", type=int)
-    section2 = request.args.get("section2", "")
     year = request.args.get("year", 0, type=int)
 
-    if not all([title1, section1, title2, section2]):
-        return redirect(url_for("compare.index"))
+    # Parse citation inputs
+    cite1 = request.args.get("cite1", "").strip()
+    cite2 = request.args.get("cite2", "").strip()
 
-    s1 = db.get_section(title1, section1, year)
-    s2 = db.get_section(title2, section2, year)
+    title1, section1 = parse_citation(cite1) if cite1 else (None, None)
+    title2, section2 = parse_citation(cite2) if cite2 else (None, None)
 
-    # Generate side-by-side diff
-    old_html, new_html = None, None
-    has_changes = s1 and s2 and s1.get("text", "").split() != s2.get("text", "").split()
-    if has_changes:
-        old_html, new_html = side_by_side_diff(s1.get("text", ""), s2.get("text", ""))
+    s1 = db.get_section(title1, section1, year) if title1 and section1 else None
+    s2 = db.get_section(title2, section2, year) if title2 and section2 else None
 
     return render_template("compare/sections.html",
         title1=title1, section1=section1, s1=s1,
         title2=title2, section2=section2, s2=s2,
-        year=year, years=db.list_years(),
-        old_html=old_html, new_html=new_html, has_changes=has_changes)
+        year=year)

@@ -65,11 +65,13 @@ class Config:
     # Database
     @property
     def database_path(self):
-        return self._get("database", "path", default="ecfr/ecfr_data/ecfr.db", env_key="DATABASE_PATH")
+        path = self._get("database", "path", default="~/ecfr_data/ecfr.db", env_key="DATABASE_PATH")
+        return Path(path).expanduser()
 
     @property
     def output_dir(self):
-        return self._get("database", "output_dir", default="ecfr/ecfr_data", env_key="OUTPUT_DIR")
+        path = self._get("database", "output_dir", default="~/ecfr_data", env_key="OUTPUT_DIR")
+        return Path(path).expanduser()
 
     # API Endpoints
     @property

@@ -1,6 +1,6 @@
-{% macro citation_input(name="citation", value="", placeholder="e.g., 42 CFR 2.2", id=none) %}
+{% macro citation_input(name="citation", value="", placeholder="e.g., 42 CFR 2.2", id=none, show_button=true) %}
 <div class="citation-row">
     <input type="text" {% if id %}id="{{ id }}"{% endif %} name="{{ name }}" value="{{ value }}" class="citation-input" placeholder="{{ placeholder }}">
-    <button type="submit" class="citation-go">Go</button>
+    {% if show_button %}<button type="submit" class="citation-go">Go</button>{% endif %}
 </div>
 {% endmacro %}

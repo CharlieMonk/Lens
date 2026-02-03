@@ -21,8 +21,8 @@
 # Database
 # =============================================================================
 database:
-  path: "ecfr/ecfr_data/ecfr.db"
-  output_dir: "ecfr/ecfr_data"
+  path: "~/ecfr_data/ecfr.db"
+  output_dir: "~/ecfr_data"
 
 # =============================================================================
 # API Endpoints

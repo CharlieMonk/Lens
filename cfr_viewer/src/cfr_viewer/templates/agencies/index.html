@@ -10,6 +10,10 @@
     <p>Federal agencies ranked by regulatory footprint</p>
 </hgroup>
 
-{{ table_filter("agencies-table", "0,1", "Filter by abbreviation or name...") }}
-{{ agencies_table(agencies, BASELINE_YEAR, table_id="agencies-table") }}
+<div class="filter-toolbar">
+    {{ table_filter("agencies-table", "0,1", "Filter by abbreviation or name...") }}
+    {% include "components/year_selector.html" %}
+</div>
+
+{{ agencies_table(agencies, BASELINE_YEAR, table_id="agencies-table", year=year) }}
 {% endblock %}

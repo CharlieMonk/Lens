@@ -85,14 +85,15 @@ class TestCompareRoutes:
 
     def test_compare_sections(self, client):
         """Test compare two different sections."""
-        response = client.get("/compare/sections?title1=1&section1=1.1&title2=1&section2=1.2")
+        response = client.get("/compare/sections?cite1=1+CFR+1.1&cite2=1+CFR+1.2")
         assert response.status_code == 200
         assert b"Compare Sections" in response.data
 
     def test_compare_sections_missing_params(self, client):
-        """Test compare sections redirects with missing params."""
+        """Test compare sections shows examples when params missing."""
         response = client.get("/compare/sections")
-        assert response.status_code == 302  # Redirect to compare index
+        assert response.status_code == 200
+        assert b"Compare two different CFR sections" in response.data
 
 
 class TestApiRoutes:
