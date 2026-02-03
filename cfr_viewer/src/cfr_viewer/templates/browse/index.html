@@ -103,8 +103,9 @@
             <div class="stat-value" data-count="{{ aggregate.total_agencies }}">0</div>
             <div class="stat-label">Agencies</div>
         </div>
-        <div class="stat-card {% if aggregate.change_pct and aggregate.change_pct > 0 %}stat-increase{% elif aggregate.change_pct and aggregate.change_pct < 0 %}stat-decrease{% endif %}">
-            <div class="stat-value"{% if aggregate.change_pct %} data-count="{{ aggregate.change_pct }}" data-prefix="{% if aggregate.change_pct > 0 %}+{% endif %}" data-suffix="%" data-decimals="1"{% endif %}>{% if aggregate.change_pct %}0{% else %}—{% endif %}</div>
+        {% set change_rounded = aggregate.change_pct|round(1) if aggregate.change_pct else 0 %}
+        <div class="stat-card {% if change_rounded > 0 %}stat-increase{% elif change_rounded < 0 %}stat-decrease{% endif %}">
+            <div class="stat-value"{% if aggregate.change_pct %} data-count="{{ aggregate.change_pct|abs }}" data-prefix="{% if change_rounded > 0 %}+{% elif change_rounded < 0 %}−{% endif %}" data-suffix="%" data-decimals="1"{% endif %}>{% if aggregate.change_pct %}0{% else %}—{% endif %}</div>
             <div class="stat-label">Since {{ aggregate.baseline_year }}</div>
         </div>
     </div>
