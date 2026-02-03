@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "components/agencies_table.html" import agencies_table %}
+{% from "components/table_filter.html" import table_filter %}
+
+{% block title %}Agencies - Lens{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Agencies</h1>
+    <p>Federal agencies ranked by regulatory footprint</p>
+</hgroup>
+
+<div class="filter-toolbar">
+    {{ table_filter("agencies-table", "0,1", "Filter by abbreviation or name...") }}
+    {% include "components/year_selector.html" %}
+</div>
+
+{{ agencies_table(agencies, BASELINE_YEAR, table_id="agencies-table", year=year) }}
+{% endblock %}

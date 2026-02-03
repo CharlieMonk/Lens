@@ -1,15 +1,17 @@
 {# Macro for rendering structure children as a table #}
-{# base_path: the current path prefix (e.g., "chapter/I" when viewing a chapter) #}
-{% macro structure_table(children, title_num, year, base_path="", baseline_year=2010) %}
+{% macro structure_table(children, title_num, year, base_path="", baseline_year=2010, table_id="") %}
 {% from "components/change_cell.html" import change_cell %}
+{% from "components/header_tooltip.html" import header_tooltip %}
+{% set is_before = year and year < baseline_year %}
+{% set change_label = ("To" if is_before else "Since") ~ " " ~ baseline_year %}
 {% if children %}
-<table class="sortable">
+<table class="sortable"{% if table_id %} id="{{ table_id }}"{% endif %}>
     <thead>
         <tr>
             <th scope="col" data-sort="string">Name</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
             <th scope="col" class="numeric" data-sort="number">Elements</th>
-            <th scope="col" class="numeric" data-sort="number">{% if year and year < baseline_year %}To{% else %}Since{% endif %} {{ baseline_year }}</th>
+            <th scope="col" class="numeric" data-sort="number">{{ header_tooltip(change_label, "Word count change " ~ ("to" if is_before else "since") ~ " " ~ baseline_year) }}</th>
         </tr>
     </thead>
     <tbody>
@@ -20,9 +22,11 @@
             <td><a href="{{ url_for('browse.section', title_num=title_num, section=node.identifier, year=year) }}">{% if node.heading %}{{ node.heading }}{% else %}&sect; {{ node.identifier }}{% endif %}</a></td>
             <td class="numeric" data-value="{{ node.word_count or 0 }}">{{ "{:,}".format(node.word_count or 0) }}</td>
             <td class="numeric">—</td>
-            {{ change_cell(node.change_pct, show_new=true) }}
+            {{ change_cell(node.change_pct, show_new=true, is_before_baseline=is_before) }}
             {% else %}
-            {% set label %}{% if node.type == 'subtitle' %}{{ node.identifier }}{% elif node.type == 'chapter' %}Chapter {{ node.identifier }}{% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}{% elif node.type == 'part' %}Part {{ node.identifier }}{% elif node.type == 'subpart' %}Subpart {{ node.identifier }}{% endif %}{% endset %}
+            {% set prefix_map = {'subtitle': 'Subtitle', 'chapter': 'Chapter', 'subchapter': 'Subchapter', 'part': 'Part', 'subpart': 'Subpart'} %}
+            {% set prefix = prefix_map.get(node.type, '') %}
+            {% set label = node.identifier if node.identifier.upper().startswith(prefix.upper()) else (prefix ~ ' ' ~ node.identifier if prefix else node.identifier) %}
             <td>
                 {% if node.reserved %}
                 <span class="reserved-label">{{ label }}</span> <span class="reserved-tag">[Reserved]</span>
@@ -32,7 +36,7 @@
             </td>
             <td class="numeric" data-value="{{ node.word_count or 0 }}">{{ "{:,}".format(node.word_count or 0) }}</td>
             <td class="numeric" data-value="{{ node.section_count or 0 }}">{{ "{:,}".format(node.section_count or 0) }}</td>
-            {{ change_cell(node.change_pct, show_new=true) }}
+            {{ change_cell(node.change_pct, show_new=true, is_before_baseline=is_before) }}
             {% endif %}
         </tr>
         {% endfor %}

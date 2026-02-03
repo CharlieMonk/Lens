@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Sections - Lens{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('compare.index') }}">Compare</a></li>
+        <li>Section Comparison</li>
+    </ul>
+</nav>
+
+<form method="get" action="{{ url_for('compare.compare_sections') }}" class="compare-form sections-compare-form">
+    <div class="sections-compare-toolbar">
+        <div class="sections-cite-field">
+            <label for="cite1">Section 1</label>
+            <input type="text" id="cite1" name="cite1" class="citation-input"
+                   value="{{ title1 ~ ' CFR § ' ~ section1 if title1 and section1 else '' }}"
+                   placeholder="e.g., 29 CFR 1910.134">
+        </div>
+        <div class="sections-cite-field">
+            <label for="cite2">Section 2</label>
+            <input type="text" id="cite2" name="cite2" class="citation-input"
+                   value="{{ title2 ~ ' CFR § ' ~ section2 if title2 and section2 else '' }}"
+                   placeholder="e.g., 42 CFR 84.3">
+        </div>
+        <button type="submit" class="sections-compare-go">Compare</button>
+    </div>
+    <p class="citation-help">
+        Compare two different CFR sections side by side. Format: <code>29 CFR 1910.134</code>
+    </p>
+</form>
+
+{% if s1 and s2 %}
+<div class="grid compare-versions">
+    <article class="version-card">
+        <header>
+            <div class="version-header-left">
+                <strong><a href="{{ url_for('browse.section', title_num=title1, section=section1, year=year) }}">{{ title1 }} CFR &sect; {{ section1 }}</a></strong>
+                <span class="word-count">{{ "{:,}".format(s1.word_count) if s1.word_count else "&mdash;" | safe }} words</span>
+            </div>
+        </header>
+        {% if s1.heading %}
+        <div class="section-heading-inline">{{ s1.heading }}</div>
+        {% endif %}
+        <div class="section-text">{{ s1.text | safe }}</div>
+    </article>
+
+    <article class="version-card">
+        <header>
+            <div class="version-header-left">
+                <strong><a href="{{ url_for('browse.section', title_num=title2, section=section2, year=year) }}">{{ title2 }} CFR &sect; {{ section2 }}</a></strong>
+                <span class="word-count">{{ "{:,}".format(s2.word_count) if s2.word_count else "&mdash;" | safe }} words</span>
+            </div>
+        </header>
+        {% if s2.heading %}
+        <div class="section-heading-inline">{{ s2.heading }}</div>
+        {% endif %}
+        <div class="section-text">{{ s2.text | safe }}</div>
+    </article>
+</div>
+
+{% elif s1 or s2 %}
+{% set found = s1 or s2 %}
+{% set found_title = title1 if s1 else title2 %}
+{% set found_section = section1 if s1 else section2 %}
+{% set missing_title = title2 if s1 else title1 %}
+{% set missing_section = section2 if s1 else section1 %}
+
+<article class="partial-data-banner">
+    <div class="banner-icon">!</div>
+    <div class="banner-content">
+        <strong>Section Not Found</strong>
+        <p>{{ missing_title }} CFR &sect; {{ missing_section }} could not be found.</p>
+    </div>
+</article>
+
+<article class="version-card single-version">
+    <header>
+        <div class="version-header-left">
+            <strong><a href="{{ url_for('browse.section', title_num=found_title, section=found_section, year=year) }}">{{ found_title }} CFR &sect; {{ found_section }}</a></strong>
+            <span class="word-count">{{ "{:,}".format(found.word_count) if found.word_count else "&mdash;" | safe }} words</span>
+        </div>
+    </header>
+    {% if found.heading %}
+    <div class="section-heading-inline">{{ found.heading }}</div>
+    {% endif %}
+    <div class="section-text">{{ found.text | safe }}</div>
+</article>
+
+{% elif title1 and section1 and title2 and section2 %}
+<article class="not-found-banner">
+    <div class="banner-icon">&#x2717;</div>
+    <div class="banner-content">
+        <strong>Sections Not Found</strong>
+        <p>Neither section could be found in the database.</p>
+    </div>
+</article>
+
+{% else %}
+<div class="compare-examples-grid">
+    <a href="{{ url_for('compare.compare_sections', cite1='29 CFR 1910.134', cite2='42 CFR 84.3') }}" class="example-card">
+        <div class="citation">29 CFR 1910.134 vs 42 CFR 84.3</div>
+        <div class="description">OSHA Respiratory vs NIOSH Respirators</div>
+    </a>
+    <a href="{{ url_for('compare.compare_sections', cite1='29 CFR 1910.95', cite2='29 CFR 1926.52') }}" class="example-card">
+        <div class="citation">29 CFR 1910.95 vs 1926.52</div>
+        <div class="description">Noise Exposure: General vs Construction</div>
+    </a>
+    <a href="{{ url_for('compare.compare_sections', cite1='40 CFR 60.1', cite2='40 CFR 61.01') }}" class="example-card">
+        <div class="citation">40 CFR 60.1 vs 61.01</div>
+        <div class="description">EPA Air Standards: New vs Hazardous</div>
+    </a>
+    <a href="{{ url_for('compare.compare_sections', cite1='21 CFR 314.50', cite2='21 CFR 601.2') }}" class="example-card">
+        <div class="citation">21 CFR 314.50 vs 601.2</div>
+        <div class="description">FDA Drug vs Biologics Applications</div>
+    </a>
+</div>
+{% endif %}
+{% endblock %}

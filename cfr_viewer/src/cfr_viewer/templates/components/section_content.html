@@ -1,4 +1,8 @@
 {# Partial template for section content - used by HTMX navigation #}
+{# Helper macros for empty/reserved sections #}
+{% set is_reserved = section and section.heading and 'reserved' in section.heading.lower() %}
+{% set is_empty = section and (section.word_count or 0) == 0 %}
+
 <nav aria-label="breadcrumb">
     <ul>
         <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
@@ -9,12 +13,15 @@
 
 {% if section %}
 <hgroup id="section-heading">
-    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}</h1>
+    <h1>&sect; {{ section.section }}{% if section.heading %}: {{ section.heading | strip_section_prefix(section.section) }}{% endif %}{% if is_reserved %} <span class="reserved-badge">[Reserved]</span>{% endif %}</h1>
     <p>Title {{ title_num }}: {{ title_name }}</p>
 </hgroup>
 
 <div class="section-controls">
     {% include "components/year_selector.html" %}
+    <button type="button" class="outline secondary copy-citation" data-citation="{{ title_num }} CFR § {{ section.section }}" title="Copy citation to clipboard">
+        Copy Citation
+    </button>
     <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="outline secondary">
         Compare Years
     </a>
@@ -48,28 +55,65 @@
 {% endmacro %}
 
 <div id="section-layout" class="section-layout">
-    <article>
+    <article{% if is_empty %} class="empty-section"{% endif %}>
         <header>
             {{ section_nav() }}
         </header>
+        {% if is_empty %}
+        <div class="empty-section-content">
+            <div class="empty-icon">&mdash;</div>
+            <strong>No Content</strong>
+            <p>This section contains no regulatory text.</p>
+            {% if is_reserved %}
+            <p class="empty-hint">This section is reserved for future use.</p>
+            {% else %}
+            <ul class="empty-reasons">
+                <li>Reserved for future regulations</li>
+                <li>References another section</li>
+                <li>Content removed but entry retained</li>
+            </ul>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="section-text">
             {{ section.text | safe }}
         </div>
+        {% endif %}
         <footer>
             {{ section_nav() }}
         </footer>
     </article>
 
-    <article class="similar-sections">
+    <article class="similar-sections" id="similar-sections-panel">
         <header>
-            <strong>Similar Sections in Chapter</strong>
+            <span class="header-title">
+                <span>Similar Sections</span>
+            </span>
+            <button class="collapse-toggle" aria-label="Toggle similar sections" title="Collapse/Expand">&#x25BC;</button>
         </header>
-        <div
+        <div class="similar-content"
             hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
             hx-trigger="load"
             hx-swap="innerHTML"
         >
-            <button aria-busy="true" class="outline">Loading...</button>
+            {# Skeleton loading state #}
+            <div class="skeleton-loading">
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+            </div>
         </div>
     </article>
 </div>

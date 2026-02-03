@@ -1,0 +1,56 @@
+{# Shared macros for compare templates #}
+
+{% macro word_count_display(wc) %}
+{% if wc and wc > 0 %}{{ "{:,}".format(wc) }} words{% else %}&mdash;{% endif %}
+{% endmacro %}
+
+{% macro diff_legend(label1="Removed", label2="Added") %}
+<div class="diff-legend">
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-remove"></span> {{ label1 }}</div>
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-add"></span> {{ label2 }}</div>
+</div>
+{% endmacro %}
+
+{% macro banner(icon, title, message, hint=None, class="") %}
+<article class="{{ class }}-banner">
+    <div class="banner-icon">{{ icon | safe }}</div>
+    <div class="banner-content">
+        <strong>{{ title }}</strong>
+        <p>{{ message | safe }}</p>
+        {% if hint %}
+        <p class="banner-hint">{{ hint }}</p>
+        {% endif %}
+    </div>
+</article>
+{% endmacro %}
+
+{% macro version_card(section, label, link=None, show_heading=False, diff_html=None, has_changes=False, legend_label=None, word_diff=None, is_empty=False, class="") %}
+<article class="version-card {{ class }}{% if is_empty %} empty-version{% endif %}">
+    <header>
+        <div class="version-header-left">
+            <strong>{% if link %}<a href="{{ link }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</strong>
+            <span class="word-count">{{ word_count_display(section.word_count if section else 0) }}</span>
+            {% if word_diff and word_diff != 0 %}
+            <span class="{% if word_diff > 0 %}change-positive{% else %}change-negative{% endif %}">
+                ({% if word_diff > 0 %}+{% endif %}{{ "{:,}".format(word_diff) }})
+            </span>
+            {% endif %}
+        </div>
+        {% if legend_label %}<span class="legend-{{ 'remove' if 'remove' in class or 'old' in class else 'add' }}">{{ legend_label }}</span>{% endif %}
+    </header>
+    {% if show_heading and section and section.heading %}
+    <div class="section-heading-inline">
+        {{ section.heading }}
+    </div>
+    {% endif %}
+    {% if is_empty %}
+    <div class="empty-version-content">
+        <span class="empty-label">Empty</span>
+    </div>
+    {% elif section %}
+    <div class="section-text {% if has_changes %}diff-text{% endif %}">
+        {% if diff_html %}{{ diff_html | safe }}{% else %}{{ section.text | safe }}{% endif %}
+    </div>
+    {% endif %}
+</article>
+{% endmacro %}

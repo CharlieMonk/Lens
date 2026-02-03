@@ -5,18 +5,21 @@ import time
 import aiohttp
 import requests
 
+from .config import config
+
 
 class ECFRClient:
     """Handles all API requests to ecfr.gov and govinfo.gov."""
 
-    ECFR_BASE = "https://www.ecfr.gov/api"
-    GOVINFO_ECFR = "https://www.govinfo.gov/bulkdata/ECFR"
-    GOVINFO_CFR = "https://www.govinfo.gov/bulkdata/CFR"
+    def __init__(self, max_retries: int = None, retry_delay: int = None):
+        self.max_retries = max_retries if max_retries is not None else config.max_retries
+        self.retry_delay = retry_delay if retry_delay is not None else config.retry_base_delay
+        self._ecfr_base = config.ecfr_base_url
+        self._govinfo_ecfr = config.govinfo_ecfr_url
+        self._govinfo_cfr = config.govinfo_cfr_url
 
-    def __init__(self, max_retries: int = 7, retry_delay: int = 3):
-        self.max_retries, self.retry_delay = max_retries, retry_delay
-
-    def _request_with_retry(self, url: str, timeout: int = 30, retry_on_timeout: bool = True) -> requests.Response:
+    def _request_with_retry(self, url: str, timeout: int = None, retry_on_timeout: bool = True) -> requests.Response:
+        timeout = timeout if timeout is not None else config.timeout_default
         for attempt in range(self.max_retries):
             try:
                 resp = requests.get(url, timeout=timeout)
@@ -38,38 +41,22 @@ class ECFRClient:
         raise requests.exceptions.RequestException("Max retries exceeded")
 
     def fetch_titles(self) -> list[dict]:
-        return self._request_with_retry(f"{self.ECFR_BASE}/versioner/v1/titles.json").json()["titles"]
+        return self._request_with_retry(f"{self._ecfr_base}/versioner/v1/titles.json").json()["titles"]
 
     def fetch_agencies(self) -> list[dict]:
-        return self._request_with_retry(f"{self.ECFR_BASE}/admin/v1/agencies.json").json().get("agencies", [])
+        return self._request_with_retry(f"{self._ecfr_base}/admin/v1/agencies.json").json().get("agencies", [])
 
-    def fetch_title_xml(self, title_num: int, date: str, timeout: int = 60) -> bytes:
-        return self._request_with_retry(f"{self.ECFR_BASE}/versioner/v1/full/{date}/title-{title_num}.xml", timeout=timeout, retry_on_timeout=False).content
+    def fetch_title_xml(self, title_num: int, date: str, timeout: int = None) -> bytes:
+        timeout = timeout if timeout is not None else config.timeout_title_xml
+        return self._request_with_retry(f"{self._ecfr_base}/versioner/v1/full/{date}/title-{title_num}.xml", timeout=timeout, retry_on_timeout=False).content
 
     def fetch_title_structure(self, title_num: int, date: str) -> dict:
-        return self._request_with_retry(f"{self.ECFR_BASE}/versioner/v1/structure/{date}/title-{title_num}.json", timeout=120).json()
+        return self._request_with_retry(f"{self._ecfr_base}/versioner/v1/structure/{date}/title-{title_num}.json", timeout=config.timeout_structure_api).json()
 
-    async def fetch_title_structure_async(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = 60) -> list[tuple]:
-        """Fetch structure and flatten to list of (node_type, identifier, parent_type, parent_identifier, label, reserved)."""
-        url = f"{self.ECFR_BASE}/versioner/v1/structure/{date}/title-{title_num}.json"
-        try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
-                if resp.status != 200:
-                    return []
-                data = await resp.json()
-                return self._flatten_structure(data)
-        except Exception:
-            return []
-
-    def _flatten_structure(self, node, parent_type=None, parent_identifier=None) -> list[tuple]:
-        """Flatten nested structure to list of tuples."""
-        result = [(node.get("type"), node.get("identifier"), parent_type, parent_identifier, node.get("label_description", ""), node.get("reserved", False))]
-        for child in node.get("children", []):
-            result.extend(self._flatten_structure(child, node.get("type"), node.get("identifier")))
-        return result
-
-    async def fetch_title_racing(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = 120) -> tuple[str, bytes]:
+    async def fetch_title_racing(self, session: aiohttp.ClientSession, title_num: int, date: str, timeout: int = None) -> tuple[str, bytes]:
         """Fetch title from both eCFR and govinfo in parallel, return first success."""
+        timeout = timeout if timeout is not None else config.timeout_race_fetch
+
         async def fetch(url, source):
             try:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
@@ -80,8 +67,8 @@ class ECFRClient:
             return None
 
         tasks = [
-            asyncio.create_task(fetch(f"{self.ECFR_BASE}/versioner/v1/full/{date}/title-{title_num}.xml", "ecfr")),
-            asyncio.create_task(fetch(f"{self.GOVINFO_ECFR}/title-{title_num}/ECFR-title{title_num}.xml", "govinfo"))
+            asyncio.create_task(fetch(f"{self._ecfr_base}/versioner/v1/full/{date}/title-{title_num}.xml", "ecfr")),
+            asyncio.create_task(fetch(f"{self._govinfo_ecfr}/title-{title_num}/ECFR-title{title_num}.xml", "govinfo"))
         ]
         for coro in asyncio.as_completed(tasks):
             result = await coro
@@ -92,14 +79,15 @@ class ECFRClient:
                 return result
         raise aiohttp.ClientError(f"Both sources failed for title {title_num}")
 
-    async def fetch_govinfo_volumes(self, session: aiohttp.ClientSession, year: int, title_num: int, max_volumes: int = 20) -> list[bytes]:
+    async def fetch_govinfo_volumes(self, session: aiohttp.ClientSession, year: int, title_num: int, max_volumes: int = None) -> list[bytes]:
         """Fetch all CFR volumes for a title from govinfo bulk data."""
+        max_volumes = max_volumes if max_volumes is not None else config.max_govinfo_volumes
         volumes = []
         for vol in range(1, max_volumes + 1):
-            url = f"{self.GOVINFO_CFR}/{year}/title-{title_num}/CFR-{year}-title{title_num}-vol{vol}.xml"
+            url = f"{self._govinfo_cfr}/{year}/title-{title_num}/CFR-{year}-title{title_num}-vol{vol}.xml"
             for attempt in range(3):
                 try:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=config.timeout_govinfo_volume)) as resp:
                         if resp.status == 200:
                             volumes.append(await resp.read())
                             break
@@ -115,34 +103,37 @@ class ECFRClient:
                     break  # Other exception, skip this volume
         return volumes
 
-    async def fetch_chunks_async(self, title_num: int, date: str, chunks: list[tuple[str, str]], max_concurrent: int = 2, delay: float = 0.2) -> list[bytes]:
+    async def fetch_chunks_async(self, title_num: int, date: str, chunks: list[tuple[str, str]], max_concurrent: int = None, delay: float = None) -> list[bytes]:
         """Fetch multiple XML chunks with rate limiting."""
+        max_concurrent = max_concurrent if max_concurrent is not None else config.max_concurrent_chunks
+        delay = delay if delay is not None else config.rate_limit_delay
         semaphore = asyncio.Semaphore(max_concurrent)
         completed, total = [0], len(chunks)
+        progress_interval = config.progress_report_interval
 
         async def fetch_one(session, idx, chunk_type, chunk_id):
-            url = f"{self.ECFR_BASE}/versioner/v1/full/{date}/title-{title_num}.xml?{chunk_type}={chunk_id}"
+            url = f"{self._ecfr_base}/versioner/v1/full/{date}/title-{title_num}.xml?{chunk_type}={chunk_id}"
             async with semaphore:
                 await asyncio.sleep(delay)
                 for attempt in range(5):
                     try:
                         async with session.get(url) as resp:
                             if resp.status == 429:
-                                await asyncio.sleep(5 * (2 ** attempt))
+                                await asyncio.sleep(config.chunk_backoff_base * (2 ** attempt))
                                 continue
                             resp.raise_for_status()
                             completed[0] += 1
-                            if completed[0] % 50 == 0:
+                            if completed[0] % progress_interval == 0:
                                 print(f"    {completed[0]}/{total} parts...", flush=True)
                             return idx, await resp.read()
                     except aiohttp.ClientError:
                         if attempt == 4:
                             raise
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(config.error_delay)
                 raise aiohttp.ClientError(f"Failed after 5 attempts: {url}")
 
         results = [None] * len(chunks)
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=max_concurrent), timeout=aiohttp.ClientTimeout(total=1800)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=max_concurrent), timeout=aiohttp.ClientTimeout(total=config.timeout_chunk_fetch)) as session:
             for idx, content in await asyncio.gather(*[fetch_one(session, i, ct, cid) for i, (ct, cid) in enumerate(chunks)]):
                 results[idx] = content
         return results

@@ -1,6 +1,6 @@
 """Browse routes for navigating CFR titles and sections."""
 from flask import Blueprint, render_template, request, redirect, url_for
-from .services import get_database, list_titles_with_metadata, get_structure_with_changes, BASELINE_YEAR
+from .services import get_database, list_titles_with_metadata, get_structure_with_changes, compute_change_pct, BASELINE_YEAR
 
 browse_bp = Blueprint("browse", __name__)
 
@@ -58,21 +58,60 @@ def _find_node(structure, path):
 def _node_label(node):
     """Get display label for a structure node."""
     t, ident = node.get("type", ""), node.get("identifier", "")
-    if t == "subtitle":
-        return ident
-    if t == "chapter":
-        return f"Chapter {ident}"
-    if t == "subchapter":
-        return f"Subchapter {ident}" if len(ident) <= 3 else ident
-    if t == "part":
-        return f"Part {ident}"
-    if t == "subpart":
-        return f"Subpart {ident}"
+    # Map type to prefix, skip if identifier already has it (case-insensitive)
+    prefixes = {"subtitle": "Subtitle", "chapter": "Chapter", "subchapter": "Subchapter", "part": "Part", "subpart": "Subpart"}
+    if t in prefixes:
+        prefix = prefixes[t]
+        return ident if ident.upper().startswith(prefix.upper()) else f"{prefix} {ident}"
     return ident
 
 
 @browse_bp.route("/")
 def index():
+    """Dashboard homepage with aggregate stats and previews."""
+    db = get_database()
+    stats = db.get_statistics_data(BASELINE_YEAR)
+
+    # Top 5 agencies
+    agency_counts = stats["agency_counts"][0]
+    agency_details = stats["agency_details"]
+    top_agencies = sorted(
+        [{"slug": s, "name": agency_details.get(s, {}).get("name", s), "word_count": wc}
+         for s, wc in agency_counts.items()],
+        key=lambda x: x["word_count"], reverse=True
+    )[:5]
+
+    # Top 5 titles
+    title_counts = stats["title_counts"][0]
+    baseline_title_counts = stats["title_counts"].get(BASELINE_YEAR, {})
+    title_meta = stats["title_meta"]
+    top_titles = sorted(
+        [{"number": n, "name": title_meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc}
+         for n, wc in title_counts.items()],
+        key=lambda x: x["word_count"], reverse=True
+    )[:5]
+
+    # Aggregate stats
+    total_words = sum(title_counts.values())
+    total_sections = db._query("SELECT COUNT(*) FROM sections WHERE year = 0 AND section != ''")[0][0]
+    baseline_words = sum(baseline_title_counts.values()) if baseline_title_counts else 0
+
+    aggregate = {
+        "total_words": total_words,
+        "total_sections": total_sections,
+        "total_titles": len(title_counts),  # Titles with content (excludes reserved)
+        "all_titles_count": len(title_meta),  # All titles including reserved
+        "total_agencies": len(agency_counts),
+        "baseline_year": BASELINE_YEAR,
+        "change_pct": compute_change_pct(total_words, baseline_words) if baseline_words else None,
+    }
+
+    return render_template("browse/index.html", top_agencies=top_agencies, top_titles=top_titles, aggregate=aggregate)
+
+
+@browse_bp.route("/titles")
+def titles():
+    """Full list of all CFR titles."""
     db = get_database()
     year = request.args.get("year", 0, type=int)
     return render_template("browse/titles.html", titles=list_titles_with_metadata(year), year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
@@ -106,3 +145,24 @@ def structure(title_num: int, path: str):
         return redirect(url_for("browse.title", title_num=title_num, year=year))
     return render_template("browse/structure.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"),
                            node=node, breadcrumb=breadcrumb, year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
+
+
+# Backwards compatibility redirects for old /statistics/ URLs
+@browse_bp.route("/statistics/")
+def statistics_index():
+    return redirect(url_for("browse.index"), code=301)
+
+
+@browse_bp.route("/statistics/titles")
+def statistics_titles():
+    return redirect(url_for("browse.titles"), code=301)
+
+
+@browse_bp.route("/statistics/agencies")
+def statistics_agencies():
+    return redirect(url_for("agencies.index"), code=301)
+
+
+@browse_bp.route("/statistics/agencies/<slug>")
+def statistics_agency_detail(slug: str):
+    return redirect(url_for("agencies.detail", slug=slug), code=301)

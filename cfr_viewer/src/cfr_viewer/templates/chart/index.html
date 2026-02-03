@@ -1,0 +1,738 @@
+{% extends "base.html" %}
+{% from "components/citation_input.html" import citation_input %}
+
+{% block title %}Word Count Trends - Lens{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+<style>
+    .chart-container {
+        position: relative;
+        height: 400px;
+    }
+    /* Breadcrumb selector - combines navigation path with dropdowns */
+    .breadcrumb-selector {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 0;
+    }
+    .breadcrumb-selector select {
+        appearance: none;
+        -webkit-appearance: none;
+        background: #e3f2fd url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231565c0' d='M2 4l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 0.5rem center;
+        color: #1565c0;
+        padding: 0.35rem 1.75rem 0.35rem 0.75rem;
+        border-radius: 4px;
+        border: 1px solid #bbdefb;
+        font-weight: 500;
+        font-size: 0.9rem;
+        cursor: pointer;
+        margin: 0;
+        min-width: 0;
+        max-width: 250px;
+    }
+    .breadcrumb-selector select:hover {
+        background-color: #bbdefb;
+        border-color: #90caf9;
+    }
+    .breadcrumb-selector select:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.25);
+        border-color: #1565c0;
+    }
+    .breadcrumb-separator {
+        color: #546e7a;
+        font-size: 0.9rem;
+    }
+    .stats-card {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--pico-card-background-color);
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+    .stat {
+        text-align: center;
+    }
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--pico-primary);
+    }
+    .stat-value.positive { color: #d32f2f; }
+    .stat-value.negative { color: #388e3c; }
+    .stat-label {
+        font-size: 0.85rem;
+        color: var(--pico-muted-color);
+    }
+    .chart-controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    .chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+    .chart-controls button {
+        margin: 0;
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+    .placeholder-message {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 300px;
+        color: var(--pico-muted-color);
+        font-size: 1.1rem;
+    }
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--pico-secondary-background);
+        border-top-color: var(--pico-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .hidden { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Word Count Trends</h1>
+    <p>View how CFR content has changed over time</p>
+</hgroup>
+
+<form id="citation-form" class="compare-form" onsubmit="return handleCitationSubmit(event)">
+    {{ citation_input(id="citation-input") }}
+</form>
+
+<div class="chart-toolbar">
+    <div id="breadcrumb-selector" class="breadcrumb-selector">
+    <select id="select-title">
+        <option value="all">All CFR Titles</option>
+        {% for num, meta in titles.items()|sort %}
+        <option value="{{ num }}">{{ num }} - {{ meta.name }}</option>
+        {% endfor %}
+    </select>
+    <span id="sep-chapter" class="breadcrumb-separator hidden">→</span>
+    <select id="select-chapter" class="hidden">
+        <option value="">All chapters</option>
+    </select>
+    <span id="sep-subchapter" class="breadcrumb-separator hidden">→</span>
+    <select id="select-subchapter" class="hidden">
+        <option value="">All subchapters</option>
+    </select>
+    <span id="sep-part" class="breadcrumb-separator hidden">→</span>
+    <select id="select-part" class="hidden">
+        <option value="">All parts</option>
+    </select>
+    <span id="sep-subpart" class="breadcrumb-separator hidden">→</span>
+    <select id="select-subpart" class="hidden">
+        <option value="">All subparts</option>
+    </select>
+    <span id="sep-section" class="breadcrumb-separator hidden">→</span>
+    <select id="select-section" class="hidden">
+        <option value="">All sections</option>
+    </select>
+    </div>
+</div>
+
+<div id="stats-card" class="stats-card hidden">
+    <div class="stat">
+        <div class="stat-value" id="stat-first">—</div>
+        <div class="stat-label" id="stat-first-label">2000</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-last">—</div>
+        <div class="stat-label" id="stat-last-label">2025</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-change">—</div>
+        <div class="stat-label">Change</div>
+    </div>
+    <div class="stat">
+        <div class="stat-value" id="stat-cagr">—</div>
+        <div class="stat-label">Avg/Year</div>
+    </div>
+</div>
+
+<div id="placeholder" class="placeholder-message hidden">
+    Select a title to view word count trends over time
+</div>
+
+<div id="chart-wrapper">
+    <div class="chart-controls">
+        <button type="button" id="download-chart" class="outline secondary" title="Download chart as PNG">
+            Download PNG
+        </button>
+        <label>
+            <input type="checkbox" id="zoom-toggle" role="switch">
+            Zoom to data range
+        </label>
+    </div>
+    <div class="chart-container">
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="spinner"></div>
+        </div>
+        <canvas id="wordCountChart"></canvas>
+    </div>
+</div>
+
+<script>
+const LEVELS = ['title', 'chapter', 'subchapter', 'part', 'subpart', 'section'];
+const selectors = {};
+const separators = {};
+
+LEVELS.forEach(level => {
+    selectors[level] = document.getElementById(`select-${level}`);
+    if (level !== 'title') {
+        separators[level] = document.getElementById(`sep-${level}`);
+    }
+});
+
+const statsCard = document.getElementById('stats-card');
+const placeholder = document.getElementById('placeholder');
+const chartWrapper = document.getElementById('chart-wrapper');
+const loadingOverlay = document.getElementById('loading-overlay');
+const zoomToggle = document.getElementById('zoom-toggle');
+const ctx = document.getElementById('wordCountChart').getContext('2d');
+
+let chart = null;
+let currentData = {};
+const defined_years = {{ historical_years | tojson }};
+const current_year = {{ current_year }};
+
+// Initialize chart
+function initChart() {
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Word Count',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 5,
+                pointHoverRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: ctx => ctx[0].raw.x,
+                        label: ctx => ctx.parsed.y.toLocaleString() + ' words'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    min: Math.min(...defined_years) - 1,
+                    max: current_year + 1,
+                    ticks: {
+                        callback: v => defined_years.includes(v) ? v : '',
+                        stepSize: 1
+                    },
+                    afterBuildTicks: axis => {
+                        axis.ticks = defined_years.sort((a,b) => a-b).map(y => ({ value: y }));
+                    },
+                    title: {
+                        display: true,
+                        text: 'Year',
+                        font: { size: 14 }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: v => v >= 1000000 ? (v/1000000).toFixed(1) + 'M' : v >= 1000 ? (v/1000).toFixed(0) + 'K' : v
+                    },
+                    title: {
+                        display: true,
+                        text: 'Word Count',
+                        font: { size: 14 }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Build path from current selections
+function buildPath() {
+    let path = '';
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const value = selectors[level].value;
+        if (!value) break;
+        path += (path ? '/' : '') + value;
+    }
+    return path;
+}
+
+
+// Update statistics card
+function updateStats(data) {
+    // Include all years > 0
+    const years = Object.keys(data)
+        .map(y => parseInt(y))
+        .filter(y => y > 0)
+        .sort((a,b) => a - b);
+    if (years.length < 2) {
+        statsCard.classList.add('hidden');
+        return;
+    }
+
+    const firstYear = years[0];
+    const lastYear = years[years.length - 1];
+    const firstVal = data[firstYear] || data[String(firstYear)];
+    const lastVal = data[lastYear] || data[String(lastYear)];
+    const change = ((lastVal - firstVal) / firstVal) * 100;
+    const numYears = parseInt(lastYear) - parseInt(firstYear);
+    const cagr = numYears > 0 ? (Math.pow(lastVal / firstVal, 1/numYears) - 1) * 100 : 0;
+
+    // Helper for adaptive word count formatting
+    function wordCountOptions(val) {
+        if (val >= 1000000) return { value: val / 1000000, decimals: 1, suffix: 'M' };
+        if (val >= 1000) return { value: val / 1000, decimals: 0, suffix: 'K' };
+        return { value: val, decimals: 0, suffix: '' };
+    }
+
+    const firstOpts = wordCountOptions(firstVal);
+    const lastOpts = wordCountOptions(lastVal);
+
+    CountUp.animate(document.getElementById('stat-first'), firstOpts.value, { decimals: firstOpts.decimals, suffix: firstOpts.suffix });
+    document.getElementById('stat-first-label').textContent = firstYear;
+
+    CountUp.animate(document.getElementById('stat-last'), lastOpts.value, { decimals: lastOpts.decimals, suffix: lastOpts.suffix });
+    document.getElementById('stat-last-label').textContent = lastYear;
+
+    const changeEl = document.getElementById('stat-change');
+    changeEl.className = 'stat-value';
+    CountUp.animateChange(changeEl, change, '');
+
+    const cagrEl = document.getElementById('stat-cagr');
+    CountUp.animateChange(cagrEl, cagr, '');
+
+    statsCard.classList.remove('hidden');
+}
+
+// Update chart with data
+function updateChart(data) {
+    currentData = data;
+    // Include all years, sort numerically
+    const years = Object.keys(data)
+        .map(y => parseInt(y))
+        .filter(y => y > 0)
+        .sort((a,b) => a - b);
+
+    // Convert to {x: year, y: count} format for linear scale
+    const chartData = years.map(y => ({
+        x: y,
+        y: data[y] || data[String(y)]
+    }));
+
+    chart.data.datasets[0].data = chartData;
+
+    // Apply zoom setting
+    chart.options.scales.y.beginAtZero = !zoomToggle.checked;
+
+    chart.update();
+}
+
+// Fetch chart data
+async function fetchChartData() {
+    const titleNum = selectors.title.value;
+    if (!titleNum) return;
+
+    loadingOverlay.classList.remove('hidden');
+
+    const path = buildPath();
+    const url = path ? `/chart/data/${titleNum}/${path}` : `/chart/data/${titleNum}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        placeholder.classList.add('hidden');
+        chartWrapper.classList.remove('hidden');
+
+        updateChart(data);
+        updateStats(data);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+// Load children for a selector
+async function loadChildren(level) {
+    const titleNum = selectors.title.value;
+    if (!titleNum) return [];
+
+    const path = buildPath();
+    const url = path ? `/chart/structure/${titleNum}/${path}` : `/chart/structure/${titleNum}`;
+
+    try {
+        const response = await fetch(url);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching structure:', error);
+        return [];
+    }
+}
+
+// Populate a selector with options
+function populateSelector(level, children) {
+    const select = selectors[level];
+    const separator = separators[level];
+
+    // Clear existing options except first
+    while (select.options.length > 1) {
+        select.remove(1);
+    }
+
+    if (children.length === 0) {
+        select.classList.add('hidden');
+        if (separator) separator.classList.add('hidden');
+        return false;
+    }
+
+    // Update "All X" text
+    select.options[0].text = `All ${children[0].type}s`;
+
+    children.forEach(child => {
+        const option = document.createElement('option');
+        option.value = `${child.type}/${child.identifier}`;
+        option.text = child.label;
+        option.dataset.hasChildren = child.has_children;
+        select.appendChild(option);
+    });
+
+    select.classList.remove('hidden');
+    if (separator) separator.classList.remove('hidden');
+    return true;
+}
+
+// Hide all selectors from a level onwards
+function hideSelectorsFrom(levelIndex) {
+    for (let i = levelIndex; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        selectors[level].classList.add('hidden');
+        selectors[level].value = '';
+        if (separators[level]) separators[level].classList.add('hidden');
+    }
+}
+
+// Handle selector change
+async function handleSelectorChange(levelIndex) {
+    const level = LEVELS[levelIndex];
+    const select = selectors[level];
+
+    // Hide all selectors after this one
+    hideSelectorsFrom(levelIndex + 1);
+
+    // Fetch chart data for current selection
+    await fetchChartData();
+
+    // If something is selected and it might have children, load them
+    if (select.value && levelIndex < LEVELS.length - 1) {
+        const selectedOption = select.options[select.selectedIndex];
+        if (selectedOption.dataset.hasChildren === 'true') {
+            const children = await loadChildren(levelIndex + 1);
+            if (children.length > 0) {
+                populateSelector(LEVELS[levelIndex + 1], children);
+            }
+        }
+    }
+}
+
+// Update URL with current selections
+function updateURL() {
+    const params = new URLSearchParams();
+
+    if (selectors.title.value && selectors.title.value !== 'all') {
+        params.set('title', selectors.title.value);
+    }
+
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const value = selectors[level].value;
+        if (!value) break;
+        // Value is like "chapter/I" - extract just the identifier
+        const identifier = value.split('/')[1];
+        if (identifier) {
+            params.set(level, identifier);
+        }
+    }
+
+    if (zoomToggle.checked) {
+        params.set('zoom', '1');
+    }
+
+    const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    history.replaceState(null, '', newURL);
+}
+
+// Restore selections from URL
+async function restoreFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const titleNum = params.get('title');
+
+    if (!titleNum) return;
+
+    // Set title
+    selectors.title.value = titleNum;
+    if (!selectors.title.value) return; // Title not found in options
+
+    await fetchChartData();
+
+    // Load and set each level
+    const levelParams = ['chapter', 'subchapter', 'part', 'subpart', 'section'];
+
+    for (let i = 0; i < levelParams.length; i++) {
+        const level = levelParams[i];
+        const identifier = params.get(level);
+
+        // Load children for this level
+        const children = await loadChildren(i);
+        if (children.length === 0) break;
+
+        populateSelector(level, children);
+
+        if (!identifier) break;
+
+        // Find and select the matching option
+        const select = selectors[level];
+        const optionValue = `${level}/${identifier}`;
+
+        let found = false;
+        for (const option of select.options) {
+            if (option.value === optionValue) {
+                select.value = optionValue;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) break;
+
+        // Fetch updated chart data
+        await fetchChartData();
+    }
+
+    // Restore zoom setting
+    if (params.get('zoom') === '1') {
+        zoomToggle.checked = true;
+        chart.options.scales.y.beginAtZero = false;
+        chart.update();
+    }
+}
+
+// Title change - special handling
+selectors.title.addEventListener('change', async () => {
+    hideSelectorsFrom(1);
+
+    if (selectors.title.value === 'all') {
+        await loadTotalCFRData();
+        updateURL();
+        return;
+    }
+
+    if (!selectors.title.value) {
+        placeholder.classList.remove('hidden');
+        chartWrapper.classList.add('hidden');
+        statsCard.classList.add('hidden');
+        updateURL();
+        return;
+    }
+
+    await fetchChartData();
+    updateURL();
+
+    const children = await loadChildren(0);
+    if (children.length > 0) {
+        populateSelector('chapter', children);
+    }
+});
+
+// Set up change handlers for other selectors
+LEVELS.slice(1).forEach((level, idx) => {
+    selectors[level].addEventListener('change', async () => {
+        await handleSelectorChange(idx + 1);
+        updateURL();
+    });
+});
+
+// Zoom toggle
+zoomToggle.addEventListener('change', () => {
+    if (chart && currentData) {
+        chart.options.scales.y.beginAtZero = !zoomToggle.checked;
+        chart.update();
+    }
+    updateURL();
+});
+
+// Download chart as PNG
+document.getElementById('download-chart').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'cfr-word-count-trends.png';
+    link.href = chart.toBase64Image();
+    link.click();
+    Toast.show('Chart downloaded!', 'success');
+});
+
+// Load total CFR data
+async function loadTotalCFRData() {
+    loadingOverlay.classList.remove('hidden');
+    try {
+        const response = await fetch('/chart/data/total');
+        const data = await response.json();
+
+        chartWrapper.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+
+        updateChart(data);
+        updateStats(data);
+    } catch (error) {
+        console.error('Error fetching total data:', error);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+// Parse CFR citation and navigate to it
+function parseCitation(citation) {
+    if (!citation) return null;
+
+    // Remove common prefixes and suffixes
+    let text = citation.replace(/^[^,]*,\s*/, '');  // Remove rule name before comma
+    text = text.replace(/\(\d{4}\)\s*$/, '');       // Remove year like (2019)
+    text = text.replace(/\([a-zA-Z0-9)(-]+\)\s*$/, ''); // Remove subsections
+
+    // Match: title number, optional C.F.R./CFR, optional §, section number
+    const match = text.match(/(\d+)\s*C\.?F\.?R\.?\s*§?\s*([\d.]+)/i);
+    if (match) {
+        return {
+            title: parseInt(match[1]),
+            section: match[2].replace(/[a-zA-Z]+$/, '')  // Strip trailing letters
+        };
+    }
+    return null;
+}
+
+async function handleCitationSubmit(event) {
+    event.preventDefault();
+
+    const input = document.getElementById('citation-input');
+    const citation = parseCitation(input.value.trim());
+
+    if (!citation) {
+        Toast.show('Could not parse citation', 'error');
+        return false;
+    }
+
+    // Check if title exists in options
+    const titleOption = Array.from(selectors.title.options).find(
+        opt => opt.value === String(citation.title)
+    );
+
+    if (!titleOption) {
+        Toast.show(`Title ${citation.title} not found`, 'error');
+        return false;
+    }
+
+    // Set title and trigger change
+    selectors.title.value = String(citation.title);
+    hideSelectorsFrom(1);
+    await fetchChartData();
+
+    // Try to navigate to the section
+    let currentPath = '';
+    for (let i = 1; i < LEVELS.length; i++) {
+        const level = LEVELS[i];
+        const children = await loadChildren(i - 1);
+
+        if (children.length === 0) break;
+
+        populateSelector(level, children);
+
+        // If this is the section level, look for our section
+        if (level === 'section') {
+            const sectionOption = Array.from(selectors.section.options).find(
+                opt => opt.value === `section/${citation.section}`
+            );
+            if (sectionOption) {
+                selectors.section.value = sectionOption.value;
+                await fetchChartData();
+                updateURL();
+                Toast.show(`Loaded § ${citation.section}`, 'success');
+                return false;
+            }
+        }
+
+        // For non-section levels, try to find a path that contains our section
+        // Select first child with children to drill down
+        const childWithChildren = children.find(c => c.has_children);
+        if (childWithChildren) {
+            selectors[level].value = `${childWithChildren.type}/${childWithChildren.identifier}`;
+            await fetchChartData();
+        } else {
+            break;
+        }
+    }
+
+    // If we got here, we loaded the title but couldn't find the exact section
+    updateURL();
+    Toast.show(`Loaded Title ${citation.title}`, 'info');
+    return false;
+}
+
+// Initialize
+initChart();
+
+// Check if URL has params, otherwise load total CFR data
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('title')) {
+    restoreFromURL();
+} else {
+    loadTotalCFRData();
+}
+</script>
+{% endblock %}

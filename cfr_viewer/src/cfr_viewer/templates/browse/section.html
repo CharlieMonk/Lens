@@ -1,10 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}&sect; {{ section.section }} - CFR Viewer{% endblock %}
+{% block title %}&sect; {{ section.section }} - Lens{% endblock %}
 
 {% block content %}
-<div id="section-content"
-     hx-on::after-settle="document.getElementById('section-heading').scrollIntoView({behavior: 'instant', block: 'start'})">
+<div id="section-content">
 {% include "components/section_content.html" %}
 </div>
 {% endblock %}

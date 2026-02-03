@@ -1,30 +1,76 @@
 {% if similar %}
+{# Distinctness score with info tooltip (#3) #}
 {% if distinctness is not none %}
-<p><strong>Distinctness:</strong> {{ "%.1f" | format(distinctness * 100) }}%</p>
+<div class="distinctness-row">
+    <strong>Distinctness:</strong>
+    <span>{{ "%.1f" | format(distinctness * 100) }}%</span>
+    <span class="info-icon" tabindex="0">
+        &#x24D8;
+        <span class="tooltip">How unique this section's language is compared to others in the same chapter. 100% = completely unique.</span>
+    </span>
+</div>
 {% endif %}
-<table class="sortable">
-    <thead>
-        <tr>
-            <th scope="col" data-sort="string">Citation</th>
-            <th scope="col" data-sort="number" data-sort-default="desc" class="numeric">Similarity</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for s in similar %}
-        <tr>
-            <td data-value="{{ s.title }} CFR {{ s.section }}">
-                <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}">
-                    {{ s.title }} CFR &sect; {{ s.section }}
-                </a>
-            </td>
-            <td class="numeric" data-value="{{ s.similarity }}">{{ "%.1f" | format(s.similarity * 100) }}%</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+
+{# Similar sections list - card-style instead of table for better mobile (#4, #6, #10) #}
+<div class="similar-list">
+    {% for s in similar %}
+    <div class="similar-item" data-section="{{ s.section }}">
+        <div class="similar-citation">
+            <a href="{{ url_for('browse.section', title_num=s.title, section=s.section, year=year) }}" class="citation-link">
+                {{ s.title }} CFR &sect; {{ s.section }}
+            </a>
+            {# Section heading (#4) #}
+            {% if s.heading %}
+            <span class="section-heading">{{ s.heading | truncate(60) }}</span>
+            {% endif %}
+        </div>
+
+        <div class="similar-meta">
+            <span class="similarity-badge">{{ "%.0f" | format(s.similarity * 100) }}%</span>
+        </div>
+
+        {# Keywords if available (#9) #}
+        {% if s.keywords %}
+        <div class="similar-keywords">
+            {% for kw in s.keywords[:5] %}
+            <span class="keyword-tag">{{ kw }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Action buttons (#10, #2) #}
+        <div class="similar-actions">
+            <a href="{{ url_for('compare.compare_sections', title1=source_title, section1=source_section, title2=s.title, section2=s.section, year=year) }}"
+               class="action-btn"
+               title="Compare with this section">
+                &#x2194; Compare
+            </a>
+            <button type="button"
+                    class="action-btn preview-toggle"
+                    data-title="{{ s.title }}"
+                    data-section="{{ s.section }}"
+                    data-year="{{ year }}"
+                    title="Preview section text">
+                &#x1F441; Preview
+            </button>
+        </div>
+
+        {# Preview area - loaded on demand (#2) #}
+        <div class="similar-preview" id="preview-{{ s.section | replace('.', '-') }}"></div>
+    </div>
+    {% endfor %}
+</div>
+
 {% elif distinctness is not none %}
-<p><strong>Distinctness:</strong> 100%</p>
-<p>No similar sections found.</p>
+<div class="distinctness-row">
+    <strong>Distinctness:</strong>
+    <span>100%</span>
+    <span class="info-icon" tabindex="0">
+        &#x24D8;
+        <span class="tooltip">How unique this section's language is compared to others in the same chapter. 100% = completely unique.</span>
+    </span>
+</div>
+<p class="no-similar-message">No similar sections found in this chapter. This section's language is unique.</p>
 {% else %}
-<p>Section not in current year data.</p>
+<p class="no-data-message">Section not in current year data.</p>
 {% endif %}

@@ -1,0 +1,117 @@
+/* Print stylesheet for Lens CFR Viewer */
+@media print {
+    /* Hide navigation and interactive elements */
+    nav,
+    footer,
+    .nav-toggle,
+    .skip-link,
+    .year-selector,
+    .section-controls,
+    .table-filter,
+    .similar-sections,
+    .compare-examples-grid,
+    .aggregate-stats,
+    button,
+    [role="button"],
+    .toast-container,
+    .chart-controls,
+    #chart-wrapper {
+        display: none !important;
+    }
+
+    /* Reset colors for print */
+    body {
+        background: white !important;
+        color: black !important;
+    }
+
+    a {
+        color: black !important;
+        text-decoration: underline;
+    }
+
+    /* Show full URLs after links */
+    a[href^="http"]::after {
+        content: " (" attr(href) ")";
+        font-size: 0.8em;
+        color: #666;
+    }
+
+    /* Full width for content */
+    .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    main.container {
+        padding-top: 0 !important;
+    }
+
+    /* Section layout - single column */
+    .section-layout {
+        display: block !important;
+    }
+
+    /* Article styling for print */
+    article {
+        box-shadow: none !important;
+        border: 1px solid #ddd;
+        page-break-inside: avoid;
+    }
+
+    /* Table styling for print */
+    table {
+        font-size: 0.9rem;
+        border-collapse: collapse;
+    }
+
+    table th,
+    table td {
+        border: 1px solid #ccc;
+        padding: 0.5rem;
+    }
+
+    /* Ensure tables don't break across pages */
+    table {
+        page-break-inside: auto;
+    }
+
+    tr {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+
+    thead {
+        display: table-header-group;
+    }
+
+    /* Remove zebra striping for print */
+    table tbody tr:nth-child(even) {
+        background: white !important;
+    }
+
+    /* Headers */
+    h1, h2, h3 {
+        page-break-after: avoid;
+    }
+
+    /* Change indicators - use symbols instead of colors */
+    .change-positive::before {
+        content: "[+] ";
+    }
+
+    .change-negative::before {
+        content: "[-] ";
+    }
+
+    /* Print header with title info */
+    @page {
+        margin: 1in;
+    }
+
+    /* Section text - ensure readable */
+    .section-text {
+        font-size: 11pt;
+        line-height: 1.6;
+    }
+}

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% from "components/citation_input.html" import citation_input %}
+{% from "compare/macros.html" import word_count_display, diff_legend, banner, version_card %}
 
-{% block title %}Compare &sect; {{ section_id }} - CFR Viewer{% endblock %}
+{% block title %}Compare &sect; {{ section_id }} - Lens{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb">
@@ -14,10 +16,7 @@
 
 <form method="get" action="{{ url_for('compare.diff', title_num=title_num, section=section_id) }}" class="compare-form">
     <div class="compare-toolbar">
-        <div class="citation-row">
-            <input type="text" name="other" value="{{ title_num }} CFR § {{ section_id }}" class="citation-input" placeholder="e.g., 29 CFR 1910.134">
-            <button type="submit" class="citation-go">Go</button>
-        </div>
+        {{ citation_input(name="other", value=title_num ~ " CFR § " ~ section_id, placeholder="e.g., 29 CFR 1910.134") }}
         <div class="compare-controls">
             <select name="year2" onchange="this.form.submit()">
                 {% for y in years %}
@@ -61,55 +60,135 @@
 
 {{ section_nav() }}
 
+{# Helper variables for detecting reserved/empty sections #}
+{% set is_reserved1 = section1 and section1.heading and 'reserved' in section1.heading.lower() %}
+{% set is_reserved2 = section2 and section2.heading and 'reserved' in section2.heading.lower() %}
+{% set is_empty1 = section1 and (section1.word_count or 0) == 0 %}
+{% set is_empty2 = section2 and (section2.word_count or 0) == 0 %}
+{% set both_empty = is_empty1 and is_empty2 %}
+
 {% if section1 and section2 %}
 {% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
-<div class="grid compare-versions">
-    <article class="version-card version-old">
-        <header>
-            <div class="version-header-left">
-                <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
-                <span class="word-count">{{ "{:,}".format(section2.word_count or 0) }} words</span>
-            </div>
-            {% if has_changes %}<span class="legend-remove">Removed</span>{% endif %}
-        </header>
-        <div class="section-text diff-text">
-            {% if old_html %}{{ old_html | safe }}{% else %}{{ section2.text | safe }}{% endif %}
-        </div>
-    </article>
 
-    <article class="version-card version-new">
-        <header>
-            <div class="version-header-left">
-                <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
-                <span class="word-count">{{ "{:,}".format(section1.word_count or 0) }} words</span>
-                {% if diff != 0 %}
-                <span class="{% if diff > 0 %}change-positive{% else %}change-negative{% endif %}">
-                    ({% if diff > 0 %}+{% endif %}{{ "{:,}".format(diff) }})
-                </span>
-                {% endif %}
-            </div>
-            {% if has_changes %}<span class="legend-add">Added</span>{% endif %}
-        </header>
-        <div class="section-text diff-text">
-            {% if new_html %}{{ new_html | safe }}{% else %}{{ section1.text | safe }}{% endif %}
-        </div>
-    </article>
+{% if both_empty %}
+{# Both versions are empty #}
+{{ banner("&#x25CB;", "No Content to Compare",
+    "This section has no text in either " ~ ("Current" if year2 == 0 else year2) ~ " or " ~ ("Current" if year1 == 0 else year1) ~ ".",
+    hint="This section is reserved for future regulations." if (is_reserved1 or is_reserved2) else "It may be reserved, reference another section, or have been removed.",
+    class="empty") }}
+
+{% elif not has_changes %}
+{# No changes - show single column view with stability banner #}
+{{ banner("&#x2713;", "No Changes",
+    "This section is identical between " ~ ("Current" if year2 == 0 else year2) ~ " and " ~ ("Current" if year1 == 0 else year1) ~ ".",
+    hint="Unchanged since at least " ~ unchanged_since if unchanged_since else None,
+    class="no-changes") }}
+{{ version_card(
+    section=section1,
+    label="Current" if year1 == 0 else year1,
+    class="single-version"
+) }}
+{% if available_years|length > 2 %}
+<div class="suggest-alternatives">
+    <p><strong>Try comparing other years:</strong></p>
+    <div class="year-links">
+        {% for y in available_years if y != year1 and y != year2 %}
+        <a href="{{ url_for('compare.diff', title_num=title_num, section=section_id, year1=year1, year2=y) }}" class="year-link">{{ "Current" if y == 0 else y }}</a>
+        {% endfor %}
+    </div>
 </div>
-{{ section_nav() }}
+{% endif %}
 
-{% if not has_changes %}
-<p class="no-changes-note">Identical content in both versions.</p>
-{% endif %}
 {% else %}
-<article>
-    <p>One or both versions could not be found for comparison.</p>
-    {% if not section1 %}
-    <p>&sect; {{ section_id }} not found for {{ "current" if year1 == 0 else year1 }}.</p>
-    {% endif %}
-    {% if not section2 %}
-    <p>&sect; {{ section_id }} not found for {{ "current" if year2 == 0 else year2 }}.</p>
-    {% endif %}
-</article>
-{{ section_nav() }}
+{# Has changes - show side-by-side diff #}
+{% if is_empty2 and not is_empty1 %}
+{# Section added (empty -> content) #}
+{{ banner("+", "Section Added",
+    "This section had no content in " ~ ("Current" if year2 == 0 else year2) ~ " but has " ~ "{:,}".format(section1.word_count) ~ " words in " ~ ("Current" if year1 == 0 else year1) ~ ".",
+    class="added") }}
+{% elif is_empty1 and not is_empty2 %}
+{# Section removed (content -> empty) #}
+{{ banner("&minus;", "Section Removed",
+    "This section had " ~ "{:,}".format(section2.word_count) ~ " words in " ~ ("Current" if year2 == 0 else year2) ~ " but is now empty in " ~ ("Current" if year1 == 0 else year1) ~ ".",
+    class="removed") }}
 {% endif %}
+{{ diff_legend("Removed (regulatory reduction)", "Added (regulatory growth)") }}
+<div class="grid compare-versions">
+    {{ version_card(
+        section=section2,
+        label="Current" if year2 == 0 else year2,
+        diff_html=old_html,
+        has_changes=True,
+        legend_label="Removed",
+        is_empty=is_empty2,
+        class="version-old"
+    ) }}
+
+    {{ version_card(
+        section=section1,
+        label="Current" if year1 == 0 else year1,
+        diff_html=new_html,
+        has_changes=True,
+        legend_label="Added",
+        word_diff=diff if diff != 0 else None,
+        is_empty=is_empty1,
+        class="version-new"
+    ) }}
+</div>
+{% endif %}
+
+{% elif section1 or section2 %}
+{# One version found - show partial data with explanation #}
+{% set found_section = section1 or section2 %}
+{% set found_year = year1 if section1 else year2 %}
+{% set missing_year = year2 if section1 else year1 %}
+{% set found_empty = (found_section.word_count or 0) == 0 %}
+
+{{ banner("!", "Section Only Available in " ~ ("Current" if found_year == 0 else found_year),
+    "&sect; " ~ section_id ~ " was not found for " ~ ("Current" if missing_year == 0 else missing_year) ~ ".",
+    hint="This section may have been removed or renumbered." if (missing_year == 0 or missing_year > found_year) else "This section may not have existed yet or had a different number.",
+    class="partial-data") }}
+
+{{ version_card(
+    section=found_section,
+    label="Current" if found_year == 0 else found_year,
+    is_empty=found_empty,
+    class="single-version"
+) }}
+
+{% if available_years %}
+<div class="available-years">
+    <p><strong>This section is available in:</strong></p>
+    <div class="year-links">
+        {% for y in available_years %}
+        <a href="{{ url_for('compare.diff', title_num=title_num, section=section_id, year1=y, year2=(available_years[1] if available_years|length > 1 and y == available_years[0] else available_years[0])) }}" class="year-link {% if y == found_year %}current{% endif %}">{{ "Current" if y == 0 else y }}</a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+{# Neither version found #}
+{{ banner("&#x2717;", "Section Not Found",
+    "&sect; " ~ section_id ~ " could not be found in either " ~ ("Current" if year2 == 0 else year2) ~ " or " ~ ("Current" if year1 == 0 else year1) ~ ".",
+    class="not-found") }}
+
+{% if available_years %}
+<div class="available-years">
+    <p><strong>This section is available in:</strong></p>
+    <div class="year-links">
+        {% for y in available_years %}
+        <a href="{{ url_for('compare.diff', title_num=title_num, section=section_id, year1=y, year2=(available_years[1] if available_years|length > 1 and y == available_years[0] else available_years[0])) }}" class="year-link">{{ "Current" if y == 0 else y }}</a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="no-data-message">
+    <p>This section does not appear to exist in any available year. Please check the section number.</p>
+    <a href="{{ url_for('browse.title', title_num=title_num) }}" role="button" class="outline">Browse Title {{ title_num }}</a>
+</div>
+{% endif %}
+{% endif %}
+
+{{ section_nav() }}
 {% endblock %}

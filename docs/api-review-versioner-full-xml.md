@@ -19,27 +19,27 @@ Retrieves source XML for a CFR title or subset. Returns downloadable XML for ful
 
 | Aspect | Documentation Status |
 |--------|---------------------|
-| Base endpoint URL | ✅ Documented |
-| Required parameters (date, title) | ✅ Documented |
-| Subset retrieval behavior | ✅ Documented |
-| Section context behavior | ✅ Documented |
-| File size warning | ✅ Documented |
-| External XML guide reference | ✅ Documented |
+| Base endpoint URL | Yes - Documented |
+| Required parameters (date, title) | Yes - Documented |
+| Subset retrieval behavior | Yes - Documented |
+| Section context behavior | Yes - Documented |
+| File size warning | Yes - Documented |
+| External XML guide reference | Yes - Documented |
 
 ### What's Missing
 
 | Aspect | Documentation Status | Priority |
 |--------|---------------------|----------|
-| Subset URL pattern (part/section/appendix) | ❌ Missing | High |
-| Example requests | ❌ Missing | High |
-| Example responses | ❌ Missing | High |
-| HTTP status codes | ❌ Missing | High |
-| Error response format | ❌ Missing | High |
-| Authentication requirements | ❌ Missing | Medium |
-| Rate limiting | ❌ Missing | Medium |
-| Valid date range | ❌ Missing | Medium |
-| Response headers | ❌ Missing | Low |
-| XML schema/DTD reference | ❌ Missing | Low |
+| Subset URL pattern (part/section/appendix) | No - Missing | High |
+| Example requests | No - Missing | High |
+| Example responses | No - Missing | High |
+| HTTP status codes | No - Missing | High |
+| Error response format | No - Missing | High |
+| Authentication requirements | No - Missing | Medium |
+| Rate limiting | No - Missing | Medium |
+| Valid date range | No - Missing | Medium |
+| Response headers | No - Missing | Low |
+| XML schema/DTD reference | No - Missing | Low |
 
 ---
 

@@ -1,5 +1,17 @@
-{# Macro for rendering a "Since/To BASELINE_YEAR" change percentage cell #}
+{# Macros for rendering change percentages #}
 {# Positive = growth (red), Negative = shrinkage (green), Zero/None = neutral #}
-{% macro change_cell(change_pct, show_new=false) %}
-<td class="numeric {% if change_pct is none %}{% if show_new %}change-positive{% else %}change-zero{% endif %}{% elif change_pct|round(1) == 0 %}change-zero{% elif change_pct > 0 %}change-positive{% else %}change-negative{% endif %}" data-value="{{ change_pct if change_pct is not none else (999 if show_new else 0) }}">{% if change_pct is not none %}{{ "{:+.1f}%".format(change_pct) }}{% elif show_new %}new{% else %}—{% endif %}</td>
+
+{# Returns 'positive', 'negative', or 'zero' based on rounded value #}
+{% macro change_type(value) %}{% if value is none or value|round(1) == 0 %}zero{% elif value > 0 %}positive{% else %}negative{% endif %}{% endmacro %}
+
+{# Returns '+', '−', or '' based on rounded value #}
+{% macro change_sign(value) %}{% if value is not none and value|round(1) != 0 %}{% if value > 0 %}+{% else %}−{% endif %}{% endif %}{% endmacro %}
+
+{# Formats change value with appropriate sign #}
+{% macro change_format(value) %}{% if value is none %}—{% elif value|round(1) == 0 %}{{ "{:.1f}%".format(value) }}{% else %}{{ "{:+.1f}%".format(value) }}{% endif %}{% endmacro %}
+
+{# Full table cell for change percentage #}
+{# is_before_baseline: true if viewing year < baseline year (show N/A), false if >= (show new) #}
+{% macro change_cell(change_pct, show_new=false, is_before_baseline=false) %}
+<td class="numeric change-{{ change_type(change_pct) if change_pct is not none else ('positive' if show_new and not is_before_baseline else 'zero') }}" data-value="{{ change_pct if change_pct is not none else (999 if show_new and not is_before_baseline else 0) }}">{% if change_pct is not none %}{{ change_format(change_pct) }}{% elif show_new %}{% if is_before_baseline %}N/A{% else %}new{% endif %}{% else %}—{% endif %}</td>
 {% endmacro %}

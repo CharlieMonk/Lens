@@ -1,38 +1,18 @@
 {% extends "base.html" %}
-{% from "components/change_cell.html" import change_cell %}
+{% from "components/titles_table.html" import titles_table %}
+{% from "components/table_filter.html" import table_filter %}
 
-{% block title %}All Titles - CFR Viewer{% endblock %}
+{% block title %}All Titles - Lens{% endblock %}
 
 {% block content %}
 <hgroup>
     <h1>Code of Federal Regulations</h1>
-    <p>All 50 CFR Titles</p>
+    <p>{{ titles|length }} titles with regulatory content</p>
 </hgroup>
 
-{% include "components/year_selector.html" %}
-
-<table class="sortable">
-    <thead>
-        <tr>
-            <th scope="col" data-sort="number">Title</th>
-            <th scope="col" data-sort="string">Name</th>
-            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number">{% if year and year < BASELINE_YEAR %}To{% else %}Since{% endif %} {{ BASELINE_YEAR }}</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for title in titles %}
-        <tr>
-            <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
-            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
-            <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
-            {{ change_cell(title.change_pct) }}
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4">No titles found for this year.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="filter-toolbar">
+    {{ table_filter("titles-table", "0,1", "Filter by number or name...") }}
+    {% include "components/year_selector.html" %}
+</div>
+{{ titles_table(titles, year, BASELINE_YEAR, table_id="titles-table") }}
 {% endblock %}

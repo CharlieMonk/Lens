@@ -1,15 +1,17 @@
 """Service layer for Flask views."""
 from flask import current_app
+from ecfr.config import config
 from ecfr.database import ECFRDatabase
 
-BASELINE_YEAR = 2010
+BASELINE_YEAR = config.baseline_year
+COMPARE_DEFAULT_YEAR = config.compare_default_year
 
 def get_database() -> ECFRDatabase:
     return current_app.ecfr_database
 
-def compute_change_pct(current: int, baseline: int | None) -> float | None:
-    """Compute percentage change from baseline. Returns None if baseline is missing."""
-    if baseline is None or baseline == 0:
+def compute_change_pct(current: int | None, baseline: int | None) -> float | None:
+    """Compute percentage change from baseline. Returns None if either value is missing."""
+    if current is None or baseline is None or baseline == 0:
         return None
     return ((current - baseline) / baseline) * 100
 
@@ -19,7 +21,11 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
     word_counts = db.get_all_title_word_counts(year)
     baseline_counts = db.get_all_title_word_counts(BASELINE_YEAR)
     results = []
-    for n in sorted(db.list_titles(year)):
+    for n in sorted(meta.keys()):
+        title_meta = meta.get(n, {})
+        # Skip reserved titles with no content
+        if title_meta.get("reserved") and n not in word_counts:
+            continue
         wc = word_counts.get(n, 0)
         bc = baseline_counts.get(n)
         if year and year < BASELINE_YEAR:
@@ -28,7 +34,12 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
         else:
             # "Since BASELINE_YEAR": compute change from baseline to year
             change_pct = compute_change_pct(wc, bc)
-        results.append({"number": n, "name": meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc, "change_pct": change_pct})
+        results.append({
+            "number": n,
+            "name": title_meta.get("name", f"Title {n}"),
+            "word_count": wc,
+            "change_pct": change_pct,
+        })
     return results
 
 

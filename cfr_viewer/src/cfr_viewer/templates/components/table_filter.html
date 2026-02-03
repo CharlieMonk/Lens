@@ -1,0 +1,6 @@
+{# Macro for table filter input - auto-binds via ui-enhancements.js #}
+{% macro table_filter(table_id, cols="0,1", placeholder="Filter...") %}
+<div class="table-filter">
+    <input type="search" data-filter-table="{{ table_id }}" data-filter-cols="{{ cols }}" placeholder="{{ placeholder }}" aria-label="{{ placeholder }}">
+</div>
+{% endmacro %}

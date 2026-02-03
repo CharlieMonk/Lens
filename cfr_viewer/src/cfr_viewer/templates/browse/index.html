@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "components/change_cell.html" import change_type, change_sign %}
+
+{% block title %}Lens - CFR Explorer{% endblock %}
+
+{% block extra_head %}
+<style>
+    .hero {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .aggregate-stats {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    .stat-card {
+        background: var(--pico-card-background-color);
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        text-align: center;
+        min-width: 120px;
+    }
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: bold;
+        color: var(--pico-primary);
+    }
+    .stat-card.stat-increase .stat-value { color: #d32f2f; }
+    .stat-card.stat-decrease .stat-value { color: #388e3c; }
+    .stat-label {
+        font-size: 0.85rem;
+        color: var(--pico-muted-color);
+    }
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+    .dashboard-card {
+        background: var(--pico-card-background-color);
+        border-radius: 8px;
+        padding: 1.5rem;
+    }
+    .dashboard-card header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+    .dashboard-card header strong {
+        font-size: 1.1rem;
+    }
+    .dashboard-card .view-all {
+        font-size: 0.85rem;
+    }
+    .preview-table {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+    .preview-table td {
+        padding: 0.5rem 0;
+    }
+    .preview-table td.numeric {
+        text-align: right;
+        color: var(--pico-muted-color);
+    }
+    .card-description {
+        color: var(--pico-muted-color);
+        margin-bottom: 1rem;
+    }
+    .card-cta {
+        display: inline-block;
+        margin-top: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <hgroup>
+        <h1>Code of Federal Regulations</h1>
+        <p>Explore, compare, and analyze federal regulations</p>
+    </hgroup>
+
+    <div class="aggregate-stats">
+        <div class="stat-card">
+            <div class="stat-value" data-count="{{ aggregate.total_words / 1000000 }}" data-suffix="M" data-decimals="0">0</div>
+            <div class="stat-label">Words</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" data-count="{{ aggregate.total_sections }}" data-format="comma">0</div>
+            <div class="stat-label">Sections</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" data-count="{{ aggregate.total_titles }}">0</div>
+            <div class="stat-label">Titles</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" data-count="{{ aggregate.total_agencies }}">0</div>
+            <div class="stat-label">Agencies</div>
+        </div>
+        <div class="stat-card {% if change_type(aggregate.change_pct) == 'positive' %}stat-increase{% elif change_type(aggregate.change_pct) == 'negative' %}stat-decrease{% endif %}">
+            <div class="stat-value"{% if aggregate.change_pct %} data-count="{{ aggregate.change_pct|abs }}" data-prefix="{{ change_sign(aggregate.change_pct) }}" data-suffix="%" data-decimals="1"{% endif %}>{% if aggregate.change_pct %}0{% else %}—{% endif %}</div>
+            <div class="stat-label">Since {{ aggregate.baseline_year }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <article class="dashboard-card">
+        <header>
+            <strong>Browse Titles</strong>
+            <a href="{{ url_for('browse.titles') }}" class="view-all">View all {{ aggregate.total_titles }} →</a>
+        </header>
+        <table class="preview-table">
+            <tbody>
+                {% for title in top_titles %}
+                <tr>
+                    <td><a href="{{ url_for('browse.title', title_num=title.number) }}">{{ title.name }}</a></td>
+                    <td class="numeric">{{ "{:,}".format(title.word_count) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="dashboard-card">
+        <header>
+            <strong>Top Agencies</strong>
+            <a href="{{ url_for('agencies.index') }}" class="view-all">View all {{ aggregate.total_agencies }} →</a>
+        </header>
+        <table class="preview-table">
+            <tbody>
+                {% for agency in top_agencies %}
+                <tr>
+                    <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
+                    <td class="numeric">{{ "{:,}".format(agency.word_count) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </article>
+
+    <article class="dashboard-card">
+        <header>
+            <strong>Compare Sections</strong>
+        </header>
+        <p class="card-description">Compare how CFR sections have changed over time with side-by-side diffs highlighting additions and removals.</p>
+        <a href="{{ url_for('compare.index') }}" role="button" class="outline card-cta">Compare Sections</a>
+    </article>
+
+    <article class="dashboard-card">
+        <header>
+            <strong>Word Count Trends</strong>
+        </header>
+        <p class="card-description">Visualize regulatory growth over time. Track word counts by title, chapter, or part from 2000 to present.</p>
+        <a href="{{ url_for('chart.index') }}" role="button" class="outline card-cta">View Trends</a>
+    </article>
+</div>
+{% endblock %}

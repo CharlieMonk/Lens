@@ -3,29 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CFR Viewer{% endblock %}</title>
+    <title>{% block title %}Lens{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pico.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}" media="print">
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/sortable.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/ui-enhancements.js') }}" defer></script>
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <nav class="container" role="navigation" aria-label="Main navigation">
         <ul>
-            <li><strong><a href="{{ url_for('browse.index') }}">CFR Viewer</a></strong></li>
+            <li><strong><a href="{{ url_for('browse.index') }}">Lens</a></strong></li>
         </ul>
+        <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('nav > ul:last-child').classList.toggle('nav-open')">☰</button>
         <ul>
-            <li><a href="{{ url_for('browse.index') }}">Browse</a></li>
-            <li><a href="{{ url_for('statistics.index') }}">Statistics</a></li>
+            <li><button type="button" class="nav-link {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}nav-active{% endif %}" data-href="{{ url_for('browse.titles') }}">Titles</button></li>
+            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('agencies') %}nav-active{% endif %}" data-href="{{ url_for('agencies.index') }}">Agencies</button></li>
+            <li class="nav-dropdown" data-dropdown>
+                <button type="button" class="nav-dropdown-toggle {% if request.endpoint and request.endpoint.startswith('compare') %}nav-active{% endif %}" aria-expanded="false" aria-haspopup="true">
+                    <span>Compare</span> <span class="dropdown-arrow">▾</span>
+                </button>
+                <ul class="nav-dropdown-menu" role="menu">
+                    <li role="none"><a href="{{ url_for('compare.index') }}" role="menuitem" {% if request.endpoint == 'compare.index' or request.endpoint == 'compare.diff' %}class="dropdown-active"{% endif %}>Historical</a></li>
+                    <li role="none"><a href="{{ url_for('compare.compare_sections') }}" role="menuitem" {% if request.endpoint == 'compare.compare_sections' %}class="dropdown-active"{% endif %}>Cross-Section</a></li>
+                </ul>
+            </li>
+            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('chart') %}nav-active{% endif %}" data-href="{{ url_for('chart.index') }}">Trends</button></li>
         </ul>
     </nav>
 
-    <main class="container">
+    <main class="container" id="main-content" role="main">
         {% block content %}{% endblock %}
     </main>
 
     <footer class="container">
-        <small>Data from <a href="https://ecfr.gov">ecfr.gov</a></small>
+        <small>&copy; Charles Monk {{ now().year }}. Data from <a href="https://ecfr.gov">ecfr.gov</a> and <a href="https://govinfo.gov">govinfo.gov</a>.</small>
     </footer>
 </body>
 </html>

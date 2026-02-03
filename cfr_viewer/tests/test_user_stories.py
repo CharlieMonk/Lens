@@ -45,28 +45,32 @@ def setup_screenshots():
 class TestUserStory1_BrowseTitles:
     """
     User Story 1: Browse CFR Titles
-    As a legal researcher, I want to see all CFR titles on the home page
+    As a legal researcher, I want to see all CFR titles
     so I can quickly find the regulation area I need.
 
     Steps:
-    1. Navigate to the home page
-    2. Verify the page title mentions CFR
-    3. Verify there's a table with titles
+    1. Navigate to the home page (dashboard)
+    2. Verify the dashboard has aggregate stats
+    3. Navigate to titles page and verify table exists
     4. Verify titles have numbers, names, and word counts
     5. Verify navigation links exist
     """
 
     def test_home_page_loads(self, page: Page):
-        """Step 1: Navigate to the home page."""
+        """Step 1-2: Navigate to the home page dashboard."""
         page.goto(BASE_URL)
         page.screenshot(path=f"{SCREENSHOT_DIR}/01_home_page.png", full_page=True)
 
-        # Step 2: Verify page title
-        expect(page).to_have_title("All Titles - CFR Viewer")
+        # Verify page title
+        expect(page).to_have_title("Lens - CFR Explorer")
+
+        # Verify aggregate stats are shown
+        stat_cards = page.locator(".stat-card")
+        assert stat_cards.count() >= 4, "Dashboard should show aggregate stats"
 
     def test_titles_table_exists(self, page: Page):
-        """Step 3: Verify there's a table with titles."""
-        page.goto(BASE_URL)
+        """Step 3: Verify there's a table with titles on /titles page."""
+        page.goto(f"{BASE_URL}/titles")
 
         # Check for table
         table = page.locator("table")
@@ -81,7 +85,7 @@ class TestUserStory1_BrowseTitles:
 
     def test_titles_have_links(self, page: Page):
         """Step 4: Verify titles have numbers, names, and word counts."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
 
         # Check that rows have links
         title_links = page.locator("table tbody tr td a")
@@ -101,11 +105,11 @@ class TestUserStory1_BrowseTitles:
         nav = page.locator("nav")
         expect(nav).to_be_visible()
 
-        browse_link = page.locator("nav a", has_text="Browse")
-        expect(browse_link).to_be_visible()
+        titles_link = page.locator("nav a", has_text="Titles")
+        expect(titles_link).to_be_visible()
 
-        statistics_link = page.locator("nav a", has_text="Statistics")
-        expect(statistics_link).to_be_visible()
+        agencies_link = page.locator("nav a", has_text="Agencies")
+        expect(agencies_link).to_be_visible()
 
 
 class TestUserStory2_NavigateToTitle:
@@ -115,7 +119,7 @@ class TestUserStory2_NavigateToTitle:
     so I can understand how regulations are organized.
 
     Steps:
-    1. Go to home page
+    1. Go to titles page
     2. Click on first title link
     3. Verify title page shows title number and name
     4. Verify structure is displayed with parts
@@ -124,7 +128,7 @@ class TestUserStory2_NavigateToTitle:
 
     def test_click_title_navigates(self, page: Page):
         """Steps 1-2: Click on a title link."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
 
         # Get first title link
         first_link = page.locator("table tbody tr:first-child td a").first
@@ -138,7 +142,7 @@ class TestUserStory2_NavigateToTitle:
 
     def test_title_page_shows_info(self, page: Page):
         """Step 3: Verify title page shows title number and name."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
         first_link = page.locator("table tbody tr:first-child td a").first
         first_link.click()
 
@@ -152,7 +156,7 @@ class TestUserStory2_NavigateToTitle:
 
     def test_structure_displayed(self, page: Page):
         """Steps 4-5: Verify structure with parts and sections."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
         first_link = page.locator("table tbody tr:first-child td a").first
         first_link.click()
 
@@ -302,36 +306,27 @@ class TestUserStory6_ViewStatistics:
     in the CFR so I can understand regulatory burden.
 
     Steps:
-    1. Click Statistics in navigation
-    2. Verify statistics dashboard loads
-    3. Click on Agency Statistics
-    4. Verify agencies are listed with word counts
-    5. Go back and click Title Statistics
-    6. Verify titles are sorted by word count
+    1. Click Agencies in navigation
+    2. Verify agencies list loads
+    3. Verify agencies are listed with word counts
     """
 
     def test_statistics_navigation(self, page: Page):
-        """Steps 1-2: Navigate to statistics dashboard."""
+        """Steps 1-2: Navigate to agencies via nav link."""
         page.goto(BASE_URL)
 
-        statistics_link = page.locator("nav a", has_text="Statistics")
-        statistics_link.click()
+        agencies_link = page.locator("nav a", has_text="Agencies")
+        agencies_link.click()
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06_statistics_dashboard.png", full_page=True)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06_agencies.png", full_page=True)
 
-        expect(page).to_have_url(re.compile(r".*/statistics.*"))
-        expect(page.locator("h1")).to_contain_text("Statistics")
+        expect(page).to_have_url(re.compile(r".*/agencies.*"))
 
     def test_agency_statistics(self, page: Page):
-        """Steps 3-4: View agency statistics."""
-        page.goto(f"{BASE_URL}/statistics/")
-
-        agency_link = page.locator("a", has_text="View Agency Statistics")
-        agency_link.click()
+        """Step 3: View agency statistics."""
+        page.goto(f"{BASE_URL}/agencies")
 
         page.screenshot(path=f"{SCREENSHOT_DIR}/06b_agency_statistics.png", full_page=True)
-
-        expect(page).to_have_url(re.compile(r".*/statistics/agencies.*"))
 
         # Check table exists
         table = page.locator("table")
@@ -345,15 +340,12 @@ class TestUserStory6_ViewStatistics:
         assert "Word Count" in header_texts
 
     def test_title_statistics(self, page: Page):
-        """Steps 5-6: View title statistics."""
-        page.goto(f"{BASE_URL}/statistics/")
+        """View titles page (moved to browse)."""
+        page.goto(f"{BASE_URL}/titles")
 
-        title_link = page.locator("a", has_text="View Title Statistics")
-        title_link.click()
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_titles.png", full_page=True)
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_title_statistics.png", full_page=True)
-
-        expect(page).to_have_url(re.compile(r".*/statistics/titles.*"))
+        expect(page).to_have_url(re.compile(r".*/titles.*"))
 
         # Check table exists
         table = page.locator("table")
@@ -365,7 +357,7 @@ class TestAccessibilityAndUsability:
 
     def test_breadcrumbs_work(self, page: Page):
         """Test that breadcrumb navigation works."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
         page.locator("table tbody tr:first-child td a").first.click()
 
         # Check breadcrumb exists
@@ -376,11 +368,11 @@ class TestAccessibilityAndUsability:
         all_titles_link = breadcrumb.locator("a", has_text="All Titles")
         all_titles_link.click()
 
-        expect(page).to_have_url(BASE_URL + "/?year=0")
+        expect(page).to_have_url(re.compile(r".*/titles.*"))
 
     def test_year_selector_works(self, page: Page):
         """Test that year selector changes the view."""
-        page.goto(BASE_URL)
+        page.goto(f"{BASE_URL}/titles")
 
         # Find year selector
         year_select = page.locator("select[name='year']")

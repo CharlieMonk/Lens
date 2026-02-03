@@ -13,9 +13,9 @@ class TestECFRFetcherInit:
     """Tests for fetcher initialization."""
 
     def test_default_output_dir(self):
-        """Default output directory is ecfr/ecfr_data."""
+        """Default output directory is ~/ecfr_data."""
         fetcher = ECFRFetcher()
-        assert fetcher.output_dir == Path("ecfr/ecfr_data")
+        assert fetcher.output_dir == Path.home() / "ecfr_data"
 
     def test_custom_output_dir(self):
         """Custom output directory is accepted."""

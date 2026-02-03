@@ -54,7 +54,13 @@ class XMLExtractor:
                 tag, etype, en = elem.tag, elem.attrib.get("TYPE", ""), elem.attrib.get("N", "")
                 new_ctx = dict(ctx)
                 if etype in TYPE_TO_LEVEL:
-                    new_ctx[TYPE_TO_LEVEL[etype]] = cfr_title if etype == "TITLE" and cfr_title else en
+                    value = cfr_title if etype == "TITLE" and cfr_title else en
+                    # Normalize to minimal identifiers (e.g., "Subtitle A" -> "A", "Subchapter B" -> "B")
+                    if etype in ("SUBTITLE", "SUBCHAP") and value:
+                        m = re.search(r'([A-Z])$', value)
+                        if m:
+                            value = m.group(1)
+                    new_ctx[TYPE_TO_LEVEL[etype]] = value
 
                 if etype == "SECTION":
                     finalize()
@@ -99,16 +105,21 @@ class XMLExtractor:
 
         for elem in root.iter():
             tag = elem.tag
-            if tag in ("CHAPTER", "SUBCHAP", "PART", "SUBPART"):
+            if tag in ("CHAPTER", "SUBCHAP", "PART", "SUBPART", "SUBTITLE"):
                 hd = elem.find(".//HD")
                 if hd is not None and hd.text:
-                    patterns = {"CHAPTER": (r'CHAPTER\s+([IVXLCDM]+)', "chapter"), "PART": (r'PART\s+(\d+)', "part")}
+                    # Use ^ anchor to avoid matching "SUBCHAPTER X" when looking for "CHAPTER X"
+                    patterns = {
+                        "CHAPTER": (r'^CHAPTER\s+([IVXLCDM]+)', "chapter"),
+                        "PART": (r'^PART\s+(\d+)', "part"),
+                        "SUBTITLE": (r'^Subtitle\s+([A-Z])', "subtitle"),
+                        "SUBCHAP": (r'^SUBCHAPTER\s+([A-Z])', "subchapter"),
+                        "SUBPART": (r'^Subpart\s+([A-Z])', "subpart"),
+                    }
                     if tag in patterns:
-                        m = re.search(patterns[tag][0], hd.text)
+                        m = re.search(patterns[tag][0], hd.text, re.IGNORECASE)
                         if m:
-                            ctx[patterns[tag][1]] = m.group(1)
-                    else:
-                        ctx[{"SUBCHAP": "subchapter", "SUBPART": "subpart"}[tag]] = hd.text.strip()
+                            ctx[patterns[tag][1]] = m.group(1).upper()
 
             elif tag == "SECTION":
                 sectno = elem.find("SECTNO")

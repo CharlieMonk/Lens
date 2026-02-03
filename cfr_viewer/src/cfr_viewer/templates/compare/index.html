@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "components/citation_input.html" import citation_input %}
+
+{% block title %}Compare Sections - Lens{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Compare Sections</h1>
+    <p>Compare how CFR sections have changed over time with side-by-side diffs.</p>
+</hgroup>
+
+<form action="{{ url_for('compare.index') }}" method="get" class="compare-form">
+    <label for="citation">Enter a CFR citation:</label>
+    {{ citation_input(name="citation", id="citation", placeholder="e.g., 47 CFR 73.609") }}
+    <p class="citation-help">
+        Accepted formats: <code>47 CFR 73.609</code>, <code>47 C.F.R. § 73.609</code>, or <code>47 CFR § 73.609</code>
+    </p>
+</form>
+
+<div class="compare-examples-grid">
+    <a href="{{ url_for('compare.diff', title_num=29, section='1910.134', year1=0) }}" class="example-card">
+        <div class="citation">29 CFR 1910.134</div>
+        <div class="description">Respiratory Protection (OSHA)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=47, section='73.609', year1=0) }}" class="example-card">
+        <div class="citation">47 CFR 73.609</div>
+        <div class="description">FM Station Requirements (FCC)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}" class="example-card">
+        <div class="citation">26 CFR 1.154</div>
+        <div class="description">Tax Regulations (IRS)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=40, section='60.1', year1=0) }}" class="example-card">
+        <div class="citation">40 CFR 60.1</div>
+        <div class="description">Air Quality Standards (EPA)</div>
+    </a>
+</div>
+
+<script>
+document.querySelector('.compare-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const citation = document.getElementById('citation').value.trim();
+    // Parse citation: "47 CFR 73.609" or "47 C.F.R. § 73.609"
+    const match = citation.match(/(\d+)\s*C\.?F\.?R\.?\s*§?\s*([\d.]+)/i);
+    if (match) {
+        window.location.href = '{{ url_for("compare.diff", title_num=0, section="0") }}'.replace('/0/section/0', '/' + match[1] + '/section/' + match[2]);
+    } else {
+        alert('Could not parse citation. Please use format: "47 CFR 73.609"');
+    }
+});
+</script>
+{% endblock %}
