@@ -99,7 +99,8 @@ def index():
     aggregate = {
         "total_words": total_words,
         "total_sections": total_sections,
-        "total_titles": len(title_counts),
+        "total_titles": len(title_counts),  # Titles with content (excludes reserved)
+        "all_titles_count": len(title_meta),  # All titles including reserved
         "total_agencies": len(agency_counts),
         "baseline_year": BASELINE_YEAR,
         "change_pct": compute_change_pct(total_words, baseline_words) if baseline_words else None,

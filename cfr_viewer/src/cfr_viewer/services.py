@@ -22,6 +22,9 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
     results = []
     for n in sorted(meta.keys()):
         title_meta = meta.get(n, {})
+        # Skip reserved titles with no content
+        if title_meta.get("reserved") and n not in word_counts:
+            continue
         wc = word_counts.get(n, 0)
         bc = baseline_counts.get(n)
         if year and year < BASELINE_YEAR:
@@ -35,7 +38,6 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
             "name": title_meta.get("name", f"Title {n}"),
             "word_count": wc,
             "change_pct": change_pct,
-            "reserved": title_meta.get("reserved", False),
         })
     return results
 
