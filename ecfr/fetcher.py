@@ -54,6 +54,13 @@ class ECFRFetcher:
         self.db.save_agencies(self.client.fetch_agencies())
         return self.db.build_agency_lookup()
 
+    def _safe_load_agency_lookup(self) -> dict:
+        """Load agency lookup, returning empty dict on failure."""
+        try:
+            return self._load_agency_lookup()
+        except Exception:
+            return {}
+
     async def fetch_title_async(self, session: aiohttp.ClientSession, title_num: int, date: str, agency_lookup: dict, year: int = 0) -> tuple[bool, str, int]:
         extractor = XMLExtractor(agency_lookup)
         try:
@@ -85,12 +92,9 @@ class ECFRFetcher:
             return 1
 
         print(f"Loading agencies metadata {'(cached)' if cached else '(fetching)'}...", flush=True)
-        try:
-            agency_lookup = self._load_agency_lookup()
+        agency_lookup = self._safe_load_agency_lookup()
+        if agency_lookup:
             print(f"  {len(agency_lookup)} chapter/agency mappings loaded", flush=True)
-        except (requests.exceptions.RequestException, KeyError, TypeError) as e:
-            print(f"Warning: Could not load agencies metadata: {e}", flush=True)
-            agency_lookup = {}
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         titles_to_fetch = [(n, m["latest_issue_date"]) for n, m in titles_meta.items() if 1 <= n <= 50 and m.get("latest_issue_date")]
@@ -127,10 +131,7 @@ class ECFRFetcher:
 
     async def fetch_historical_async(self, historical_years: list[int], title_nums: list[int] = None) -> int:
         title_nums = title_nums or [t for t in range(1, 51) if t != 35]
-        try:
-            agency_lookup = self._load_agency_lookup()
-        except Exception:
-            agency_lookup = {}
+        agency_lookup = self._safe_load_agency_lookup()
         extractor = XMLExtractor(agency_lookup)
 
         years_to_fetch = [y for y in historical_years if not self.db.has_year_data(y)]
@@ -252,11 +253,7 @@ class ECFRFetcher:
 
         if stale:
             print("\n2. Updating stale titles...")
-            try:
-                agency_lookup = self._load_agency_lookup()
-            except Exception as e:
-                print(f"   Warning: Could not load agencies: {e}")
-                agency_lookup = {}
+            agency_lookup = self._safe_load_agency_lookup()
             results["updated_titles"] = self.update_stale_titles(stale, agency_lookup)
 
         print("\n3. Checking for missing data...")
@@ -264,10 +261,7 @@ class ECFRFetcher:
         missing = set(range(1, 51)) - {35} - stored
         if missing:
             print(f"   Found {len(missing)} titles with no data: {sorted(missing)}")
-            try:
-                agency_lookup = self._load_agency_lookup()
-            except Exception:
-                agency_lookup = {}
+            agency_lookup = self._safe_load_agency_lookup()
             results["updated_titles"].update(self.update_stale_titles(sorted(missing), agency_lookup))
         else:
             print("   All titles have section data")
