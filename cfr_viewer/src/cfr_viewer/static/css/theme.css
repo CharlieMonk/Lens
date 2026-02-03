@@ -580,15 +580,8 @@ nav ul li a.nav-active {
 
 /* ===== Copy Citation Button ===== */
 .copy-citation {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
     cursor: pointer;
     transition: all 0.2s ease;
-}
-
-.copy-citation .copy-icon {
-    font-size: 0.9em;
 }
 
 .copy-citation.copy-success {
