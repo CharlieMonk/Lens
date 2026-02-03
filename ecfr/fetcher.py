@@ -332,6 +332,14 @@ def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
     print("Populating title word counts...", flush=True)
     db.populate_title_word_counts()
 
+    # Build similarity index for global search
+    print("Building similarity index...", flush=True)
+    try:
+        result = db.build_similarity_index()
+        print(f"  {result['sections_indexed']:,} sections indexed ({result['index_size_mb']:.1f} MB)", flush=True)
+    except Exception as e:
+        print(f"  Warning: Could not build similarity index: {e}", flush=True)
+
     print("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50, flush=True)
     return 0
 

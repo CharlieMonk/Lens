@@ -209,6 +209,23 @@ class Config:
     def similar_keywords_count(self):
         return self._get("similar_sections", "keywords_per_section", default=5, type_fn=int)
 
+    @property
+    def faiss_index_path(self):
+        path = self._get("similar_sections", "faiss_index_path", default="~/ecfr_data/similarity_index")
+        return Path(path).expanduser()
+
+    @property
+    def faiss_nlist(self):
+        return self._get("similar_sections", "faiss_nlist", default=100, type_fn=int)
+
+    @property
+    def faiss_nprobe(self):
+        return self._get("similar_sections", "faiss_nprobe", default=10, type_fn=int)
+
+    @property
+    def global_similarity_search(self):
+        return self._get("similar_sections", "global_search", default=True, type_fn=bool)
+
     # Viewer
     @property
     def baseline_year(self):

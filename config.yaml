@@ -100,13 +100,18 @@ cache:
   structure_ttl: 300  # 5 minutes
 
 # =============================================================================
-# Similar Sections (TF-IDF)
+# Similar Sections (TF-IDF + FAISS)
 # =============================================================================
 similar_sections:
   max_tfidf_features: 10000
   default_limit: 10
   min_similarity: 0.1  # 10% minimum cosine similarity
   keywords_per_section: 5
+  # FAISS settings for global similarity search
+  faiss_index_path: "~/ecfr_data/similarity_index"  # Base path (adds .faiss and .pkl)
+  faiss_nlist: 100  # Number of clusters for IVF index (higher = more accurate, slower build)
+  faiss_nprobe: 10  # Clusters to search (higher = more accurate, slower search)
+  global_search: true  # Enable global search (false = chapter-only)
 
 # =============================================================================
 # Web Viewer Defaults
