@@ -239,6 +239,24 @@ const CountUp = {
     }
 };
 
+// Tooltip positioning for elements inside overflow containers
+function initTooltips() {
+    document.querySelectorAll('.info-icon').forEach(icon => {
+        if (icon._tooltipInit) return;
+        icon._tooltipInit = true;
+
+        const tooltip = icon.querySelector('.tooltip');
+        if (!tooltip) return;
+
+        icon.addEventListener('mouseenter', () => {
+            const rect = icon.getBoundingClientRect();
+            // Position tooltip below the icon, centered but within viewport
+            tooltip.style.top = `${rect.bottom + 8}px`;
+            tooltip.style.left = `${Math.max(10, Math.min(rect.left - 100, window.innerWidth - 230))}px`;
+        });
+    });
+}
+
 // Similar sections panel functionality
 const SimilarSections = {
     STORAGE_KEY: 'similarSectionsCollapsed',
@@ -249,6 +267,7 @@ const SimilarSections = {
         document.body.addEventListener('htmx:afterSettle', (e) => {
             if (e.detail.target.classList.contains('similar-content')) {
                 this.initPreviewButtons();
+                initTooltips();
             }
         });
 

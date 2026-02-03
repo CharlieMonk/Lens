@@ -150,9 +150,15 @@ tr.reserved {
     line-height: 1;
 }
 
-.similar-sections .collapse-toggle:hover {
-    color: var(--pico-color);
+.similar-sections .collapse-toggle:hover,
+.similar-sections .collapse-toggle:focus {
+    color: var(--pico-primary);
+    background: none;
+    border: none;
+    box-shadow: none;
+    outline: none;
 }
+
 
 .similar-sections.collapsed .collapse-toggle {
     transform: rotate(180deg);
@@ -189,32 +195,25 @@ tr.reserved {
 
 .distinctness-row .info-icon .tooltip {
     visibility: hidden;
-    position: absolute;
-    z-index: 100;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
+    z-index: 1000;
     background: #333;
     color: #fff;
     padding: 0.5rem 0.75rem;
     border-radius: 4px;
     font-size: 0.8rem;
     font-weight: normal;
-    width: 200px;
+    width: 220px;
     text-align: center;
     opacity: 0;
     transition: opacity 0.2s;
+    pointer-events: none;
+    /* Position will be set by JS, fallback to below */
+    margin-top: 0.5rem;
 }
 
 .distinctness-row .info-icon .tooltip::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    margin-left: -5px;
-    border-width: 5px;
-    border-style: solid;
-    border-color: #333 transparent transparent transparent;
+    display: none; /* Hide arrow since position is dynamic */
 }
 
 .distinctness-row .info-icon:hover .tooltip {
@@ -257,23 +256,32 @@ tr.reserved {
 /* Action buttons in similar sections */
 .similar-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
     margin-top: 0.35rem;
+    align-items: stretch;
 }
 
 .similar-actions .action-btn {
     background: none;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 3px;
-    padding: 0.15rem 0.35rem;
+    padding: 0;
+    height: 1.5rem;
+    padding-inline: 0.35rem;
     font-size: 0.7rem;
+    font-family: inherit;
     cursor: pointer;
     color: var(--pico-muted-color);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.2rem;
     transition: all 0.15s ease;
+    box-sizing: border-box;
+    line-height: 1;
+    margin: 0;
 }
 
 .similar-actions .action-btn:hover {
@@ -427,9 +435,6 @@ tr.reserved {
     /* Compact similar items on mobile */
     .similar-item {
         padding: 0.5rem;
-    }
-    .similar-actions {
-        flex-wrap: wrap;
     }
     .similar-actions .action-btn {
         font-size: 0.65rem;
