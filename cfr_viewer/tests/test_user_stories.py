@@ -335,7 +335,7 @@ class TestUserStory6_ViewStatistics:
         # Check headers
         headers = page.locator("table thead th")
         header_texts = headers.all_text_contents()
-        assert "Abbr" in header_texts
+        assert "Abbreviation" in header_texts
         assert "Agency" in header_texts
         assert "Word Count" in header_texts
 
