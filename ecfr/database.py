@@ -182,7 +182,14 @@ class ECFRDatabase:
         """Get total CFR word count by year (for charts). Returns {year: total}."""
         return {r[0]: r[1] for r in self._query("SELECT year, SUM(word_count) FROM title_word_counts GROUP BY year ORDER BY year")}
 
-    def list_years(self): return [r[0] for r in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
+    def list_years(self):
+        if not hasattr(self, '_years_cache') or self._years_cache is None:
+            self._years_cache = [r[0] for r in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
+        return self._years_cache
+
+    def clear_years_cache(self):
+        """Clear years cache after data import."""
+        self._years_cache = None
     def list_titles(self, year=0): return [r[0] for r in self._query("SELECT DISTINCT title FROM sections WHERE year=? ORDER BY title", (year,))]
     list_section_titles = list_titles
 
@@ -236,7 +243,12 @@ class ECFRDatabase:
             if v: q, p = q+f" AND {c}=?", p+[v]
         rows = self._query(q, tuple(p)); return {"sections": {r[0]: r[1] for r in rows if r[0]}, "total": sum(r[1] for r in rows)}
 
-    def get_total_words(self, title, year=0): return self.get_word_counts(title, year=year)["total"]
+    def get_total_words(self, title, year=0):
+        """Get total word count for a title. Uses pre-aggregated table for speed."""
+        r = self._query_one("SELECT word_count FROM title_word_counts WHERE year=? AND title=?", (year, title))
+        if r:
+            return r[0]
+        return self.get_word_counts(title, year=year)["total"]
 
     def get_all_title_word_counts(self, year=0):
         """Get word counts for all titles in one query."""
@@ -359,12 +371,19 @@ class ECFRDatabase:
 
     def get_node_word_counts_by_year(self, title, path=""):
         """Get word counts for a node across all years. Path format: 'chapter/I/part/1'."""
-        filters = {"title": title}
-        if path:
-            parts = path.strip("/").split("/")
-            for i in range(0, len(parts), 2):
-                if i + 1 < len(parts):
-                    filters[parts[i]] = parts[i + 1]
+        # Use pre-aggregated table when no path filter (title-level query)
+        if not path:
+            return {r[0]: r[1] for r in self._query(
+                "SELECT year, word_count FROM title_word_counts WHERE title=? ORDER BY year",
+                (title,)
+            )}
+
+        # Parse path filters
+        filters = {}
+        parts = path.strip("/").split("/")
+        for i in range(0, len(parts), 2):
+            if i + 1 < len(parts):
+                filters[parts[i]] = parts[i + 1]
 
         q = "SELECT year, SUM(word_count) FROM sections WHERE title=?"
         p = [title]
