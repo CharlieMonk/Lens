@@ -12,52 +12,94 @@
     </ul>
 </nav>
 
-<h1>Compare &sect; {{ section_id }}</h1>
-<p>Title {{ title_num }}: {{ title_name }}</p>
-
-<form method="get" action="{{ url_for('compare.diff', title_num=title_num, section=section_id) }}">
-    <div class="grid">
-        <label>
-            Compare from:
-            <select name="year2">
+<form method="get" action="{{ url_for('compare.diff', title_num=title_num, section=section_id) }}" class="compare-form">
+    <div class="compare-toolbar">
+        <div class="citation-row">
+            <input type="text" name="other" value="{{ title_num }} CFR § {{ section_id }}" class="citation-input" placeholder="e.g., 29 CFR 1910.134">
+            <button type="submit" class="citation-go">Go</button>
+        </div>
+        <div class="compare-controls">
+            <select name="year2" onchange="this.form.submit()">
                 {% for y in years %}
                 <option value="{{ y }}" {% if y == year2 %}selected{% endif %}>
                     {{ "Current" if y == 0 else y }}
                 </option>
                 {% endfor %}
             </select>
-        </label>
-        <label>
-            To:
-            <select name="year1">
+            <span class="compare-arrow">→</span>
+            <select name="year1" onchange="this.form.submit()">
                 {% for y in years %}
                 <option value="{{ y }}" {% if y == year1 %}selected{% endif %}>
                     {{ "Current" if y == 0 else y }}
                 </option>
                 {% endfor %}
             </select>
-        </label>
-        <button type="submit">Compare</button>
+        </div>
     </div>
-    <label>
-        Jump to different section (e.g., "29 CFR 1910.134" or "1910.134"):
-        <input type="text" name="other" value="" placeholder="29 CFR 1910.134">
-    </label>
 </form>
 
-{% if diff_html %}
-<article>
-    <header>
-        <strong>Differences</strong>
-    </header>
-    <div class="diff-container">
-        {{ diff_html | safe }}
-    </div>
-</article>
-{% elif section1 and section2 %}
-<article>
-    <p>No differences found between the two versions.</p>
-</article>
+{% if section1 and section1.heading %}
+<p class="section-heading-context">{{ section1.heading }}</p>
+{% endif %}
+
+{% macro section_nav() %}
+<nav class="section-nav compare-nav">
+    {% if prev_section %}
+    <a href="{{ url_for('compare.diff', title_num=title_num, section=prev_section, year1=year1, year2=year2) }}" role="button" class="outline">
+        &larr; &sect; {{ prev_section }}
+    </a>
+    {% else %}
+    <span></span>
+    {% endif %}
+    {% if next_section %}
+    <a href="{{ url_for('compare.diff', title_num=title_num, section=next_section, year1=year1, year2=year2) }}" role="button" class="outline">
+        &sect; {{ next_section }} &rarr;
+    </a>
+    {% endif %}
+</nav>
+{% endmacro %}
+
+{{ section_nav() }}
+
+{% if section1 and section2 %}
+{% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
+<div class="grid compare-versions">
+    <article class="version-card version-old">
+        <header>
+            <div class="version-header-left">
+                <strong>{{ "Current" if year2 == 0 else year2 }}</strong>
+                <span class="word-count">{{ "{:,}".format(section2.word_count or 0) }} words</span>
+            </div>
+            {% if has_changes %}<span class="legend-remove">Removed</span>{% endif %}
+        </header>
+        <div class="section-text diff-text">
+            {% if old_html %}{{ old_html | safe }}{% else %}{{ section2.text | safe }}{% endif %}
+        </div>
+    </article>
+
+    <article class="version-card version-new">
+        <header>
+            <div class="version-header-left">
+                <strong>{{ "Current" if year1 == 0 else year1 }}</strong>
+                <span class="word-count">{{ "{:,}".format(section1.word_count or 0) }} words</span>
+                {% if diff != 0 %}
+                <span class="{% if diff > 0 %}change-positive{% else %}change-negative{% endif %}">
+                    ({% if diff > 0 %}+{% endif %}{{ "{:,}".format(diff) }})
+                </span>
+                {% endif %}
+            </div>
+            {% if has_changes %}<span class="legend-add">Added</span>{% endif %}
+        </header>
+        <div class="section-text diff-text">
+            {% if new_html %}{{ new_html | safe }}{% else %}{{ section1.text | safe }}{% endif %}
+        </div>
+    </article>
+</div>
+{{ section_nav() }}
+
+{% if not has_changes %}
+<p class="no-changes-note">Identical content in both versions.</p>
+{% endif %}
 {% else %}
 <article>
     <p>One or both versions could not be found for comparison.</p>
@@ -68,31 +110,6 @@
     <p>&sect; {{ section_id }} not found for {{ "current" if year2 == 0 else year2 }}.</p>
     {% endif %}
 </article>
+{{ section_nav() }}
 {% endif %}
-
-<div class="grid">
-    {% if section2 %}
-    <article>
-        <header>
-            <strong>{{ "Current" if year2 == 0 else year2 }} Version</strong>
-            <small>({{ "{:,}".format(section2.word_count or 0) }} words)</small>
-        </header>
-        <div class="section-text">
-            {{ section2.text | safe }}
-        </div>
-    </article>
-    {% endif %}
-
-    {% if section1 %}
-    <article>
-        <header>
-            <strong>{{ "Current" if year1 == 0 else year1 }} Version</strong>
-            <small>({{ "{:,}".format(section1.word_count or 0) }} words)</small>
-        </header>
-        <div class="section-text">
-            {{ section1.text | safe }}
-        </div>
-    </article>
-    {% endif %}
-</div>
 {% endblock %}

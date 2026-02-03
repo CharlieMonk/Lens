@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/structure_table.html" import structure_table %}
 
 {% block title %}Title {{ title_num }} - CFR Viewer{% endblock %}
 
@@ -12,69 +13,10 @@
 
 <hgroup>
     <h1>Title {{ title_num }}: {{ title_name }}</h1>
-    <p>{{ "{:,}".format(word_count) }} words</p>
+    <p>{{ "{:,}".format(word_count) }} words{% if structure %}, {{ structure.section_count }} sections{% endif %}</p>
 </hgroup>
 
 {% include "components/year_selector.html" %}
 
-{# Recursive macro to render the hierarchy #}
-{% macro render_node(node, depth=0) %}
-    {% if node.type == 'section' %}
-        <li class="structure-item depth-{{ depth }}">
-            <a href="{{ url_for('browse.section', title_num=title_num, section=node.identifier, year=year) }}">
-                {% if node.heading %}{{ node.heading }}{% else %}&sect; {{ node.identifier }}{% endif %}
-            </a>
-        </li>
-    {% elif node.type in ['subtitle', 'chapter', 'subchapter', 'part', 'subpart'] %}
-        {% if node.reserved %}
-        <li class="structure-item depth-{{ depth }} reserved-item">
-            <span class="reserved-label">
-                {% if node.type == 'subtitle' %}{{ node.identifier }}
-                {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
-                {% elif node.type == 'part' %}Part {{ node.identifier }}
-                {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
-                {% endif %}
-            </span>
-            <span class="reserved-tag">[Reserved]</span>
-        </li>
-        {% else %}
-        <li class="structure-item depth-{{ depth }}"{% if node.type == 'chapter' %} id="chapter-{{ node.identifier }}"{% endif %}>
-            <details {% if depth == 0 %}open{% endif %}>
-                <summary>
-                    <strong>
-                        {% if node.type == 'subtitle' %}{{ node.identifier }}
-                        {% elif node.type == 'chapter' %}Chapter {{ node.identifier }}
-                        {% elif node.type == 'subchapter' %}{% if node.identifier|length <= 3 %}Subchapter {% endif %}{{ node.identifier }}
-                        {% elif node.type == 'part' %}Part {{ node.identifier }}
-                        {% elif node.type == 'subpart' %}Subpart {{ node.identifier }}
-                        {% endif %}
-                    </strong>
-                    <small class="secondary">({{ "{:,}".format(node.word_count or 0) }} words)</small>
-                </summary>
-                <ul class="structure-list">
-                    {% for child in node.children %}
-                        {{ render_node(child, depth + 1) }}
-                    {% endfor %}
-                </ul>
-            </details>
-        </li>
-        {% endif %}
-    {% endif %}
-{% endmacro %}
-
-{% if structure and structure.children %}
-<article>
-    <h2>Structure</h2>
-    <p class="secondary">{{ structure.section_count }} sections</p>
-
-    <ul class="structure-tree">
-        {% for node in structure.children %}
-            {{ render_node(node, 0) }}
-        {% endfor %}
-    </ul>
-</article>
-{% else %}
-<p>No structure data available for this title.</p>
-{% endif %}
+{{ structure_table(structure.children if structure else [], title_num, year, baseline_year=BASELINE_YEAR) }}
 {% endblock %}

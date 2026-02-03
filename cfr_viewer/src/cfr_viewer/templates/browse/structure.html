@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "components/structure_table.html" import structure_table %}
+
+{% block title %}{{ breadcrumb[-1].label if breadcrumb else "Structure" }} - Title {{ title_num }} - CFR Viewer{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('browse.index', year=year) }}">All Titles</a></li>
+        <li><a href="{{ url_for('browse.title', title_num=title_num, year=year) }}">Title {{ title_num }}</a></li>
+        {% for crumb in breadcrumb[:-1] %}
+        <li><a href="{{ url_for('browse.structure', title_num=title_num, path=crumb.path, year=year) }}">{{ crumb.label }}</a></li>
+        {% endfor %}
+        {% if breadcrumb %}
+        <li>{{ breadcrumb[-1].label }}</li>
+        {% endif %}
+    </ul>
+</nav>
+
+{% if node %}
+<hgroup>
+    <h1>{{ breadcrumb[-1].label if breadcrumb else "Structure" }}</h1>
+    <p>{{ "{:,}".format(node.word_count or 0) }} words, {{ node.section_count or 0 }} sections</p>
+</hgroup>
+
+{% include "components/year_selector.html" %}
+
+{{ structure_table(node.children if node else [], title_num, year, breadcrumb[-1].path if breadcrumb else "", baseline_year=BASELINE_YEAR) }}
+{% else %}
+<h1>Not Found</h1>
+<p>The requested structure could not be found.</p>
+{% endif %}
+{% endblock %}

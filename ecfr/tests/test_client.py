@@ -26,8 +26,8 @@ class TestECFRClientInit:
 
     def test_base_urls(self):
         """Client has correct base URLs."""
-        assert "ecfr.gov" in ECFRClient.ECFR_BASE_URL
-        assert "govinfo.gov" in ECFRClient.GOVINFO_CFR_URL
+        assert "ecfr.gov" in ECFRClient.ECFR_BASE
+        assert "govinfo.gov" in ECFRClient.GOVINFO_CFR
 
 
 class TestECFRClientSync:
@@ -169,8 +169,8 @@ class TestECFRClientAsync:
 
     def test_fetch_title_racing_url_patterns(self, client):
         """Verify URL patterns used by racing fetch."""
-        ecfr_url = f"{client.ECFR_BASE_URL}/versioner/v1/full/2024-01-01/title-1.xml"
-        govinfo_url = f"{client.GOVINFO_ECFR_URL}/title-1/ECFR-title1.xml"
+        ecfr_url = f"{client.ECFR_BASE}/versioner/v1/full/2024-01-01/title-1.xml"
+        govinfo_url = f"{client.GOVINFO_ECFR}/title-1/ECFR-title1.xml"
 
         assert "ecfr.gov" in ecfr_url
         assert "2024-01-01" in ecfr_url
@@ -178,7 +178,7 @@ class TestECFRClientAsync:
 
     def test_fetch_govinfo_volumes_url_pattern(self, client):
         """Verify URL pattern for govinfo volumes."""
-        url = f"{client.GOVINFO_CFR_URL}/2024/title-1/CFR-2024-title1-vol1.xml"
+        url = f"{client.GOVINFO_CFR}/2024/title-1/CFR-2024-title1-vol1.xml"
 
         assert "govinfo.gov" in url
         assert "2024" in url
@@ -192,20 +192,20 @@ class TestECFRClientURLs:
     def test_ecfr_titles_url(self):
         """Titles URL is correct."""
         client = ECFRClient()
-        url = f"{client.ECFR_BASE_URL}/versioner/v1/titles.json"
+        url = f"{client.ECFR_BASE}/versioner/v1/titles.json"
         assert "ecfr.gov" in url
         assert "titles.json" in url
 
     def test_ecfr_full_xml_url(self):
         """Full XML URL pattern is correct."""
         client = ECFRClient()
-        url = f"{client.ECFR_BASE_URL}/versioner/v1/full/2024-01-01/title-1.xml"
+        url = f"{client.ECFR_BASE}/versioner/v1/full/2024-01-01/title-1.xml"
         assert "2024-01-01" in url
         assert "title-1.xml" in url
 
     def test_govinfo_cfr_url(self):
         """Govinfo CFR URL pattern is correct."""
         client = ECFRClient()
-        url = f"{client.GOVINFO_CFR_URL}/2024/title-1/CFR-2024-title1-vol1.xml"
+        url = f"{client.GOVINFO_CFR}/2024/title-1/CFR-2024-title1-vol1.xml"
         assert "govinfo.gov" in url
         assert "bulkdata/CFR" in url

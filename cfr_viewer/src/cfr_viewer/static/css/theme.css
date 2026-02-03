@@ -84,6 +84,16 @@ nav strong a {
     align-items: start;
 }
 
+.section-layout > article > header {
+    height: 140px;
+    display: flex;
+    align-items: center;
+}
+
+.section-layout > article > header .section-nav {
+    width: 100%;
+}
+
 .section-layout .similar-sections {
     width: 280px;
     min-width: 200px;
@@ -105,40 +115,76 @@ nav strong a {
     border-radius: var(--pico-border-radius);
 }
 
-/* Diff container styling - unified diff format */
-.diff-container {
-    font-family: monospace;
-    font-size: 0.85rem;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+/* Side-by-side diff styling */
+.diff-text {
+    line-height: 1.6;
 }
 
-.diff-container .diff-header {
-    color: var(--pico-muted-color);
-    font-weight: bold;
-}
-
-.diff-container .diff-hunk {
-    color: #6a1b9a;
-    background-color: #f3e5f5;
-    margin: 0.5rem 0;
-    padding: 0.25rem;
-}
-
-.diff-container .diff-add {
-    background-color: #c8e6c9;
-    color: #1b5e20;
-}
-
-.diff-container .diff-sub {
+.diff-text .diff-add {
     background-color: #ffcdd2;
     color: #b71c1c;
+    border-radius: 2px;
+    padding: 0 2px;
 }
 
-.diff-container .diff-context {
-    color: var(--pico-color);
+.diff-text .diff-del {
+    background-color: #c8e6c9;
+    color: #1b5e20;
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.no-changes-note {
+    text-align: center;
+    color: var(--pico-muted-color);
+    font-style: italic;
+    margin-top: 0.5rem;
+}
+
+/* Compare page navigation */
+.compare-nav {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* Compare page version cards */
+.compare-versions {
+    gap: 1rem;
+}
+
+.compare-versions .version-card {
+    margin: 0;
+}
+
+.compare-versions .version-card header {
+    padding: 0.5rem 1rem;
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.version-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.version-header-left .word-count {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+}
+
+.compare-versions .version-old header {
+    background: #ffebee;
+    border-bottom: 2px solid #ffcdd2;
+}
+
+.compare-versions .version-new header {
+    background: #e8f5e9;
+    border-bottom: 2px solid #c8e6c9;
 }
 
 /* Breadcrumb styling */
@@ -160,110 +206,6 @@ nav[aria-label="breadcrumb"] li:last-child {
     color: var(--pico-muted-color);
 }
 
-/* Details/summary for structure */
-details {
-    margin-bottom: 0.5rem;
-}
-
-details summary {
-    cursor: pointer;
-    padding: 0.5rem;
-    background: var(--pico-card-background-color);
-    border-radius: var(--pico-border-radius);
-}
-
-details summary:hover {
-    background: var(--pico-card-sectionning-background-color);
-}
-
-details[open] summary {
-    margin-bottom: 0.5rem;
-}
-
-details ul {
-    margin: 0;
-    padding-left: 1.5rem;
-}
-
-details li {
-    padding: 0.25rem 0;
-}
-
-/* Structure tree styling */
-.structure-tree {
-    list-style: none;
-    padding-left: 0;
-    margin: 1rem 0 0 0;
-}
-
-.structure-tree details {
-    margin-bottom: 0.25rem;
-}
-
-.structure-tree details[open] > summary {
-    margin-bottom: 0.25rem;
-}
-
-.structure-list {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-}
-
-/* Structure items with depth-based indentation */
-.structure-item {
-    padding: 0.3rem 0;
-    border-bottom: 1px solid var(--pico-muted-border-color);
-}
-
-.structure-item:last-child {
-    border-bottom: none;
-}
-
-/* Indentation by depth - progressive indentation for hierarchy */
-.structure-item.depth-0 { margin-left: 0; }
-.structure-item.depth-1 { margin-left: 1.5rem; }
-.structure-item.depth-2 { margin-left: 3rem; }
-.structure-item.depth-3 { margin-left: 4.5rem; }
-.structure-item.depth-4 { margin-left: 6rem; }
-.structure-item.depth-5 { margin-left: 7.5rem; }
-
-/* Section links */
-.structure-item a {
-    text-decoration: none;
-}
-
-/* Summary styling */
-details summary small {
-    font-weight: normal;
-    margin-left: 0.5rem;
-}
-
-/* Color coding for hierarchy levels */
-.structure-item.depth-0 > details > summary strong {
-    color: var(--pico-primary);
-}
-
-.structure-item.depth-1 > details > summary strong {
-    color: #1565c0;
-}
-
-.structure-item.depth-2 > details > summary strong {
-    color: #2e7d32;
-}
-
-.structure-item.depth-3 > details > summary strong {
-    color: #6a1b9a;
-}
-
-.structure-item.depth-4 > details > summary strong {
-    color: #e65100;
-}
-
-.structure-item.depth-5 > details > summary strong {
-    color: #00695c;
-}
-
 /* Footer styling */
 footer {
     margin-top: 2rem;
@@ -277,27 +219,17 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--pico-muted-border-color);
+    margin: 0.75rem 0;
 }
 
 /* Reserved items styling */
 .reserved-item {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem;
     color: var(--pico-muted-color);
     font-style: italic;
 }
 
-.reserved-label {
-    margin-right: 0.5rem;
-}
-
 .reserved-tag {
     font-size: 0.85rem;
-    color: var(--pico-muted-color);
 }
 
 /* Sortable table headers */
@@ -323,4 +255,146 @@ footer {
 .sortable-header.sort-desc::after {
     content: " ↓";
     opacity: 1;
+}
+
+/* Citation input row with Go button */
+.citation-row {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 0;
+}
+
+.citation-row > * {
+    height: 100%;
+}
+
+.citation-input {
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 2px solid var(--pico-muted-border-color);
+    border-right: none;
+    border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);
+    background: var(--pico-background-color);
+    padding: 0.5rem 1rem;
+    margin: 0;
+    min-width: 20ch;
+    width: auto;
+    cursor: text;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.citation-input:hover,
+.citation-row:hover .citation-input {
+    border-color: var(--pico-primary);
+}
+
+.citation-input:focus {
+    border-color: var(--pico-primary);
+    box-shadow: 0 0 0 3px var(--pico-primary-focus);
+    outline: none;
+    z-index: 1;
+}
+
+.compare-form .citation-row {
+    --citation-height: calc(1.5rem * 1.5 + 1rem + 4px); /* font-size * line-height + padding + border */
+}
+
+.compare-form .citation-row .citation-input {
+    height: var(--citation-height) !important;
+    box-sizing: border-box !important;
+}
+
+.compare-form .citation-row button.citation-go {
+    height: var(--citation-height) !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 1rem !important;
+    margin: 0 !important;
+    font-size: 1rem !important;
+    line-height: normal !important;
+    border: 2px solid var(--pico-primary) !important;
+    border-left: none !important;
+    border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0 !important;
+    box-sizing: border-box !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Section heading context */
+.section-heading-context {
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+    margin: 0 0 0.25rem 0;
+    font-style: italic;
+}
+
+/* Compare toolbar - all controls on one line */
+.compare-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+}
+
+.compare-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.compare-controls select {
+    margin: 0;
+    width: auto;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+}
+
+.compare-arrow {
+    color: var(--pico-muted-color);
+    font-size: 1.25rem;
+}
+
+/* Word count change indicators for "Since BASELINE_YEAR" columns */
+/* Positive = regulations grew = red (bad) */
+.change-positive {
+    color: #c62828;
+}
+
+/* Negative = regulations shrank = green (good) */
+.change-negative {
+    color: #2e7d32;
+}
+
+/* Zero = no change = black (default) */
+.change-zero {
+    color: inherit;
+}
+
+/* Legend badges for diff view */
+.legend-add, .legend-remove {
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+.legend-add {
+    background: #ffcdd2;
+    color: #b71c1c;
+}
+
+.legend-remove {
+    background: #c8e6c9;
+    color: #1b5e20;
+}
+
+/* Statistics page grid cards - align buttons at bottom */
+.grid > article {
+    display: flex;
+    flex-direction: column;
+}
+
+.grid > article > a[role="button"] {
+    margin-top: auto;
 }

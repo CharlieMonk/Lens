@@ -329,14 +329,14 @@ class TestECFRDatabaseQueries:
     def test_get_section_heading(self, temp_db, sample_sections):
         """Get section heading."""
         temp_db.save_sections(sample_sections, year=0)
-        heading = temp_db.get_section_heading(title=1, section="1.1", year=0)
+        heading = temp_db.get_section(1, "1.1", 0)["heading"]
 
         assert heading == "Definitions"
 
     def test_get_section_text(self, temp_db, sample_sections):
         """Get section text."""
         temp_db.save_sections(sample_sections, year=0)
-        text = temp_db.get_section_text(title=1, section="1.1", year=0)
+        text = temp_db.get_section(1, "1.1", 0)["text"]
 
         assert "meanings" in text
 

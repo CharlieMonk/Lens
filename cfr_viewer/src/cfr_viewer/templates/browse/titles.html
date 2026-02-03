@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/change_cell.html" import change_cell %}
 
 {% block title %}All Titles - CFR Viewer{% endblock %}
 
@@ -16,6 +17,7 @@
             <th scope="col" data-sort="number">Title</th>
             <th scope="col" data-sort="string">Name</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
+            <th scope="col" class="numeric" data-sort="number">{% if year and year < BASELINE_YEAR %}To{% else %}Since{% endif %} {{ BASELINE_YEAR }}</th>
         </tr>
     </thead>
     <tbody>
@@ -24,10 +26,11 @@
             <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
             <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
             <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
+            {{ change_cell(title.change_pct) }}
         </tr>
         {% else %}
         <tr>
-            <td colspan="3">No titles found for this year.</td>
+            <td colspan="4">No titles found for this year.</td>
         </tr>
         {% endfor %}
     </tbody>
