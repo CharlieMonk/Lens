@@ -20,7 +20,8 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
     word_counts = db.get_all_title_word_counts(year)
     baseline_counts = db.get_all_title_word_counts(BASELINE_YEAR)
     results = []
-    for n in sorted(db.list_titles(year)):
+    for n in sorted(meta.keys()):
+        title_meta = meta.get(n, {})
         wc = word_counts.get(n, 0)
         bc = baseline_counts.get(n)
         if year and year < BASELINE_YEAR:
@@ -29,7 +30,13 @@ def list_titles_with_metadata(year: int = 0) -> list[dict]:
         else:
             # "Since BASELINE_YEAR": compute change from baseline to year
             change_pct = compute_change_pct(wc, bc)
-        results.append({"number": n, "name": meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc, "change_pct": change_pct})
+        results.append({
+            "number": n,
+            "name": title_meta.get("name", f"Title {n}"),
+            "word_count": wc,
+            "change_pct": change_pct,
+            "reserved": title_meta.get("reserved", False),
+        })
     return results
 
 

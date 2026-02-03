@@ -17,10 +17,10 @@
     </thead>
     <tbody>
         {% for title in titles %}
-        <tr>
-            <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
-            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
-            <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
+        <tr{% if title.reserved %} class="reserved"{% endif %}>
+            <td data-value="{{ title.number }}">{% if title.reserved %}{{ title.number }}{% else %}<a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a>{% endif %}</td>
+            <td>{% if title.reserved %}{{ title.name }}{% else %}<a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a>{% endif %}</td>
+            <td class="numeric" data-value="{{ title.word_count }}">{% if title.reserved %}—{% else %}{{ "{:,}".format(title.word_count) }}{% endif %}</td>
             {{ change_cell(title.change_pct, is_before_baseline=is_before) }}
         </tr>
         {% else %}

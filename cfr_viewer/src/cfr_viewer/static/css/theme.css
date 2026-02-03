@@ -41,6 +41,12 @@ nav strong a {
     text-align: right;
 }
 
+/* Reserved/empty items */
+tr.reserved {
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
 /* Year selector styling */
 .year-selector {
     display: inline-block;
