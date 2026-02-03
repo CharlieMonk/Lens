@@ -1,0 +1,10 @@
+{# Macro for table header with info tooltip #}
+{% macro header_tooltip(label, tooltip_text) %}
+<span class="header-with-info">
+    {{ label }}
+    <span class="info-tooltip" aria-label="Information about this column">
+        <span class="tooltip-icon">&#9432;</span>
+        <span class="tooltip-text">{{ tooltip_text }}</span>
+    </span>
+</span>
+{% endmacro %}

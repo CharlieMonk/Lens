@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "components/change_cell.html" import change_cell %}
+{% from "components/titles_table.html" import titles_table %}
+{% from "components/table_filter.html" import table_filter %}
 
 {% block title %}All Titles - Lens{% endblock %}
 
@@ -11,56 +12,6 @@
 
 {% include "components/year_selector.html" %}
 
-<div class="table-filter">
-    <input type="search" id="title-filter" placeholder="Filter titles by name or number..." aria-label="Filter titles">
-</div>
-
-<table class="sortable" id="titles-table">
-    <thead>
-        <tr>
-            <th scope="col" data-sort="number">Title</th>
-            <th scope="col" data-sort="string">Name</th>
-            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
-            <th scope="col" class="numeric" data-sort="number">
-                <span class="header-with-info">
-                    {% if year and year < BASELINE_YEAR %}To{% else %}Since{% endif %} {{ BASELINE_YEAR }}
-                    <span class="info-tooltip" aria-label="Information about this column">
-                        <span class="tooltip-icon">&#9432;</span>
-                        <span class="tooltip-text">Word count change {% if year and year < BASELINE_YEAR %}to{% else %}since{% endif %} {{ BASELINE_YEAR }}</span>
-                    </span>
-                </span>
-            </th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for title in titles %}
-        <tr>
-            <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
-            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
-            <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
-            {{ change_cell(title.change_pct) }}
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4">No titles found for this year.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-<script>
-document.getElementById('title-filter').addEventListener('input', function(e) {
-    const filter = e.target.value.toLowerCase();
-    const rows = document.querySelectorAll('#titles-table tbody tr');
-    let visibleCount = 0;
-
-    rows.forEach(row => {
-        const number = row.cells[0]?.textContent?.toLowerCase() || '';
-        const name = row.cells[1]?.textContent?.toLowerCase() || '';
-        const matches = number.includes(filter) || name.includes(filter);
-        row.style.display = matches ? '' : 'none';
-        if (matches) visibleCount++;
-    });
-});
-</script>
+{{ table_filter("titles-table", "0,1", "Filter by number or name...") }}
+{{ titles_table(titles, year, BASELINE_YEAR, table_id="titles-table") }}
 {% endblock %}

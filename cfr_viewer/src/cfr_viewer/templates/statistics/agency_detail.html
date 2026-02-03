@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "components/change_cell.html" import change_cell %}
+{% from "components/table_filter.html" import table_filter %}
 
 {% block title %}{{ agency.name if agency else "Agency Not Found" }} - Lens{% endblock %}
 
@@ -23,7 +24,8 @@
 <h2>CFR Chapters</h2>
 
 {% if chapter_stats %}
-<table class="striped sortable">
+{{ table_filter("chapters-table", "0,1", "Filter by title or chapter...") }}
+<table class="striped sortable" id="chapters-table">
     <thead>
         <tr>
             <th scope="col" data-sort="number">Title</th>

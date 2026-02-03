@@ -1,0 +1,31 @@
+{# Macro for rendering a table of CFR titles with word counts #}
+{% macro titles_table(titles, year=none, baseline_year=2010, show_tooltip=true, table_id="") %}
+{% from "components/change_cell.html" import change_cell %}
+{% from "components/header_tooltip.html" import header_tooltip %}
+{% set is_before = year and year < baseline_year %}
+{% set change_label = ("To" if is_before else "Since") ~ " " ~ baseline_year %}
+<table class="sortable"{% if table_id %} id="{{ table_id }}"{% endif %}>
+    <thead>
+        <tr>
+            <th scope="col" data-sort="number">Title</th>
+            <th scope="col" data-sort="string">Name</th>
+            <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
+            <th scope="col" class="numeric" data-sort="number">
+                {% if show_tooltip %}{{ header_tooltip(change_label, "Word count change " ~ ("to" if is_before else "since") ~ " " ~ baseline_year) }}{% else %}{{ change_label }}{% endif %}
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for title in titles %}
+        <tr>
+            <td data-value="{{ title.number }}"><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.number }}</a></td>
+            <td><a href="{{ url_for('browse.title', title_num=title.number, year=year) }}">{{ title.name }}</a></td>
+            <td class="numeric" data-value="{{ title.word_count }}">{{ "{:,}".format(title.word_count) }}</td>
+            {{ change_cell(title.change_pct, is_before_baseline=is_before) }}
+        </tr>
+        {% else %}
+        <tr><td colspan="4">No titles found for this year.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endmacro %}

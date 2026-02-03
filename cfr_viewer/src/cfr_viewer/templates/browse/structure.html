@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "components/structure_table.html" import structure_table %}
+{% from "components/table_filter.html" import table_filter %}
 
 {% block title %}{{ breadcrumb[-1].label if breadcrumb else "Structure" }} - Title {{ title_num }} - Lens{% endblock %}
 
@@ -25,7 +26,8 @@
 
 {% include "components/year_selector.html" %}
 
-{{ structure_table(node.children if node else [], title_num, year, breadcrumb[-1].path if breadcrumb else "", baseline_year=BASELINE_YEAR) }}
+{{ table_filter("structure-table", "0", "Filter...") }}
+{{ structure_table(node.children if node else [], title_num, year, breadcrumb[-1].path if breadcrumb else "", baseline_year=BASELINE_YEAR, table_id="structure-table") }}
 {% else %}
 <h1>Not Found</h1>
 <p>The requested structure could not be found.</p>

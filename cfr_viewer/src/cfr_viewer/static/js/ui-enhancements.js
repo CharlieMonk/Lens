@@ -122,9 +122,29 @@ function initSmoothScroll() {
     });
 }
 
+// Table filter - binds input[data-filter-table] to filter table rows
+function initTableFilters() {
+    document.querySelectorAll('input[data-filter-table]').forEach(input => {
+        const tableId = input.dataset.filterTable;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const cols = (input.dataset.filterCols || '0,1').split(',').map(Number);
+
+        input.addEventListener('input', () => {
+            const filter = input.value.toLowerCase();
+            table.querySelectorAll('tbody tr').forEach(row => {
+                const text = cols.map(i => row.cells[i]?.textContent?.toLowerCase() || '').join(' ');
+                row.style.display = text.includes(filter) ? '' : 'none';
+            });
+        });
+    });
+}
+
 // Initialize all enhancements
 document.addEventListener('DOMContentLoaded', () => {
     initCopyCitation();
     initHTMXLoadingStates();
     initSmoothScroll();
+    initTableFilters();
 });
