@@ -1,10 +1,22 @@
 """SQLite database operations for eCFR data."""
+import hashlib
 import json, re, sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from .config import config
+
+# Columns for sections table (text_hash references texts table)
+SECTION_COLS = ("year", "title", "subtitle", "chapter", "subchapter", "part", "subpart", "section", "heading", "text_hash", "word_count")
+# Columns returned by queries (text resolved from texts table)
 COLS = ("year", "title", "subtitle", "chapter", "subchapter", "part", "subpart", "section", "heading", "text", "word_count")
+HISTORICAL_YEARS = sorted(config.historical_years)
+
+
+def _hash_text(text: str) -> str:
+    """Compute SHA-256 hash of text content."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 def roman_to_int(s):
     vals = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
@@ -36,13 +48,14 @@ def section_sort_key(s):
     return result
 
 class ECFRDatabase:
-    def __init__(self, db_path: str | Path = "ecfr/ecfr_data/ecfr.db"):
+    def __init__(self, db_path: str | Path | None = None):
+        db_path = db_path or config.database_path
         self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._tfidf_cache = {}
         self._stats_cache = {}
         self._stats_cache_time = 0
-        self._stats_cache_ttl = 300  # 5 minutes
+        self._stats_cache_ttl = config.cache_stats_ttl
         self._structure_cache = {}
         self._structure_cache_time = 0
         self._init_schema()
@@ -63,11 +76,15 @@ class ECFRDatabase:
     def _init_schema(self):
         with self._connection() as conn:
             c = conn.cursor()
-            c.executescript("""CREATE TABLE IF NOT EXISTS titles (number INTEGER PRIMARY KEY, name TEXT NOT NULL, latest_amended_on TEXT, latest_issue_date TEXT, up_to_date_as_of TEXT, reserved INTEGER DEFAULT 0);
+            # Core tables
+            c.executescript("""
+                CREATE TABLE IF NOT EXISTS titles (number INTEGER PRIMARY KEY, name TEXT NOT NULL, latest_amended_on TEXT, latest_issue_date TEXT, up_to_date_as_of TEXT, reserved INTEGER DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS agencies (slug TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT, display_name TEXT, sortable_name TEXT, parent_slug TEXT);
                 CREATE TABLE IF NOT EXISTS cfr_references (id INTEGER PRIMARY KEY AUTOINCREMENT, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT, subtitle TEXT, subchapter TEXT);
                 CREATE TABLE IF NOT EXISTS agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter));
-                CREATE TABLE IF NOT EXISTS title_word_counts (year INTEGER NOT NULL, title INTEGER NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, title));""")
+                CREATE TABLE IF NOT EXISTS title_word_counts (year INTEGER NOT NULL, title INTEGER NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, title));
+                CREATE TABLE IF NOT EXISTS texts (hash TEXT PRIMARY KEY, content TEXT NOT NULL);
+            """)
             # Migrate agency_word_counts if missing year column
             c.execute("PRAGMA table_info(agency_word_counts)")
             if "year" not in {r[1] for r in c.fetchall()}:
@@ -75,22 +92,124 @@ class ECFRDatabase:
                 c.execute("CREATE TABLE agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter))")
                 c.execute("INSERT INTO agency_word_counts (year, agency_slug, title, chapter, word_count) SELECT 0, agency_slug, title, chapter, word_count FROM agency_word_counts_old")
                 c.execute("DROP TABLE agency_word_counts_old")
+            # Check sections table schema
             c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
             if c.fetchone():
                 c.execute("PRAGMA table_info(sections)")
-                if "year" not in {r[1] for r in c.fetchall()}:
-                    c.execute("ALTER TABLE sections RENAME TO sections_old")
-                    c.execute("CREATE TABLE sections (year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL, subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '', part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '', heading TEXT DEFAULT '', text TEXT DEFAULT '', word_count INTEGER NOT NULL, PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))")
-                    c.execute("INSERT INTO sections (year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count) SELECT 0, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count FROM sections_old")
-                    c.execute("DROP TABLE sections_old")
+                cols = {r[1] for r in c.fetchall()}
+                needs_text_migration = "text" in cols and "text_hash" not in cols
+                needs_year_migration = "year" not in cols
+
+                # Check if texts table already has data (migration may have been interrupted)
+                c.execute("SELECT COUNT(*) FROM texts")
+                texts_populated = c.fetchone()[0] > 0
+
+                if needs_text_migration and not texts_populated:
+                    # Migrate from inline text to content-addressed storage
+                    self._migrate_to_content_addressed(c, include_year=True)
+                elif needs_text_migration and texts_populated:
+                    # Texts already migrated, just need to update sections schema
+                    print("Resuming interrupted migration...")
+                    self._migrate_sections_schema(c, include_year=True)
+                elif needs_year_migration:
+                    # Old schema without year column
+                    self._migrate_to_content_addressed(c, include_year=False)
             else:
-                c.execute("CREATE TABLE IF NOT EXISTS sections (year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL, subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '', part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '', heading TEXT DEFAULT '', text TEXT DEFAULT '', word_count INTEGER NOT NULL, PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))")
-            for n, cols in [("idx_sections_year_title", "sections(year, title)"), ("idx_sections_year_title_section", "sections(year, title, section)"), ("idx_sections_groupby", "sections(year, title, subtitle, chapter, subchapter, part, subpart)"), ("idx_cfr_title_chapter", "cfr_references(title, chapter)"), ("idx_cfr_agency", "cfr_references(agency_slug)"), ("idx_word_counts_agency", "agency_word_counts(agency_slug)")]:
+                c.execute("""CREATE TABLE sections (
+                    year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL,
+                    subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '',
+                    part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '',
+                    heading TEXT DEFAULT '', text_hash TEXT DEFAULT '', word_count INTEGER NOT NULL,
+                    PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))""")
+            # Indexes
+            for n, cols in [
+                ("idx_sections_year_title", "sections(year, title)"),
+                ("idx_sections_year_title_section", "sections(year, title, section)"),
+                ("idx_sections_groupby", "sections(year, title, subtitle, chapter, subchapter, part, subpart)"),
+                ("idx_cfr_title_chapter", "cfr_references(title, chapter)"),
+                ("idx_cfr_agency", "cfr_references(agency_slug)"),
+                ("idx_word_counts_agency", "agency_word_counts(agency_slug)")
+            ]:
                 c.execute(f"CREATE INDEX IF NOT EXISTS {n} ON {cols}")
-            # Migrate: drop unused tables
+            # Drop unused tables
             c.execute("DROP TABLE IF EXISTS title_structures")
             c.execute("DROP TABLE IF EXISTS structure_nodes")
             conn.commit()
+
+    def _migrate_to_content_addressed(self, cursor, include_year=True):
+        """Migrate from inline text to content-addressed storage with progress reporting."""
+        print("Migrating to content-addressed storage...")
+
+        # Count total texts to migrate
+        cursor.execute("SELECT COUNT(DISTINCT text) FROM sections WHERE text != ''")
+        total_texts = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM sections")
+        total_sections = cursor.fetchone()[0]
+        print(f"  Found {total_texts:,} unique texts in {total_sections:,} sections")
+
+        # Extract unique texts with progress
+        print("  Extracting unique texts...")
+        cursor.execute("SELECT DISTINCT text FROM sections WHERE text != ''")
+        texts = cursor.fetchall()
+
+        batch_size = 10000
+        for i, (text,) in enumerate(texts):
+            h = _hash_text(text)
+            cursor.execute("INSERT OR IGNORE INTO texts (hash, content) VALUES (?, ?)", (h, text))
+            if (i + 1) % batch_size == 0:
+                print(f"    Processed {i + 1:,}/{total_texts:,} texts ({(i + 1) * 100 // total_texts}%)")
+        print(f"  Extracted {total_texts:,} unique texts")
+
+        # Migrate sections schema
+        self._migrate_sections_schema(cursor, include_year)
+        print("Migration complete.")
+
+    def _migrate_sections_schema(self, cursor, include_year=True):
+        """Update sections table to use text_hash instead of inline text."""
+        print("  Updating sections table schema...")
+
+        cursor.execute("ALTER TABLE sections RENAME TO sections_old")
+        cursor.execute("""CREATE TABLE sections (
+            year INTEGER NOT NULL DEFAULT 0, title INTEGER NOT NULL,
+            subtitle TEXT DEFAULT '', chapter TEXT DEFAULT '', subchapter TEXT DEFAULT '',
+            part TEXT DEFAULT '', subpart TEXT DEFAULT '', section TEXT DEFAULT '',
+            heading TEXT DEFAULT '', text_hash TEXT DEFAULT '', word_count INTEGER NOT NULL,
+            PRIMARY KEY (year, title, subtitle, chapter, subchapter, part, subpart, section))""")
+
+        # Build hash lookup for efficient migration
+        print("  Building text hash lookup...")
+        cursor.execute("SELECT hash, content FROM texts")
+        text_to_hash = {content: hash for hash, content in cursor.fetchall()}
+
+        # Migrate sections in batches with progress
+        cursor.execute("SELECT COUNT(*) FROM sections_old")
+        total = cursor.fetchone()[0]
+        print(f"  Migrating {total:,} sections...")
+
+        year_select = "year" if include_year else "0"
+        cursor.execute(f"SELECT {year_select}, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count FROM sections_old")
+
+        batch = []
+        batch_size = 10000
+        processed = 0
+        for row in cursor.fetchall():
+            year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text, word_count = row
+            text_hash = text_to_hash.get(text, "") if text else ""
+            batch.append((year, title, subtitle, chapter, subchapter, part, subpart, section, heading, text_hash, word_count))
+
+            if len(batch) >= batch_size:
+                cursor.executemany("INSERT INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", batch)
+                processed += len(batch)
+                print(f"    Migrated {processed:,}/{total:,} sections ({processed * 100 // total}%)")
+                batch = []
+
+        if batch:
+            cursor.executemany("INSERT INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", batch)
+            processed += len(batch)
+            print(f"    Migrated {processed:,}/{total:,} sections (100%)")
+
+        cursor.execute("DROP TABLE sections_old")
+        print("  Schema migration complete.")
 
     def is_fresh(self): return self.db_path.exists() and self.db_path.stat().st_mtime >= datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     def clear(self):
@@ -151,7 +270,15 @@ class ECFRDatabase:
         if not sections: return
         with self._connection() as c:
             cur = c.cursor()
-            for s in sections: cur.execute("INSERT OR REPLACE INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", (year, int(s.get("title", 0)), s.get("subtitle") or "", s.get("chapter") or "", s.get("subchapter") or "", s.get("part") or "", s.get("subpart") or "", s.get("section") or "", s.get("heading") or "", s.get("text") or "", s.get("word_count", 0)))
+            for s in sections:
+                text = s.get("text") or ""
+                text_hash = _hash_text(text) if text else ""
+                if text:
+                    cur.execute("INSERT OR IGNORE INTO texts (hash, content) VALUES (?, ?)", (text_hash, text))
+                cur.execute("INSERT OR REPLACE INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (year, int(s.get("title", 0)), s.get("subtitle") or "", s.get("chapter") or "",
+                     s.get("subchapter") or "", s.get("part") or "", s.get("subpart") or "",
+                     s.get("section") or "", s.get("heading") or "", text_hash, s.get("word_count", 0)))
             c.commit()
 
     def update_word_counts(self, title_num, chapter_wc, agency_lookup, year=0):
@@ -183,18 +310,20 @@ class ECFRDatabase:
         return {r[0]: r[1] for r in self._query("SELECT year, SUM(word_count) FROM title_word_counts GROUP BY year ORDER BY year")}
 
     def list_years(self):
-        if not hasattr(self, '_years_cache') or self._years_cache is None:
-            self._years_cache = [r[0] for r in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
-        return self._years_cache
-
-    def clear_years_cache(self):
-        """Clear years cache after data import."""
-        self._years_cache = None
+        """Return available years from config. Year 0 represents current data."""
+        return [0] + HISTORICAL_YEARS
     def list_titles(self, year=0): return [r[0] for r in self._query("SELECT DISTINCT title FROM sections WHERE year=? ORDER BY title", (year,))]
     list_section_titles = list_titles
 
+    def _section_select(self):
+        """SQL SELECT clause that joins sections with texts table."""
+        return """SELECT s.year, s.title, s.subtitle, s.chapter, s.subchapter, s.part, s.subpart,
+                         s.section, s.heading, COALESCE(t.content, '') as text, s.word_count
+                  FROM sections s LEFT JOIN texts t ON s.text_hash = t.hash"""
+
     def get_section(self, title, section, year=0):
-        r = self._query_one(f"SELECT {','.join(COLS)} FROM sections WHERE year=? AND title=? AND section=?", (year, title, section)); return dict(zip(COLS, r)) if r else None
+        r = self._query_one(f"{self._section_select()} WHERE s.year=? AND s.title=? AND s.section=?", (year, title, section))
+        return dict(zip(COLS, r)) if r else None
 
     def get_adjacent_sections(self, title, section, year=0):
         rows = self._query("SELECT section FROM sections WHERE year=? AND title=?", (year, title))
@@ -205,21 +334,25 @@ class ECFRDatabase:
         except ValueError: return None, None
 
     def get_sections(self, title, chapter=None, part=None, year=0):
-        q, p = f"SELECT {','.join(COLS)} FROM sections WHERE year=? AND title=?", [year, title]
-        if chapter: q, p = q+" AND chapter=?", p+[chapter]
-        if part: q, p = q+" AND part=?", p+[part]
-        return [dict(zip(COLS, r)) for r in self._query(q+" ORDER BY part, section", tuple(p))]
+        q, p = f"{self._section_select()} WHERE s.year=? AND s.title=?", [year, title]
+        if chapter: q, p = q+" AND s.chapter=?", p+[chapter]
+        if part: q, p = q+" AND s.part=?", p+[part]
+        return [dict(zip(COLS, r)) for r in self._query(q+" ORDER BY s.part, s.section", tuple(p))]
 
     def navigate(self, title, subtitle=None, chapter=None, subchapter=None, part=None, subpart=None, section=None, year=0):
-        q, p = f"SELECT {','.join(COLS)} FROM sections WHERE year=? AND title=?", [year, title]
+        q, p = f"{self._section_select()} WHERE s.year=? AND s.title=?", [year, title]
         for c, v in [("section", section), ("subtitle", subtitle), ("chapter", chapter), ("subchapter", subchapter), ("part", part), ("subpart", subpart)]:
-            if v: q, p = q+f" AND {c}=?", p+[v]
+            if v: q, p = q+f" AND s.{c}=?", p+[v]
         r = self._query_one(q+" LIMIT 1", tuple(p)); return dict(zip(COLS, r)) if r else None
 
     def search(self, query, title=None, year=0):
-        sql, params = ("SELECT title, section, heading, text FROM sections WHERE year=? AND title=? AND text LIKE ?", [year, title, f"%{query}%"]) if title else ("SELECT title, section, heading, text FROM sections WHERE year=? AND text LIKE ?", [year, f"%{query}%"])
+        base = f"{self._section_select()} WHERE s.year=? AND t.content LIKE ?"
+        if title:
+            sql, params = base + " AND s.title=?", [year, f"%{query}%", title]
+        else:
+            sql, params = base, [year, f"%{query}%"]
         ql = query.lower()
-        return [{"title": t, "section": s, "heading": h, "snippet": ("..." if (i:=txt.lower().find(ql))-50>0 else "")+txt[max(0,i-50):i+len(query)+50]+("..." if i+len(query)+50<len(txt) else "")} for t, s, h, txt in self._query(sql, tuple(params))]
+        return [{"title": r[1], "section": r[7], "heading": r[8], "snippet": ("..." if (i:=r[9].lower().find(ql))-50>0 else "")+r[9][max(0,i-50):i+len(query)+50]+("..." if i+len(query)+50<len(r[9]) else "")} for r in self._query(sql, tuple(params))]
 
     def get_structure_word_counts(self, title, year=0):
         result = {"total": 0, "subtitles": {}}
@@ -304,8 +437,8 @@ class ECFRDatabase:
     def get_structure(self, title, year=0):
         import time
         cache_key = (title, year)
-        # Check cache (5 min TTL)
-        if time.time() - self._structure_cache_time > 300:
+        # Check cache TTL
+        if time.time() - self._structure_cache_time > config.cache_structure_ttl:
             self._structure_cache = {}
             self._structure_cache_time = time.time()
         if cache_key in self._structure_cache:
@@ -395,19 +528,23 @@ class ECFRDatabase:
 
         return {r[0]: r[1] for r in self._query(q, tuple(p))}
 
-    def get_similar_sections(self, title, section, year=0, limit=10, min_similarity=0.1):
+    def get_similar_sections(self, title, section, year=0, limit=None, min_similarity=None):
         import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
+        limit = limit if limit is not None else config.similar_default_limit
+        min_similarity = min_similarity if min_similarity is not None else config.similar_min_similarity
         r = self._query_one("SELECT chapter FROM sections WHERE year=0 AND title=? AND section=?", (title, section))
         if not r: return [], None
         ch, key = r[0], (title, r[0])
         if key not in self._tfidf_cache:
-            rows = self._query("SELECT section, heading, text FROM sections WHERE year=0 AND title=? AND chapter=? AND text != ''", (title, ch))
+            rows = self._query("""SELECT s.section, s.heading, t.content
+                FROM sections s JOIN texts t ON s.text_hash = t.hash
+                WHERE s.year=0 AND s.title=? AND s.chapter=? AND s.text_hash != ''""", (title, ch))
             if len(rows) < 2: return [], None
             secs, heads, txts = [], {}, []
             for s, h, t in rows: secs.append(s); heads[s] = h; txts.append(t)
-            vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=config.tfidf_max_features)
             matrix = vectorizer.fit_transform(txts)
             self._tfidf_cache[key] = {"matrix": matrix, "vectorizer": vectorizer, "sections": secs, "headings": heads}
         c = self._tfidf_cache[key]
@@ -417,8 +554,9 @@ class ECFRDatabase:
         feature_names = c["vectorizer"].get_feature_names_out()
         source_vec = c["matrix"][idx].toarray().flatten()
 
-        def get_shared_keywords(target_idx, top_n=5):
+        def get_shared_keywords(target_idx, top_n=None):
             """Get top shared keywords between source and target sections."""
+            top_n = top_n if top_n is not None else config.similar_keywords_count
             target_vec = c["matrix"][target_idx].toarray().flatten()
             # Find terms present in both (min of the two scores)
             shared = np.minimum(source_vec, target_vec)

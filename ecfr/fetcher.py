@@ -7,27 +7,14 @@ from pathlib import Path
 import aiohttp
 import requests
 import sys
-import yaml
 
 from .client import ECFRClient
+from .config import config
 from .database import ECFRDatabase
 from .extractor import XMLExtractor
 
-# Default values
-_DEFAULT_MAX_WORKERS = 3  # Reduced to limit memory usage
-_DEFAULT_HISTORICAL_YEARS = [2025, 2020, 2015, 2010, 2005, 2000]
-
-def _load_config():
-    """Load configuration from config.yaml."""
-    config_path = Path(__file__).parent / "config.yaml"
-    if config_path.exists():
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-_config = _load_config()
-HISTORICAL_YEARS = _config.get("historical_years", _DEFAULT_HISTORICAL_YEARS)
-MAX_WORKERS = _config.get("max_workers", _DEFAULT_MAX_WORKERS)
+HISTORICAL_YEARS = config.historical_years
+MAX_WORKERS = config.max_workers
 
 
 def _run_async(coro):
@@ -38,7 +25,8 @@ def _run_async(coro):
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
-    def __init__(self, output_dir: Path | str = Path("ecfr/ecfr_data"), max_workers: int = None):
+    def __init__(self, output_dir: Path | str | None = None, max_workers: int = None):
+        output_dir = output_dir or config.output_dir
         self.output_dir = Path(output_dir) if isinstance(output_dir, str) else output_dir
         self.max_workers = max_workers or MAX_WORKERS
         self.db = ECFRDatabase(self.output_dir / "ecfr.db")
@@ -115,7 +103,7 @@ class ECFRFetcher:
                     return num, (False, f"Error: {e}", 0)
 
         success_count, total_words = 0, 0
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=config.timeout_fetcher_session)) as session:
             tasks = [asyncio.create_task(fetch_one(session, num, date)) for num, date in titles_to_fetch]
             # Process results as they complete to free memory early
             for coro in asyncio.as_completed(tasks):
@@ -182,7 +170,7 @@ class ECFRFetcher:
                     return title_num, False, str(e)
 
         all_success = True
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=120)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_workers), timeout=aiohttp.ClientTimeout(total=config.timeout_fetcher_session)) as session:
             for year in years_to_fetch:
                 print(f"\n{'='*50}\nFetching CFR {year} edition\n" + "-" * 50, flush=True)
                 tasks = [asyncio.create_task(fetch_title_year(session, year, title_num)) for title_num in title_nums]

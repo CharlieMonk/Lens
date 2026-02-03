@@ -1,9 +1,10 @@
 """Service layer for Flask views."""
 from flask import current_app
+from ecfr.config import config
 from ecfr.database import ECFRDatabase
 
-BASELINE_YEAR = 2010
-COMPARE_DEFAULT_YEAR = 2020
+BASELINE_YEAR = config.baseline_year
+COMPARE_DEFAULT_YEAR = config.compare_default_year
 
 def get_database() -> ECFRDatabase:
     return current_app.ecfr_database

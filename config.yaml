@@ -1,0 +1,117 @@
+# eCFR Configuration
+#
+# Environment Variable Overrides (prefix: ECFR_):
+#   ECFR_DATABASE_PATH       - Database file path
+#   ECFR_OUTPUT_DIR          - Output directory for data
+#   ECFR_ECFR_BASE_URL       - eCFR API base URL
+#   ECFR_GOVINFO_ECFR_URL    - GovInfo ECFR bulk URL
+#   ECFR_GOVINFO_CFR_URL     - GovInfo CFR bulk URL
+#   ECFR_FLASK_HOST          - Flask bind host
+#   ECFR_FLASK_PORT          - Flask bind port
+#   ECFR_WARM_CACHE          - Warm cache on startup (false/true/all/current)
+#   ECFR_MAX_WORKERS         - Max concurrent fetches
+#   ECFR_TIMEOUT_DEFAULT     - Default HTTP timeout
+#   ECFR_MAX_RETRIES         - Max HTTP retries
+#   ECFR_CACHE_STATS_TTL     - Stats cache TTL (seconds)
+#   ECFR_CACHE_STRUCTURE_TTL - Structure cache TTL (seconds)
+#   ECFR_BASELINE_YEAR       - Baseline year for comparisons
+#   ECFR_COMPARE_DEFAULT_YEAR - Default year for diff view
+
+# =============================================================================
+# Database
+# =============================================================================
+database:
+  path: "ecfr/ecfr_data/ecfr.db"
+  output_dir: "ecfr/ecfr_data"
+
+# =============================================================================
+# API Endpoints
+# =============================================================================
+api:
+  ecfr_base_url: "https://www.ecfr.gov/api"
+  govinfo_ecfr_url: "https://www.govinfo.gov/bulkdata/ECFR"
+  govinfo_cfr_url: "https://www.govinfo.gov/bulkdata/CFR"
+
+# =============================================================================
+# Flask Web Server
+# =============================================================================
+flask:
+  host: "0.0.0.0"
+  port: 5000
+  warm_cache: false  # Options: false, true, "all", "current"
+
+# =============================================================================
+# Fetcher Settings
+# =============================================================================
+fetcher:
+  # Maximum concurrent title fetches (controls memory usage)
+  max_workers: 5
+
+  # Historical years to fetch (in addition to current)
+  historical_years:
+    - 2025
+    - 2020
+    - 2015
+    - 2010
+    - 2005
+    - 2000
+
+  # Valid CFR title range
+  title_range:
+    min: 1
+    max: 50
+    excluded: [35]  # Reserved titles
+
+# =============================================================================
+# HTTP Client Timeouts (in seconds)
+# =============================================================================
+timeouts:
+  default: 30
+  title_xml: 60
+  structure_api: 120
+  race_fetch: 120
+  govinfo_volume: 60
+  chunk_fetch: 1800  # 30 minutes for large bulk downloads
+  fetcher_session: 120
+
+# =============================================================================
+# Retry Settings
+# =============================================================================
+retry:
+  max_retries: 7
+  base_delay: 3  # Exponential backoff: delay * 2^attempt
+  rate_limit_delay: 0.2
+  error_delay: 2
+  chunk_backoff_base: 5  # For chunk fetches: base * 2^attempt
+
+# =============================================================================
+# Concurrency Limits
+# =============================================================================
+concurrency:
+  max_govinfo_volumes: 20
+  max_concurrent_chunks: 2
+  progress_report_interval: 50  # Report every N chunks
+
+# =============================================================================
+# Cache Settings (TTL in seconds)
+# =============================================================================
+cache:
+  stats_ttl: 300      # 5 minutes
+  structure_ttl: 300  # 5 minutes
+
+# =============================================================================
+# Similar Sections (TF-IDF)
+# =============================================================================
+similar_sections:
+  max_tfidf_features: 10000
+  default_limit: 10
+  min_similarity: 0.1  # 10% minimum cosine similarity
+  keywords_per_section: 5
+
+# =============================================================================
+# Web Viewer Defaults
+# =============================================================================
+viewer:
+  baseline_year: 2010      # Reference year for statistics comparison
+  compare_default_year: 2020  # Default year for diff view
+  preview_max_chars: 500   # Max characters for section preview

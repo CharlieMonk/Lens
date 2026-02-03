@@ -1,5 +1,6 @@
 """API routes for HTMX partials."""
 from flask import Blueprint, render_template, request
+from ecfr.config import config
 from .services import get_database
 
 api_bp = Blueprint("api", __name__)
@@ -24,7 +25,7 @@ def section_preview(title_num: int, section: str):
     import re
     db = get_database()
     year = request.args.get("year", 0, type=int)
-    max_chars = request.args.get("max", 500, type=int)
+    max_chars = request.args.get("max", config.preview_max_chars, type=int)
     sec = db.get_section(title_num, section, year)
     if not sec or not sec.get("text"):
         return "<em>No content available</em>"
