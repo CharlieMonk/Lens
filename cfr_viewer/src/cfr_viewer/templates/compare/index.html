@@ -12,7 +12,18 @@
         <input type="text" id="citation" name="citation" class="citation-input" placeholder="e.g., 47 CFR 73.609" required>
         <button type="submit" class="citation-go">Go</button>
     </div>
+    <p class="citation-help">
+        Accepted formats: <code>47 CFR 73.609</code>, <code>47 C.F.R. § 73.609</code>, or <code>47 CFR § 73.609</code>
+    </p>
 </form>
+
+<div class="citation-examples">
+    <strong>Try these examples:</strong>
+    <a href="{{ url_for('compare.diff', title_num=29, section='1910.134', year1=0) }}">29 CFR 1910.134</a>
+    <a href="{{ url_for('compare.diff', title_num=47, section='73.609', year1=0) }}">47 CFR 73.609</a>
+    <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}">26 CFR 1.154</a>
+    <a href="{{ url_for('compare.diff', title_num=40, section='60.1', year1=0) }}">40 CFR 60.1</a>
+</div>
 
 <script>
 document.querySelector('.compare-form').addEventListener('submit', function(e) {
@@ -22,6 +33,8 @@ document.querySelector('.compare-form').addEventListener('submit', function(e) {
     const match = citation.match(/(\d+)\s*C\.?F\.?R\.?\s*§?\s*([\d.]+)/i);
     if (match) {
         window.location.href = '{{ url_for("compare.diff", title_num=0, section="0") }}'.replace('/0/section/0', '/' + match[1] + '/section/' + match[2]);
+    } else {
+        alert('Could not parse citation. Please use format: "47 CFR 73.609"');
     }
 });
 </script>

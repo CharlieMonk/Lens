@@ -8,26 +8,44 @@
 <div class="grid">
     <article>
         <header>
-            <strong>By Agency</strong>
+            <strong>Top Agencies by Word Count</strong>
         </header>
-        <p>View agencies by total word count in the CFR.</p>
-        <a href="{{ url_for('statistics.agencies') }}" role="button">View Agency Statistics</a>
+        <table class="preview-table no-hover">
+            <tbody>
+                {% for agency in top_agencies %}
+                <tr>
+                    <td><a href="{{ url_for('statistics.agency_detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
+                    <td class="numeric">{{ "{:,}".format(agency.word_count) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{{ url_for('statistics.agencies') }}" class="view-all-link">View all agencies &rarr;</a>
     </article>
 
     <article>
         <header>
-            <strong>By Title</strong>
+            <strong>Top Titles by Word Count</strong>
         </header>
-        <p>View CFR titles by total word count.</p>
-        <a href="{{ url_for('statistics.titles') }}" role="button">View Title Statistics</a>
+        <table class="preview-table no-hover">
+            <tbody>
+                {% for title in top_titles %}
+                <tr>
+                    <td><a href="{{ url_for('browse.title', title_num=title.number) }}">{{ title.name }}</a></td>
+                    <td class="numeric">{{ "{:,}".format(title.word_count) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{{ url_for('statistics.titles') }}" class="view-all-link">View all titles &rarr;</a>
     </article>
 
     <article>
         <header>
-            <strong>Compare Years</strong>
+            <strong>Compare Sections</strong>
         </header>
         <p>Compare how CFR sections have changed over time with side-by-side diffs.</p>
-        <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}" role="button">Compare Sections</a>
+        <a href="{{ url_for('compare.index') }}" role="button">Compare Sections</a>
     </article>
 </div>
 {% endblock %}

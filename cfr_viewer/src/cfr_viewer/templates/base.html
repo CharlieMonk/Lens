@@ -8,17 +8,20 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/sortable.js') }}" defer></script>
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
     <nav class="container">
         <ul>
             <li><strong><a href="{{ url_for('browse.index') }}">CFR Viewer</a></strong></li>
         </ul>
+        <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('nav > ul:last-child').classList.toggle('nav-open')">☰</button>
         <ul>
-            <li><a href="{{ url_for('browse.index') }}">Browse</a></li>
-            <li><a href="{{ url_for('statistics.agencies') }}">Agencies</a></li>
-            <li><a href="{{ url_for('statistics.titles') }}">Titles</a></li>
-            <li><a href="{{ url_for('compare.index') }}">Compare</a></li>
+            <li><a href="{{ url_for('browse.index') }}" {% if request.endpoint == 'browse.index' %}class="nav-active"{% endif %}>Browse</a></li>
+            <li><a href="{{ url_for('statistics.agencies') }}" {% if request.endpoint and request.endpoint.startswith('statistics.agenc') %}class="nav-active"{% endif %}>Agencies</a></li>
+            <li><a href="{{ url_for('statistics.titles') }}" {% if request.endpoint == 'statistics.titles' %}class="nav-active"{% endif %}>Titles</a></li>
+            <li><a href="{{ url_for('compare.index') }}" {% if request.endpoint and request.endpoint.startswith('compare') %}class="nav-active"{% endif %}>Compare</a></li>
+            <li><a href="{{ url_for('chart.index') }}" {% if request.endpoint and request.endpoint.startswith('chart') %}class="nav-active"{% endif %}>Trends</a></li>
         </ul>
     </nav>
 
@@ -27,7 +30,7 @@
     </main>
 
     <footer class="container">
-        <small>Data from <a href="https://ecfr.gov">ecfr.gov</a></small>
+        <small>&copy; Charles Monk {{ now().year }}. Data from <a href="https://ecfr.gov">ecfr.gov</a> and <a href="https://govinfo.gov">govinfo.gov</a>.</small>
     </footer>
 </body>
 </html>

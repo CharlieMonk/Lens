@@ -63,6 +63,12 @@
 
 {% if section1 and section2 %}
 {% set diff = (section1.word_count or 0) - (section2.word_count or 0) %}
+{% if has_changes %}
+<div class="diff-legend">
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-remove"></span> Removed (regulatory reduction)</div>
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-add"></span> Added (regulatory growth)</div>
+</div>
+{% endif %}
 <div class="grid compare-versions">
     <article class="version-card version-old">
         <header>

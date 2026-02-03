@@ -6,7 +6,28 @@ statistics_bp = Blueprint("statistics", __name__)
 
 @statistics_bp.route("/")
 def index():
-    return render_template("statistics/index.html")
+    db = get_database()
+    stats = db.get_statistics_data(BASELINE_YEAR)
+
+    # Top 5 agencies by word count
+    agency_counts = stats["agency_counts"][0]
+    agency_details = stats["agency_details"]
+    top_agencies = sorted(
+        [{"slug": s, "name": agency_details.get(s, {}).get("name", s), "word_count": wc}
+         for s, wc in agency_counts.items()],
+        key=lambda x: x["word_count"], reverse=True
+    )[:5]
+
+    # Top 5 titles by word count
+    title_counts = stats["title_counts"][0]
+    title_meta = stats["title_meta"]
+    top_titles = sorted(
+        [{"number": n, "name": title_meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc}
+         for n, wc in title_counts.items()],
+        key=lambda x: x["word_count"], reverse=True
+    )[:5]
+
+    return render_template("statistics/index.html", top_agencies=top_agencies, top_titles=top_titles)
 
 @statistics_bp.route("/agencies")
 def agencies():

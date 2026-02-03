@@ -389,3 +389,120 @@ footer {
 .grid > article > a[role="button"] {
     margin-top: auto;
 }
+
+/* Table row hover states */
+table:not(.no-hover) tbody tr:hover {
+    background: var(--pico-card-sectionning-background-color);
+}
+
+/* Active navigation state */
+nav ul li a.nav-active {
+    font-weight: bold;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+/* Mobile hamburger menu */
+.nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--pico-primary);
+}
+
+@media (max-width: 768px) {
+    nav.container {
+        flex-wrap: wrap;
+    }
+
+    .nav-toggle {
+        display: block;
+    }
+
+    nav > ul:last-child {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        padding: 0.5rem 0;
+    }
+
+    nav > ul:last-child.nav-open {
+        display: flex;
+    }
+
+    nav > ul:last-child li {
+        width: 100%;
+    }
+
+    nav > ul:last-child li a {
+        display: block;
+        padding: 0.5rem 0;
+    }
+}
+
+
+/* Diff legend */
+.diff-legend {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: var(--pico-card-sectionning-background-color);
+    border-radius: var(--pico-border-radius);
+    font-size: 0.85rem;
+}
+
+.diff-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.diff-legend-swatch {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 2px;
+}
+
+.diff-legend-swatch.swatch-add {
+    background: #ffcdd2;
+}
+
+.diff-legend-swatch.swatch-remove {
+    background: #c8e6c9;
+}
+
+/* Citation input helper text */
+.citation-help {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+    margin-top: 0.5rem;
+}
+
+.citation-examples {
+    margin-top: 1rem;
+}
+
+.citation-examples a {
+    margin-right: 1rem;
+}
+
+/* Statistics preview tables */
+.preview-table {
+    margin-bottom: 0;
+}
+
+.preview-table th, .preview-table td {
+    padding: 0.5rem;
+}
+
+.view-all-link {
+    display: block;
+    text-align: right;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+}
