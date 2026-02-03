@@ -17,9 +17,8 @@ def index():
 def data_total():
     """Return total CFR word count across all titles by year as JSON."""
     db = get_database()
-    # Single optimized query: sum all word counts grouped by year
-    rows = db._query("SELECT year, SUM(word_count) FROM sections WHERE year > 0 GROUP BY year ORDER BY year")
-    result = {str(r[0]): r[1] for r in rows}
+    counts = db.get_total_word_counts_by_year()
+    result = {str(y): c for y, c in counts.items() if y > 0}
     return jsonify(result)
 
 

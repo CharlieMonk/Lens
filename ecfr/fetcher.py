@@ -73,6 +73,7 @@ class ECFRFetcher:
             word_count = sum(s.get("word_count", 0) for s in sections)
             del sections  # Free sections memory after saving
 
+            self.db.update_title_word_count(title_num, word_count, year=year)
             if agency_lookup and chapter_wc:
                 self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
             return True, f"{size:,} bytes", word_count
@@ -158,8 +159,10 @@ class ECFRFetcher:
                     volumes = await self.client.fetch_govinfo_volumes(session, year, title_num)
                     if volumes:
                         size, sections, chapter_wc = extractor.extract_govinfo_volumes(volumes, title_num)
+                        word_count = sum(s.get("word_count", 0) for s in sections) if sections else 0
                         if sections:
                             self.db.save_sections(sections, year=year)
+                        self.db.update_title_word_count(title_num, word_count, year=year)
                         if agency_lookup and chapter_wc:
                             self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
                         del volumes, sections  # Free memory immediately
@@ -168,8 +171,10 @@ class ECFRFetcher:
                     date = f"{year}-01-01"
                     source, xml = await self.client.fetch_title_racing(session, title_num, date)
                     size, sections, chapter_wc = extractor.extract(xml, title_num)
+                    word_count = sum(s.get("word_count", 0) for s in sections) if sections else 0
                     if sections:
                         self.db.save_sections(sections, year=year)
+                    self.db.update_title_word_count(title_num, word_count, year=year)
                     if agency_lookup and chapter_wc:
                         self.db.update_word_counts(title_num, chapter_wc, agency_lookup, year=year)
                     return title_num, True, f"{size:,} bytes ({source})"

@@ -66,7 +66,8 @@ class ECFRDatabase:
             c.executescript("""CREATE TABLE IF NOT EXISTS titles (number INTEGER PRIMARY KEY, name TEXT NOT NULL, latest_amended_on TEXT, latest_issue_date TEXT, up_to_date_as_of TEXT, reserved INTEGER DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS agencies (slug TEXT PRIMARY KEY, name TEXT NOT NULL, short_name TEXT, display_name TEXT, sortable_name TEXT, parent_slug TEXT);
                 CREATE TABLE IF NOT EXISTS cfr_references (id INTEGER PRIMARY KEY AUTOINCREMENT, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT, subtitle TEXT, subchapter TEXT);
-                CREATE TABLE IF NOT EXISTS agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter));""")
+                CREATE TABLE IF NOT EXISTS agency_word_counts (year INTEGER NOT NULL DEFAULT 0, agency_slug TEXT NOT NULL, title INTEGER NOT NULL, chapter TEXT NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, agency_slug, title, chapter));
+                CREATE TABLE IF NOT EXISTS title_word_counts (year INTEGER NOT NULL, title INTEGER NOT NULL, word_count INTEGER DEFAULT 0, PRIMARY KEY (year, title));""")
             # Migrate agency_word_counts if missing year column
             c.execute("PRAGMA table_info(agency_word_counts)")
             if "year" not in {r[1] for r in c.fetchall()}:
@@ -160,6 +161,26 @@ class ECFRDatabase:
             for ch, wc in chapter_wc.items():
                 for info in agency_lookup.get((title_num, ch), []): cur.execute("INSERT OR REPLACE INTO agency_word_counts VALUES (?,?,?,?,?)", (year, info["agency_slug"], title_num, ch, wc))
             c.commit()
+
+    def update_title_word_count(self, title_num, word_count, year=0):
+        """Update pre-aggregated word count for a title."""
+        self._execute("INSERT OR REPLACE INTO title_word_counts VALUES (?,?,?)", (year, title_num, word_count))
+
+    def populate_title_word_counts(self):
+        """Populate title_word_counts from existing section data (for migration)."""
+        self._execute("DELETE FROM title_word_counts")
+        self._execute("INSERT INTO title_word_counts SELECT year, title, SUM(word_count) FROM sections GROUP BY year, title")
+
+    def get_title_word_counts_by_year(self):
+        """Get all title word counts grouped by year (for charts). Returns {year: {title: count}}."""
+        result = {}
+        for year, title, wc in self._query("SELECT year, title, word_count FROM title_word_counts ORDER BY year, title"):
+            result.setdefault(year, {})[title] = wc
+        return result
+
+    def get_total_word_counts_by_year(self):
+        """Get total CFR word count by year (for charts). Returns {year: total}."""
+        return {r[0]: r[1] for r in self._query("SELECT year, SUM(word_count) FROM title_word_counts GROUP BY year ORDER BY year")}
 
     def list_years(self): return [r[0] for r in self._query("SELECT DISTINCT year FROM sections ORDER BY year")]
     def list_titles(self, year=0): return [r[0] for r in self._query("SELECT DISTINCT title FROM sections WHERE year=? ORDER BY title", (year,))]
