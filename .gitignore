@@ -209,3 +209,8 @@ data/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Profiling and test artifacts
+SQL_QUERY_TIMINGS.md
+sql_query_timings.csv
+screenshots/
