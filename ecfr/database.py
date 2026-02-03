@@ -134,6 +134,12 @@ class ECFRDatabase:
             # Drop unused tables
             c.execute("DROP TABLE IF EXISTS title_structures")
             c.execute("DROP TABLE IF EXISTS structure_nodes")
+            # Populate title_word_counts if empty but sections has data
+            c.execute("SELECT COUNT(*) FROM title_word_counts")
+            if c.fetchone()[0] == 0:
+                c.execute("SELECT COUNT(*) FROM sections")
+                if c.fetchone()[0] > 0:
+                    c.execute("INSERT INTO title_word_counts SELECT year, title, SUM(word_count) FROM sections GROUP BY year, title")
             conn.commit()
 
     def _migrate_to_content_addressed(self, cursor, include_year=True):
