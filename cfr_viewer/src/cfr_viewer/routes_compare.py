@@ -107,3 +107,31 @@ def diff(title_num: int, section: str):
                 break
 
     return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec, available_years=available_years, unchanged_since=unchanged_since)
+
+@compare_bp.route("/sections")
+def compare_sections():
+    """Compare two different sections side by side."""
+    db = get_database()
+    title1 = request.args.get("title1", type=int)
+    section1 = request.args.get("section1", "")
+    title2 = request.args.get("title2", type=int)
+    section2 = request.args.get("section2", "")
+    year = request.args.get("year", 0, type=int)
+
+    if not all([title1, section1, title2, section2]):
+        return redirect(url_for("compare.index"))
+
+    s1 = db.get_section(title1, section1, year)
+    s2 = db.get_section(title2, section2, year)
+
+    # Generate side-by-side diff
+    old_html, new_html = None, None
+    has_changes = s1 and s2 and s1.get("text", "").split() != s2.get("text", "").split()
+    if has_changes:
+        old_html, new_html = side_by_side_diff(s1.get("text", ""), s2.get("text", ""))
+
+    return render_template("compare/sections.html",
+        title1=title1, section1=section1, s1=s1,
+        title2=title2, section2=section2, s2=s2,
+        year=year, years=db.list_years(),
+        old_html=old_html, new_html=new_html, has_changes=has_changes)

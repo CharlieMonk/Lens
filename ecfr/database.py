@@ -377,6 +377,7 @@ class ECFRDatabase:
         return {r[0]: r[1] for r in self._query(q, tuple(p))}
 
     def get_similar_sections(self, title, section, year=0, limit=10, min_similarity=0.1):
+        import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
         r = self._query_one("SELECT chapter FROM sections WHERE year=0 AND title=? AND section=?", (title, section))
@@ -387,10 +388,27 @@ class ECFRDatabase:
             if len(rows) < 2: return [], None
             secs, heads, txts = [], {}, []
             for s, h, t in rows: secs.append(s); heads[s] = h; txts.append(t)
-            self._tfidf_cache[key] = {"matrix": TfidfVectorizer(stop_words='english', max_features=10000).fit_transform(txts), "sections": secs, "headings": heads}
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=10000)
+            matrix = vectorizer.fit_transform(txts)
+            self._tfidf_cache[key] = {"matrix": matrix, "vectorizer": vectorizer, "sections": secs, "headings": heads}
         c = self._tfidf_cache[key]
         try: idx = c["sections"].index(section)
         except ValueError: return [], None
         sims = cosine_similarity(c["matrix"][idx:idx+1], c["matrix"])[0]
-        res = sorted([{"title": title, "section": s, "similarity": float(sim), "heading": c["headings"][s]} for s, sim in zip(c["sections"], sims) if s != section and sim >= min_similarity], key=lambda x: x["similarity"], reverse=True)
+        feature_names = c["vectorizer"].get_feature_names_out()
+        source_vec = c["matrix"][idx].toarray().flatten()
+
+        def get_shared_keywords(target_idx, top_n=5):
+            """Get top shared keywords between source and target sections."""
+            target_vec = c["matrix"][target_idx].toarray().flatten()
+            # Find terms present in both (min of the two scores)
+            shared = np.minimum(source_vec, target_vec)
+            top_indices = shared.argsort()[-top_n:][::-1]
+            return [feature_names[i] for i in top_indices if shared[i] > 0]
+
+        res = []
+        for i, (s, sim) in enumerate(zip(c["sections"], sims)):
+            if s != section and sim >= min_similarity:
+                res.append({"title": title, "section": s, "similarity": float(sim), "heading": c["headings"][s], "keywords": get_shared_keywords(i)})
+        res.sort(key=lambda x: x["similarity"], reverse=True)
         return res[:limit], res[0]["similarity"] if res else None

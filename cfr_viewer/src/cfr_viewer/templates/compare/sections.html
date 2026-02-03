@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Sections - Lens{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="{{ url_for('compare.index') }}">Compare</a></li>
+        <li>Section Comparison</li>
+    </ul>
+</nav>
+
+<hgroup>
+    <h1>Compare Sections</h1>
+    <p>Side-by-side comparison of {{ title1 }} CFR &sect; {{ section1 }} and {{ title2 }} CFR &sect; {{ section2 }}</p>
+</hgroup>
+
+{% macro word_count_display(wc) %}{% if wc and wc > 0 %}{{ "{:,}".format(wc) }} words{% else %}—{% endif %}{% endmacro %}
+
+{% if s1 and s2 %}
+{% if not has_changes %}
+<article class="no-changes-banner">
+    <div class="banner-icon">&#x2713;</div>
+    <div class="banner-content">
+        <strong>Identical Content</strong>
+        <p>These two sections have identical text content.</p>
+    </div>
+</article>
+{% else %}
+<div class="diff-legend">
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-remove"></span> Only in {{ title1 }} CFR &sect; {{ section1 }}</div>
+    <div class="diff-legend-item"><span class="diff-legend-swatch swatch-add"></span> Only in {{ title2 }} CFR &sect; {{ section2 }}</div>
+</div>
+{% endif %}
+
+<div class="grid compare-versions">
+    <article class="version-card">
+        <header>
+            <div class="version-header-left">
+                <strong><a href="{{ url_for('browse.section', title_num=title1, section=section1, year=year) }}">{{ title1 }} CFR &sect; {{ section1 }}</a></strong>
+                <span class="word-count">{{ word_count_display(s1.word_count) }}</span>
+            </div>
+            {% if has_changes %}<span class="legend-remove">Unique</span>{% endif %}
+        </header>
+        {% if s1.heading %}
+        <div style="padding: 0.5rem 1rem; color: var(--pico-muted-color); font-style: italic; border-bottom: 1px solid var(--pico-muted-border-color);">
+            {{ s1.heading }}
+        </div>
+        {% endif %}
+        <div class="section-text {% if has_changes %}diff-text{% endif %}">
+            {% if old_html %}{{ old_html | safe }}{% else %}{{ s1.text | safe }}{% endif %}
+        </div>
+    </article>
+
+    <article class="version-card">
+        <header>
+            <div class="version-header-left">
+                <strong><a href="{{ url_for('browse.section', title_num=title2, section=section2, year=year) }}">{{ title2 }} CFR &sect; {{ section2 }}</a></strong>
+                <span class="word-count">{{ word_count_display(s2.word_count) }}</span>
+            </div>
+            {% if has_changes %}<span class="legend-add">Unique</span>{% endif %}
+        </header>
+        {% if s2.heading %}
+        <div style="padding: 0.5rem 1rem; color: var(--pico-muted-color); font-style: italic; border-bottom: 1px solid var(--pico-muted-border-color);">
+            {{ s2.heading }}
+        </div>
+        {% endif %}
+        <div class="section-text {% if has_changes %}diff-text{% endif %}">
+            {% if new_html %}{{ new_html | safe }}{% else %}{{ s2.text | safe }}{% endif %}
+        </div>
+    </article>
+</div>
+
+{% elif s1 or s2 %}
+<article class="partial-data-banner">
+    <div class="banner-icon">&#x26A0;</div>
+    <div class="banner-content">
+        <strong>One Section Not Found</strong>
+        <p>{% if not s1 %}{{ title1 }} CFR &sect; {{ section1 }}{% else %}{{ title2 }} CFR &sect; {{ section2 }}{% endif %} could not be found.</p>
+    </div>
+</article>
+
+{% set found = s1 or s2 %}
+{% set found_title = title1 if s1 else title2 %}
+{% set found_section = section1 if s1 else section2 %}
+<article class="version-card single-version">
+    <header>
+        <div class="version-header-left">
+            <strong><a href="{{ url_for('browse.section', title_num=found_title, section=found_section, year=year) }}">{{ found_title }} CFR &sect; {{ found_section }}</a></strong>
+            <span class="word-count">{{ word_count_display(found.word_count) }}</span>
+        </div>
+    </header>
+    {% if found.heading %}
+    <div style="padding: 0.5rem 1rem; color: var(--pico-muted-color); font-style: italic; border-bottom: 1px solid var(--pico-muted-border-color);">
+        {{ found.heading }}
+    </div>
+    {% endif %}
+    <div class="section-text">
+        {{ found.text | safe }}
+    </div>
+</article>
+
+{% else %}
+<article class="not-found-banner">
+    <div class="banner-icon">&#x2717;</div>
+    <div class="banner-content">
+        <strong>Sections Not Found</strong>
+        <p>Neither section could be found in the database.</p>
+    </div>
+</article>
+{% endif %}
+
+<div style="margin-top: 1.5rem; text-align: center;">
+    <a href="{{ url_for('compare.index') }}" role="button" class="outline">&#x2190; Back to Compare</a>
+</div>
+{% endblock %}

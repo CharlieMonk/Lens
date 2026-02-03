@@ -83,6 +83,17 @@ class TestCompareRoutes:
         assert b"Compare" in response.data
         assert b"1.1" in response.data
 
+    def test_compare_sections(self, client):
+        """Test compare two different sections."""
+        response = client.get("/compare/sections?title1=1&section1=1.1&title2=1&section2=1.2")
+        assert response.status_code == 200
+        assert b"Compare Sections" in response.data
+
+    def test_compare_sections_missing_params(self, client):
+        """Test compare sections redirects with missing params."""
+        response = client.get("/compare/sections")
+        assert response.status_code == 302  # Redirect to compare index
+
 
 class TestApiRoutes:
     """Test API routes for HTMX partials."""
@@ -91,8 +102,21 @@ class TestApiRoutes:
         """Test similar sections endpoint."""
         response = client.get("/api/similar/1/1.1")
         assert response.status_code == 200
-        # Should return table or "No similar sections" message
-        assert b"table" in response.data.lower() or b"similar" in response.data.lower()
+        # Should return similar list or message
+        assert b"similar" in response.data.lower() or b"distinctness" in response.data.lower()
+
+    def test_section_preview(self, client):
+        """Test section preview endpoint."""
+        response = client.get("/api/preview/1/1.1")
+        assert response.status_code == 200
+        # Should return text content
+        assert len(response.data) > 0
+
+    def test_section_preview_not_found(self, client):
+        """Test section preview for non-existent section."""
+        response = client.get("/api/preview/1/99.99")
+        assert response.status_code == 200
+        assert b"No content" in response.data or b"available" in response.data.lower()
 
 
 class TestYearSelector:

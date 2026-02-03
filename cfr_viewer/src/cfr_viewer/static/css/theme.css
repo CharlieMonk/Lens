@@ -107,17 +107,300 @@ tr.reserved {
 }
 
 .section-layout .similar-sections {
-    width: 280px;
+    width: 300px;
     min-width: 200px;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
 
 .section-layout .similar-sections header {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    background: linear-gradient(135deg, var(--pico-card-sectionning-background-color), transparent);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section-layout .similar-sections header .header-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.section-layout .similar-sections header .header-title .header-icon {
+    font-size: 1rem;
+    opacity: 0.8;
+}
+
+/* Collapse toggle button */
+.similar-sections .collapse-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+    transition: transform 0.2s ease;
+    line-height: 1;
+}
+
+.similar-sections .collapse-toggle:hover {
+    color: var(--pico-color);
+}
+
+.similar-sections.collapsed .collapse-toggle {
+    transform: rotate(180deg);
+}
+
+.similar-sections.collapsed .similar-content {
+    display: none;
+}
+
+/* Similar sections content area */
+.similar-sections .similar-content {
+    padding: 0.75rem;
+}
+
+/* Distinctness info tooltip */
+.distinctness-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.distinctness-row .info-icon {
+    cursor: help;
+    opacity: 0.6;
+    font-size: 0.85em;
+    position: relative;
+}
+
+.distinctness-row .info-icon:hover {
+    opacity: 1;
+}
+
+.distinctness-row .info-icon .tooltip {
+    visibility: hidden;
+    position: absolute;
+    z-index: 100;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
     padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: normal;
+    width: 200px;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.distinctness-row .info-icon .tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+.distinctness-row .info-icon:hover .tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Similar section table improvements */
+.similar-sections table {
+    font-size: 0.85rem;
+    margin-bottom: 0;
+}
+
+.similar-sections table th,
+.similar-sections table td {
+    padding: 0.5rem 0.35rem;
+}
+
+.similar-sections table td {
+    vertical-align: top;
+}
+
+/* Section citation with heading */
+.similar-citation {
+    display: block;
+}
+
+.similar-citation .citation-link {
+    font-weight: 500;
+}
+
+.similar-citation .section-heading {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--pico-muted-color);
+    margin-top: 0.15rem;
+    line-height: 1.3;
+}
+
+/* Action buttons in similar sections */
+.similar-actions {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+}
+
+.similar-actions .action-btn {
+    background: none;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 3px;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    color: var(--pico-muted-color);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    transition: all 0.15s ease;
+}
+
+.similar-actions .action-btn:hover {
+    background: var(--pico-card-sectionning-background-color);
+    border-color: var(--pico-primary);
+    color: var(--pico-primary);
+}
+
+/* Preview expandable area */
+.similar-preview {
+    display: none;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: var(--pico-card-sectionning-background-color);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--pico-muted-color);
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.similar-preview.expanded {
+    display: block;
+}
+
+/* Keywords/common terms */
+.similar-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+}
+
+.similar-keywords .keyword-tag {
+    background: var(--pico-primary-focus);
+    color: var(--pico-primary);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+/* Skeleton loading animation */
+.skeleton-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
     border-bottom: 1px solid var(--pico-muted-border-color);
 }
 
-.section-layout .similar-sections header strong {
-    font-size: 0.85rem;
+.skeleton-row:last-child {
+    border-bottom: none;
+}
+
+.skeleton-line {
+    height: 0.9rem;
+    background: linear-gradient(90deg,
+        var(--pico-card-sectionning-background-color) 25%,
+        var(--pico-card-background-color) 50%,
+        var(--pico-card-sectionning-background-color) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+    border-radius: 3px;
+}
+
+.skeleton-line.short {
+    width: 60%;
+}
+
+.skeleton-line.medium {
+    width: 80%;
+}
+
+.skeleton-line.tiny {
+    width: 30%;
+    height: 0.7rem;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Similar items card list */
+.similar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.similar-item {
+    padding: 0.6rem;
+    background: var(--pico-card-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 6px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.similar-item:hover {
+    border-color: var(--pico-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.similar-item .similar-meta {
+    float: right;
+    margin-left: 0.5rem;
+}
+
+.similar-item .similarity-badge {
+    display: inline-block;
+    background: var(--pico-primary);
+    color: var(--pico-primary-inverse);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.no-similar-message,
+.no-data-message {
+    color: var(--pico-muted-color);
+    font-size: 0.9rem;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem 0;
 }
 
 @media (max-width: 768px) {
@@ -126,6 +409,38 @@ tr.reserved {
     }
     .section-layout .similar-sections {
         width: 100%;
+        position: static;
+        max-height: none;
+        overflow-y: visible;
+    }
+    /* Start collapsed on mobile */
+    .section-layout .similar-sections.mobile-accordion {
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: var(--pico-border-radius);
+    }
+    .section-layout .similar-sections.mobile-accordion.collapsed .similar-content {
+        display: none;
+    }
+    .section-layout .similar-sections.mobile-accordion header {
+        cursor: pointer;
+    }
+    /* Compact similar items on mobile */
+    .similar-item {
+        padding: 0.5rem;
+    }
+    .similar-actions {
+        flex-wrap: wrap;
+    }
+    .similar-actions .action-btn {
+        font-size: 0.65rem;
+        padding: 0.1rem 0.25rem;
+    }
+}
+
+/* Hide keywords on small mobile */
+@media (max-width: 480px) {
+    .similar-keywords {
+        display: none;
     }
 }
 

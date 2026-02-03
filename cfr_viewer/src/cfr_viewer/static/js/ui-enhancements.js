@@ -239,6 +239,126 @@ const CountUp = {
     }
 };
 
+// Similar sections panel functionality
+const SimilarSections = {
+    STORAGE_KEY: 'similarSectionsCollapsed',
+    MOBILE_BREAKPOINT: 768,
+
+    init() {
+        // Wait for HTMX to load similar sections content
+        document.body.addEventListener('htmx:afterSettle', (e) => {
+            if (e.detail.target.classList.contains('similar-content')) {
+                this.initPreviewButtons();
+            }
+        });
+
+        // Initialize collapse toggle
+        this.initCollapseToggle();
+
+        // Initialize mobile accordion behavior
+        this.initMobileAccordion();
+
+        // Re-init on window resize
+        window.addEventListener('resize', () => this.handleResize());
+    },
+
+    initCollapseToggle() {
+        document.addEventListener('click', (e) => {
+            const toggle = e.target.closest('.collapse-toggle');
+            if (!toggle) return;
+
+            const panel = toggle.closest('.similar-sections');
+            if (!panel) return;
+
+            panel.classList.toggle('collapsed');
+            const isCollapsed = panel.classList.contains('collapsed');
+            localStorage.setItem(this.STORAGE_KEY, isCollapsed ? '1' : '0');
+        });
+
+        // Restore collapsed state from localStorage (desktop only)
+        const panel = document.getElementById('similar-sections-panel');
+        if (panel && window.innerWidth > this.MOBILE_BREAKPOINT) {
+            if (localStorage.getItem(this.STORAGE_KEY) === '1') {
+                panel.classList.add('collapsed');
+            }
+        }
+    },
+
+    initMobileAccordion() {
+        const panel = document.getElementById('similar-sections-panel');
+        if (!panel) return;
+
+        if (window.innerWidth <= this.MOBILE_BREAKPOINT) {
+            panel.classList.add('mobile-accordion', 'collapsed');
+            // Make header clickable on mobile
+            const header = panel.querySelector('header');
+            if (header) {
+                header.addEventListener('click', (e) => {
+                    if (window.innerWidth <= this.MOBILE_BREAKPOINT) {
+                        panel.classList.toggle('collapsed');
+                    }
+                });
+            }
+        }
+    },
+
+    handleResize() {
+        const panel = document.getElementById('similar-sections-panel');
+        if (!panel) return;
+
+        if (window.innerWidth <= this.MOBILE_BREAKPOINT) {
+            panel.classList.add('mobile-accordion');
+        } else {
+            panel.classList.remove('mobile-accordion');
+            // Restore desktop collapsed state
+            if (localStorage.getItem(this.STORAGE_KEY) === '1') {
+                panel.classList.add('collapsed');
+            } else {
+                panel.classList.remove('collapsed');
+            }
+        }
+    },
+
+    initPreviewButtons() {
+        document.querySelectorAll('.preview-toggle').forEach(btn => {
+            if (btn._previewInitialized) return;
+            btn._previewInitialized = true;
+
+            btn.addEventListener('click', async () => {
+                const title = btn.dataset.title;
+                const section = btn.dataset.section;
+                const year = btn.dataset.year || 0;
+                const previewId = `preview-${section.replace(/\./g, '-')}`;
+                const previewEl = document.getElementById(previewId);
+
+                if (!previewEl) return;
+
+                // Toggle expanded state
+                if (previewEl.classList.contains('expanded')) {
+                    previewEl.classList.remove('expanded');
+                    btn.innerHTML = '&#x1F441; Preview';
+                    return;
+                }
+
+                // Load preview if not already loaded
+                if (!previewEl.dataset.loaded) {
+                    previewEl.innerHTML = '<em>Loading...</em>';
+                    try {
+                        const response = await fetch(`/api/preview/${title}/${section}?year=${year}`);
+                        previewEl.innerHTML = await response.text();
+                        previewEl.dataset.loaded = 'true';
+                    } catch (err) {
+                        previewEl.innerHTML = '<em>Failed to load preview</em>';
+                    }
+                }
+
+                previewEl.classList.add('expanded');
+                btn.innerHTML = '&#x1F441; Hide';
+            });
+        });
+    }
+};
+
 // Initialize all enhancements
 document.addEventListener('DOMContentLoaded', () => {
     initCopyCitation();
@@ -246,4 +366,5 @@ document.addEventListener('DOMContentLoaded', () => {
     initSmoothScroll();
     initTableFilters();
     CountUp.initFromDataAttributes();
+    SimilarSections.init();
 });

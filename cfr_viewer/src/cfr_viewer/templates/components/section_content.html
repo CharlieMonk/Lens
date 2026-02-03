@@ -84,16 +84,37 @@
         </footer>
     </article>
 
-    <article class="similar-sections">
+    <article class="similar-sections" id="similar-sections-panel">
         <header>
-            <strong>Similar Sections in Chapter</strong>
+            <span class="header-title">
+                <span class="header-icon">&#x1F517;</span>
+                <span>Similar Sections</span>
+            </span>
+            <button class="collapse-toggle" aria-label="Toggle similar sections" title="Collapse/Expand">&#x25BC;</button>
         </header>
-        <div
+        <div class="similar-content"
             hx-get="{{ url_for('api.similar_sections', title_num=title_num, section=section.section, year=year) }}"
             hx-trigger="load"
             hx-swap="innerHTML"
         >
-            <button aria-busy="true" class="outline">Loading...</button>
+            {# Skeleton loading state #}
+            <div class="skeleton-loading">
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-line medium"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny"></div>
+                </div>
+            </div>
         </div>
     </article>
 </div>
