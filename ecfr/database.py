@@ -342,7 +342,7 @@ class ECFRDatabase:
         return dict(zip(COLS, r)) if r else None
 
     def get_adjacent_sections(self, title, section, year=0):
-        # Optimize: query only sections in same part (e.g., "1910" for section "1910.134")
+        # Optimize: query only sections in same part first (e.g., "1910" for section "1910.134")
         part = section.split(".")[0] if "." in section else ""
         if part:
             rows = self._query("SELECT section FROM sections WHERE year=? AND title=? AND part=?", (year, title, part))
@@ -351,8 +351,26 @@ class ECFRDatabase:
         if not rows: return None, None
         secs = sorted([r[0] for r in rows], key=section_sort_key)
         try:
-            i = secs.index(section); return (secs[i-1] if i > 0 else None, secs[i+1] if i < len(secs)-1 else None)
-        except ValueError: return None, None
+            i = secs.index(section)
+            prev_sec = secs[i-1] if i > 0 else None
+            next_sec = secs[i+1] if i < len(secs)-1 else None
+        except ValueError:
+            return None, None
+
+        # If at part boundary, fall back to title-wide search for cross-part navigation
+        if part and (prev_sec is None or next_sec is None):
+            all_rows = self._query("SELECT section FROM sections WHERE year=? AND title=? AND section != ''", (year, title))
+            if all_rows:
+                all_secs = sorted([r[0] for r in all_rows], key=section_sort_key)
+                try:
+                    i = all_secs.index(section)
+                    if prev_sec is None and i > 0:
+                        prev_sec = all_secs[i-1]
+                    if next_sec is None and i < len(all_secs)-1:
+                        next_sec = all_secs[i+1]
+                except ValueError:
+                    pass
+        return prev_sec, next_sec
 
     def get_sections(self, title, chapter=None, part=None, year=0):
         q, p = f"{self._section_select()} WHERE s.year=? AND s.title=?", [year, title]
