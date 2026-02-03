@@ -20,6 +20,7 @@ def index():
 
     # Top 5 titles by word count
     title_counts = stats["title_counts"][0]
+    baseline_title_counts = stats["title_counts"].get(BASELINE_YEAR, {})
     title_meta = stats["title_meta"]
     top_titles = sorted(
         [{"number": n, "name": title_meta.get(n, {}).get("name", f"Title {n}"), "word_count": wc}
@@ -27,7 +28,23 @@ def index():
         key=lambda x: x["word_count"], reverse=True
     )[:5]
 
-    return render_template("statistics/index.html", top_agencies=top_agencies, top_titles=top_titles)
+    # Aggregate statistics
+    total_words = sum(title_counts.values())
+    # Count sections using database query
+    total_sections = db._query("SELECT COUNT(*) FROM sections WHERE year = 0 AND section != ''")[0][0]
+    baseline_words = sum(baseline_title_counts.values()) if baseline_title_counts else 0
+    change_pct = compute_change_pct(total_words, baseline_words) if baseline_words else None
+
+    aggregate_stats = {
+        "total_words": total_words,
+        "total_sections": total_sections,
+        "total_titles": len(title_counts),
+        "total_agencies": len(agency_counts),
+        "baseline_year": BASELINE_YEAR,
+        "change_pct": change_pct,
+    }
+
+    return render_template("statistics/index.html", top_agencies=top_agencies, top_titles=top_titles, aggregate=aggregate_stats)
 
 @statistics_bp.route("/agencies")
 def agencies():

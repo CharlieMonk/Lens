@@ -15,6 +15,9 @@
 
 <div class="section-controls">
     {% include "components/year_selector.html" %}
+    <button type="button" class="outline secondary copy-citation" data-citation="{{ title_num }} CFR § {{ section.section }}" title="Copy citation to clipboard">
+        <span class="copy-icon">📋</span> Copy Citation
+    </button>
     <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="outline secondary">
         Compare Years
     </a>

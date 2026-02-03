@@ -9,7 +9,15 @@
             <th scope="col" data-sort="string">Name</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
             <th scope="col" class="numeric" data-sort="number">Elements</th>
-            <th scope="col" class="numeric" data-sort="number">{% if year and year < baseline_year %}To{% else %}Since{% endif %} {{ baseline_year }}</th>
+            <th scope="col" class="numeric" data-sort="number">
+                <span class="header-with-info">
+                    {% if year and year < baseline_year %}To{% else %}Since{% endif %} {{ baseline_year }}
+                    <span class="info-tooltip" aria-label="Information about this column">
+                        <span class="tooltip-icon">&#9432;</span>
+                        <span class="tooltip-text">Word count change {% if year and year < baseline_year %}to{% else %}since{% endif %} {{ baseline_year }}</span>
+                    </span>
+                </span>
+            </th>
         </tr>
     </thead>
     <tbody>

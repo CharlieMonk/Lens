@@ -63,6 +63,8 @@
     .chart-controls {
         display: flex;
         justify-content: flex-end;
+        align-items: center;
+        gap: 1rem;
         margin-bottom: 0.5rem;
     }
     .chart-controls label {
@@ -71,6 +73,11 @@
         gap: 0.5rem;
         font-size: 0.9rem;
         cursor: pointer;
+    }
+    .chart-controls button {
+        margin: 0;
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
     }
     .placeholder-message {
         display: flex;
@@ -114,7 +121,7 @@
     <label>
         Title
         <select id="select-title">
-            <option value="">Select a title...</option>
+            <option value="all">All CFR Titles</option>
             {% for num, meta in titles.items()|sort %}
             <option value="{{ num }}">{{ num }} - {{ meta.name }}</option>
             {% endfor %}
@@ -173,12 +180,15 @@
     </div>
 </div>
 
-<div id="placeholder" class="placeholder-message">
+<div id="placeholder" class="placeholder-message hidden">
     Select a title to view word count trends over time
 </div>
 
-<div id="chart-wrapper" class="hidden">
+<div id="chart-wrapper">
     <div class="chart-controls">
+        <button type="button" id="download-chart" class="outline secondary" title="Download chart as PNG">
+            Download PNG
+        </button>
         <label>
             <input type="checkbox" id="zoom-toggle" role="switch">
             Zoom to data range
@@ -450,7 +460,7 @@ async function handleSelectorChange(levelIndex) {
 function updateURL() {
     const params = new URLSearchParams();
 
-    if (selectors.title.value) {
+    if (selectors.title.value && selectors.title.value !== 'all') {
         params.set('title', selectors.title.value);
     }
 
@@ -532,6 +542,12 @@ async function restoreFromURL() {
 selectors.title.addEventListener('change', async () => {
     hideSelectorsFrom(1);
 
+    if (selectors.title.value === 'all') {
+        await loadTotalCFRData();
+        updateURL();
+        return;
+    }
+
     if (!selectors.title.value) {
         placeholder.classList.remove('hidden');
         chartWrapper.classList.add('hidden');
@@ -567,8 +583,47 @@ zoomToggle.addEventListener('change', () => {
     updateURL();
 });
 
+// Download chart as PNG
+document.getElementById('download-chart').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'cfr-word-count-trends.png';
+    link.href = chart.toBase64Image();
+    link.click();
+    Toast.show('Chart downloaded!', 'success');
+});
+
+// Load total CFR data
+async function loadTotalCFRData() {
+    loadingOverlay.classList.remove('hidden');
+    try {
+        const response = await fetch('/chart/data/total');
+        const data = await response.json();
+
+        chartWrapper.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+
+        updateChart(data);
+        updateStats(data);
+
+        // Update breadcrumb for total CFR
+        breadcrumb.innerHTML = '<span class="breadcrumb-item">All CFR Titles</span>';
+        breadcrumb.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error fetching total data:', error);
+    } finally {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
 // Initialize
 initChart();
-restoreFromURL();
+
+// Check if URL has params, otherwise load total CFR data
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('title')) {
+    restoreFromURL();
+} else {
+    loadTotalCFRData();
+}
 </script>
 {% endblock %}

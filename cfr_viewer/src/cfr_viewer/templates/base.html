@@ -8,10 +8,12 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/sortable.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/ui-enhancements.js') }}" defer></script>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <nav class="container" role="navigation" aria-label="Main navigation">
         <ul>
             <li><strong><a href="{{ url_for('browse.index') }}">CFR Viewer</a></strong></li>
         </ul>
@@ -25,7 +27,7 @@
         </ul>
     </nav>
 
-    <main class="container">
+    <main class="container" id="main-content" role="main">
         {% block content %}{% endblock %}
     </main>
 

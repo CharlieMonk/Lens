@@ -3,7 +3,34 @@
 {% block title %}Statistics - CFR Viewer{% endblock %}
 
 {% block content %}
-<h1>Statistics</h1>
+<hgroup>
+    <h1>Statistics</h1>
+    <p>Overview of the Code of Federal Regulations</p>
+</hgroup>
+
+<!-- Aggregate Statistics Cards -->
+<div class="aggregate-stats">
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,.0f}".format(aggregate.total_words / 1000000) }}M</div>
+        <div class="stat-label">Total Words</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(aggregate.total_sections) }}</div>
+        <div class="stat-label">Sections</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ aggregate.total_titles }}</div>
+        <div class="stat-label">Titles</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ aggregate.total_agencies }}</div>
+        <div class="stat-label">Agencies</div>
+    </div>
+    <div class="stat-card {% if aggregate.change_pct and aggregate.change_pct > 0 %}stat-increase{% elif aggregate.change_pct and aggregate.change_pct < 0 %}stat-decrease{% endif %}">
+        <div class="stat-value">{% if aggregate.change_pct %}{{ "{:+.1f}%".format(aggregate.change_pct) }}{% else %}—{% endif %}</div>
+        <div class="stat-label">Since {{ aggregate.baseline_year }}</div>
+    </div>
+</div>
 
 <div class="grid">
     <article>

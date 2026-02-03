@@ -13,6 +13,18 @@ def index():
     return render_template("chart/index.html", titles=titles, years=years)
 
 
+@chart_bp.route("/data/total")
+def data_total():
+    """Return total CFR word count across all titles by year as JSON."""
+    db = get_database()
+    years = [y for y in db.list_years() if y > 0]
+    result = {}
+    for year in years:
+        title_counts = db.get_all_title_word_counts(year)
+        result[str(year)] = sum(title_counts.values())
+    return jsonify(result)
+
+
 @chart_bp.route("/data/<int:title_num>")
 @chart_bp.route("/data/<int:title_num>/<path:path>")
 def data(title_num: int, path: str = ""):

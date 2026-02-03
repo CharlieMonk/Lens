@@ -17,12 +17,23 @@
     </p>
 </form>
 
-<div class="citation-examples">
-    <strong>Try these examples:</strong>
-    <a href="{{ url_for('compare.diff', title_num=29, section='1910.134', year1=0) }}">29 CFR 1910.134</a>
-    <a href="{{ url_for('compare.diff', title_num=47, section='73.609', year1=0) }}">47 CFR 73.609</a>
-    <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}">26 CFR 1.154</a>
-    <a href="{{ url_for('compare.diff', title_num=40, section='60.1', year1=0) }}">40 CFR 60.1</a>
+<div class="compare-examples-grid">
+    <a href="{{ url_for('compare.diff', title_num=29, section='1910.134', year1=0) }}" class="example-card">
+        <div class="citation">29 CFR 1910.134</div>
+        <div class="description">Respiratory Protection (OSHA)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=47, section='73.609', year1=0) }}" class="example-card">
+        <div class="citation">47 CFR 73.609</div>
+        <div class="description">FM Station Requirements (FCC)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=26, section='1.154', year1=0) }}" class="example-card">
+        <div class="citation">26 CFR 1.154</div>
+        <div class="description">Tax Regulations (IRS)</div>
+    </a>
+    <a href="{{ url_for('compare.diff', title_num=40, section='60.1', year1=0) }}" class="example-card">
+        <div class="citation">40 CFR 60.1</div>
+        <div class="description">Air Quality Standards (EPA)</div>
+    </a>
 </div>
 
 <script>
