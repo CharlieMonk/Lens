@@ -141,10 +141,66 @@ function initTableFilters() {
     });
 }
 
+// Count-up animation for statistics
+function initCountUp() {
+    const elements = document.querySelectorAll('[data-count]');
+    if (!elements.length) return;
+
+    const duration = 1000; // Animation duration in ms
+    const frameDuration = 1000 / 60; // 60fps
+    const totalFrames = Math.round(duration / frameDuration);
+
+    function easeOutQuart(t) {
+        return 1 - Math.pow(1 - t, 4);
+    }
+
+    function formatNumber(value, decimals, format, prefix, suffix) {
+        let formatted = decimals !== undefined ? value.toFixed(decimals) : Math.round(value).toString();
+        if (format === 'comma') {
+            formatted = Math.round(value).toLocaleString();
+        }
+        return (prefix || '') + formatted + (suffix || '');
+    }
+
+    function animateCount(el) {
+        const target = parseFloat(el.dataset.count);
+        const decimals = el.dataset.decimals !== undefined ? parseInt(el.dataset.decimals) : undefined;
+        const format = el.dataset.format;
+        const prefix = el.dataset.prefix || '';
+        const suffix = el.dataset.suffix || '';
+        let frame = 0;
+
+        const counter = setInterval(() => {
+            frame++;
+            const progress = easeOutQuart(frame / totalFrames);
+            const current = target * progress;
+            el.textContent = formatNumber(current, decimals, format, prefix, suffix);
+
+            if (frame === totalFrames) {
+                clearInterval(counter);
+                el.textContent = formatNumber(target, decimals, format, prefix, suffix);
+            }
+        }, frameDuration);
+    }
+
+    // Use IntersectionObserver to trigger animation when visible
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                animateCount(entry.target);
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.5 });
+
+    elements.forEach(el => observer.observe(el));
+}
+
 // Initialize all enhancements
 document.addEventListener('DOMContentLoaded', () => {
     initCopyCitation();
     initHTMXLoadingStates();
     initSmoothScroll();
     initTableFilters();
+    initCountUp();
 });

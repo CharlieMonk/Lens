@@ -88,23 +88,23 @@
 
     <div class="aggregate-stats">
         <div class="stat-card">
-            <div class="stat-value">{{ "{:,.0f}".format(aggregate.total_words / 1000000) }}M</div>
+            <div class="stat-value" data-count="{{ aggregate.total_words / 1000000 }}" data-suffix="M" data-decimals="0">0</div>
             <div class="stat-label">Words</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ "{:,}".format(aggregate.total_sections) }}</div>
+            <div class="stat-value" data-count="{{ aggregate.total_sections }}" data-format="comma">0</div>
             <div class="stat-label">Sections</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ aggregate.total_titles }}</div>
+            <div class="stat-value" data-count="{{ aggregate.total_titles }}">0</div>
             <div class="stat-label">Titles</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{{ aggregate.total_agencies }}</div>
+            <div class="stat-value" data-count="{{ aggregate.total_agencies }}">0</div>
             <div class="stat-label">Agencies</div>
         </div>
         <div class="stat-card {% if aggregate.change_pct and aggregate.change_pct > 0 %}stat-increase{% elif aggregate.change_pct and aggregate.change_pct < 0 %}stat-decrease{% endif %}">
-            <div class="stat-value">{% if aggregate.change_pct %}{{ "{:+.1f}%".format(aggregate.change_pct) }}{% else %}—{% endif %}</div>
+            <div class="stat-value"{% if aggregate.change_pct %} data-count="{{ aggregate.change_pct }}" data-prefix="{% if aggregate.change_pct > 0 %}+{% endif %}" data-suffix="%" data-decimals="1"{% endif %}>{% if aggregate.change_pct %}0{% else %}—{% endif %}</div>
             <div class="stat-label">Since {{ aggregate.baseline_year }}</div>
         </div>
     </div>
