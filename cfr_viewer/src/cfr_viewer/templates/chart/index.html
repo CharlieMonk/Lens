@@ -313,16 +313,12 @@ function updateStats(data) {
     CountUp.animate(document.getElementById('stat-last'), lastOpts.value, { decimals: lastOpts.decimals, suffix: lastOpts.suffix });
     document.getElementById('stat-last-label').textContent = lastYear;
 
-    // Round to 1 decimal to determine sign display (match change_cell.html logic)
-    const changeRounded = Math.round(change * 10) / 10;
-    const cagrRounded = Math.round(cagr * 10) / 10;
-
     const changeEl = document.getElementById('stat-change');
-    changeEl.className = 'stat-value ' + (changeRounded > 0 ? 'positive' : changeRounded < 0 ? 'negative' : '');
-    CountUp.animate(changeEl, Math.abs(change), { decimals: 1, prefix: changeRounded === 0 ? '' : (change >= 0 ? '+' : '−'), suffix: '%' });
+    changeEl.className = 'stat-value';
+    CountUp.animateChange(changeEl, change, '');
 
     const cagrEl = document.getElementById('stat-cagr');
-    CountUp.animate(cagrEl, Math.abs(cagr), { decimals: 1, prefix: cagrRounded === 0 ? '' : (cagr >= 0 ? '+' : '−'), suffix: '%' });
+    CountUp.animateChange(cagrEl, cagr, '');
 
     statsCard.classList.remove('hidden');
 }

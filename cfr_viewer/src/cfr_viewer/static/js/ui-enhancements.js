@@ -182,6 +182,37 @@ const CountUp = {
         }, this.frameDuration);
     },
 
+    // Get change type: 'positive', 'negative', or 'zero' based on rounded value
+    changeType(value) {
+        const rounded = Math.round(value * 10) / 10;
+        if (rounded === 0) return 'zero';
+        return value > 0 ? 'positive' : 'negative';
+    },
+
+    // Get sign prefix: '+', '−', or '' based on rounded value
+    changeSign(value) {
+        const rounded = Math.round(value * 10) / 10;
+        if (rounded === 0) return '';
+        return value >= 0 ? '+' : '−';
+    },
+
+    // Animate a change percentage with proper sign and class
+    // el: DOM element, value: change percentage, classPrefix: 'change', '' for no prefix, or false to skip class updates
+    animateChange(el, value, classPrefix = 'change') {
+        const type = this.changeType(value);
+        const sign = this.changeSign(value);
+
+        // Update CSS class (skip if classPrefix is false)
+        if (classPrefix !== false) {
+            const cls = classPrefix ? `${classPrefix}-` : '';
+            el.classList.remove(`${cls}positive`, `${cls}negative`, `${cls}zero`);
+            if (type !== 'zero') el.classList.add(`${cls}${type}`);
+        }
+
+        // Animate the absolute value with appropriate prefix
+        this.animate(el, Math.abs(value), { decimals: 1, prefix: sign, suffix: '%' });
+    },
+
     // Auto-initialize elements with data-count attribute
     initFromDataAttributes() {
         const elements = document.querySelectorAll('[data-count]');
