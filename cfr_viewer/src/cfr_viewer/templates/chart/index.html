@@ -729,7 +729,12 @@ initChart();
 
 // Check if URL has params, otherwise load total CFR data
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('title')) {
+if (urlParams.get('cite')) {
+    // Auto-fill citation input and submit
+    const citeInput = document.getElementById('citation-input');
+    citeInput.value = urlParams.get('cite');
+    handleCitationSubmit(new Event('submit'));
+} else if (urlParams.get('title')) {
     restoreFromURL();
 } else {
     loadTotalCFRData();

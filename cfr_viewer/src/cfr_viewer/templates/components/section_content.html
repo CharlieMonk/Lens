@@ -25,6 +25,9 @@
     <a href="{{ url_for('compare.diff', title_num=title_num, section=section.section, year1=year) }}" role="button" class="outline secondary">
         Compare Years
     </a>
+    <a href="{{ url_for('chart.index', cite='{} CFR {}'.format(title_num, section.section)) }}" role="button" class="outline secondary">
+        View Trends
+    </a>
 </div>
 
 {% macro section_nav() %}
