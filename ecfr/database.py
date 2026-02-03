@@ -40,11 +40,24 @@ def sort_key(ident, use_roman=False):
     return (0, int(m.group(1)), ident) if m else (1, 0, ident)
 
 def section_sort_key(s):
+    """Sort key for section identifiers like '1.1', '1c.105', '1c.105-1c.106'."""
+    import re
     ident = s if isinstance(s, str) else s.get("identifier", "")
+    # Handle hyphenated ranges (e.g., "1c.105-1c.106") - use first part for sorting
+    if "-" in ident:
+        ident = ident.split("-")[0]
     result = []
     for p in ident.split("."):
-        try: result.append((0, int(p), ""))
-        except ValueError: result.append((1, 0, p))
+        # Try pure integer first
+        try:
+            result.append((0, int(p), ""))
+        except ValueError:
+            # Handle alphanumeric like "1c", "15a" - extract leading number + suffix
+            m = re.match(r'^(\d+)(.*)$', p)
+            if m:
+                result.append((0, int(m.group(1)), m.group(2)))
+            else:
+                result.append((1, 0, p))
     return result
 
 class ECFRDatabase:
