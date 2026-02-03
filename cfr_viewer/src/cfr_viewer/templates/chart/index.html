@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Word Count Trends - CFR Viewer{% endblock %}
+{% block title %}Word Count Trends - Lens{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -30,12 +30,14 @@
         font-size: 0.95rem;
     }
     .breadcrumb-item {
-        background: var(--pico-secondary-background);
+        background: #e3f2fd;
+        color: #1565c0;
         padding: 0.25rem 0.75rem;
         border-radius: 4px;
+        font-weight: 500;
     }
     .breadcrumb-separator {
-        color: var(--pico-muted-color);
+        color: #546e7a;
     }
     .stats-card {
         display: grid;

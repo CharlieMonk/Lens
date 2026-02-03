@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 from pathlib import Path
-from flask import Flask
+from flask import Flask, render_template
 from ecfr.database import ECFRDatabase
 from .routes_browse import browse_bp
 from .routes_statistics import statistics_bp
@@ -24,4 +24,9 @@ def create_app(db_path: str | None = None):
     app.register_blueprint(compare_bp, url_prefix="/compare")
     app.register_blueprint(chart_bp, url_prefix="/chart")
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    @app.errorhandler(404)
+    def page_not_found(e):
+        return render_template("errors/404.html"), 404
+
     return app

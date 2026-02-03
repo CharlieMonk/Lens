@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CFR Viewer{% endblock %}</title>
+    <title>{% block title %}Lens{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pico.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}" media="print">
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/sortable.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/ui-enhancements.js') }}" defer></script>
@@ -15,7 +17,7 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <nav class="container" role="navigation" aria-label="Main navigation">
         <ul>
-            <li><strong><a href="{{ url_for('browse.index') }}">CFR Viewer</a></strong></li>
+            <li><strong><a href="{{ url_for('browse.index') }}">Lens</a></strong></li>
         </ul>
         <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('nav > ul:last-child').classList.toggle('nav-open')">☰</button>
         <ul>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/change_cell.html" import change_cell %}
 
-{% block title %}All Titles - CFR Viewer{% endblock %}
+{% block title %}All Titles - Lens{% endblock %}
 
 {% block content %}
 <hgroup>
@@ -11,7 +11,11 @@
 
 {% include "components/year_selector.html" %}
 
-<table class="sortable">
+<div class="table-filter">
+    <input type="search" id="title-filter" placeholder="Filter titles by name or number..." aria-label="Filter titles">
+</div>
+
+<table class="sortable" id="titles-table">
     <thead>
         <tr>
             <th scope="col" data-sort="number">Title</th>
@@ -43,4 +47,20 @@
         {% endfor %}
     </tbody>
 </table>
+
+<script>
+document.getElementById('title-filter').addEventListener('input', function(e) {
+    const filter = e.target.value.toLowerCase();
+    const rows = document.querySelectorAll('#titles-table tbody tr');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const number = row.cells[0]?.textContent?.toLowerCase() || '';
+        const name = row.cells[1]?.textContent?.toLowerCase() || '';
+        const matches = number.includes(filter) || name.includes(filter);
+        row.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+    });
+});
+</script>
 {% endblock %}

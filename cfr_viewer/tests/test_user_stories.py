@@ -62,7 +62,7 @@ class TestUserStory1_BrowseTitles:
         page.screenshot(path=f"{SCREENSHOT_DIR}/01_home_page.png", full_page=True)
 
         # Step 2: Verify page title
-        expect(page).to_have_title("All Titles - CFR Viewer")
+        expect(page).to_have_title("All Titles - Lens")
 
     def test_titles_table_exists(self, page: Page):
         """Step 3: Verify there's a table with titles."""

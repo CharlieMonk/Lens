@@ -71,9 +71,13 @@ nav strong a {
     margin-bottom: 0;
 }
 
-.section-controls a[role="button"] {
+.section-controls a[role="button"],
+.section-controls button {
     margin: 0;
     white-space: nowrap;
+    height: auto;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
 }
 
 /* Section page layout - text and similar sections side by side */
@@ -721,6 +725,21 @@ table tbody tr {
 }
 
 .year-selector select:focus {
+    box-shadow: 0 0 0 3px var(--pico-primary-focus);
+}
+
+/* ===== Table Filter ===== */
+.table-filter {
+    margin-bottom: 1rem;
+}
+
+.table-filter input[type="search"] {
+    max-width: 400px;
+    margin: 0;
+}
+
+.table-filter input[type="search"]:focus {
+    border-color: var(--pico-primary);
     box-shadow: 0 0 0 3px var(--pico-primary-focus);
 }
 
