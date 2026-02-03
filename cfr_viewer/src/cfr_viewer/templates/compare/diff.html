@@ -197,7 +197,7 @@
 {% set missing_year = year2 if section1 else year1 %}
 
 <article class="partial-data-banner">
-    <div class="banner-icon">⚠</div>
+    <div class="banner-icon">!</div>
     <div class="banner-content">
         <strong>Section Only Available in {{ "Current" if found_year == 0 else found_year }}</strong>
         <p>&sect; {{ section_id }} was not found for {{ "Current" if missing_year == 0 else missing_year }}.</p>
