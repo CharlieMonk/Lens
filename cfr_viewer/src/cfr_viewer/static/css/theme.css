@@ -41,17 +41,6 @@ nav strong a {
     text-align: right;
 }
 
-/* Narrow abbreviation column */
-.col-abbr {
-    width: 1%;
-    white-space: nowrap;
-}
-
-/* Prevent header text wrapping */
-table.sortable th {
-    white-space: nowrap;
-}
-
 /* Year selector styling */
 .year-selector {
     display: inline-block;

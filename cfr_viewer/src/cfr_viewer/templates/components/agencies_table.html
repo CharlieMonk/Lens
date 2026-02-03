@@ -4,7 +4,7 @@
 <table class="sortable"{% if table_id %} id="{{ table_id }}"{% endif %}>
     <thead>
         <tr>
-            <th scope="col" class="col-abbr" data-sort="string">Abbr</th>
+            <th scope="col" data-sort="string">Abbr</th>
             <th scope="col" data-sort="string">Agency</th>
             <th scope="col" class="numeric" data-sort="number" data-sort-default="desc">Word Count</th>
             <th scope="col" class="numeric" data-sort="number">Since {{ baseline_year }}</th>
@@ -13,7 +13,7 @@
     <tbody>
         {% for agency in agencies %}
         <tr>
-            <td class="col-abbr"><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
+            <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.abbreviation }}</a></td>
             <td><a href="{{ url_for('agencies.detail', slug=agency.slug) }}">{{ agency.name }}</a></td>
             <td class="numeric" data-value="{{ agency.word_count }}">{{ "{:,}".format(agency.word_count) }}</td>
             {{ change_cell(agency.change_pct) }}
