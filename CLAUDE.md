@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 eCFR is a Python tool for fetching and processing Code of Federal Regulations (CFR) data from ecfr.gov. It has three main components:
 
-1. **CFR Data Fetcher** (`fetch_titles.py`) - Downloads and processes all 50 CFR titles from eCFR and govinfo bulk data
+1. **CFR Data Fetcher** (`ecfr/fetcher.py`) - Downloads and processes all 50 CFR titles from eCFR and govinfo bulk data
 2. **CFR Web Viewer** (`cfr_viewer/`) - Flask web application for browsing CFR data
 3. **Enforcement Relevance** (`relevance/`) - Identifies most-enforced CFR sections by ingesting agency enforcement actions
 
@@ -16,36 +16,36 @@ eCFR is a Python tool for fetching and processing Code of Federal Regulations (C
 # Setup
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .                    # Install with relevance subproject
+pip install -e .                    # Install package
 pip install -e ".[dev]"             # Include dev dependencies
 
-# Fetch CFR data
+# Fetch CFR data (standalone)
 python fetch_titles.py              # Fetch current + historical (default)
 python fetch_titles.py --current    # Fetch only current data
 python fetch_titles.py --historical # Fetch only historical years
+python fetch_titles.py --build-index # Build FAISS similarity index only
 
-# Run web viewer
+# Run web viewer (auto-fetches data on startup)
 cfr-viewer                          # Starts Flask at localhost:5000
 
 # Run tests
 pytest                              # All tests
-pytest tests/                       # Core ecfr tests
+pytest ecfr/tests/                  # Core ecfr tests
 pytest cfr_viewer/tests/            # Web viewer tests
-pytest relevance/tests/             # Relevance tests only
 pytest -m "not integration"         # Skip slow integration tests
-pytest tests/test_file.py::TestClass::test_method -v  # Run single test
+pytest ecfr/tests/test_database.py::TestClass::test_method -v  # Single test
 ```
 
 ## Architecture
 
-### CFR Fetcher (`fetch_titles.py`)
+### CFR Fetcher (`ecfr/`)
 
 Four classes handle data fetching:
 
-- **ECFRDatabase** (`ecfr/database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, and word counts. Stores in `ecfr/ecfr_data/ecfr.db`. Also provides all read operations (navigate, search, get_structure, get_section, get_similar_sections). Similarity search uses TF-IDF computed on-demand per chapter.
-- **ECFRClient**: Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry (max 7 retries, 3s base delay). Races both sources in parallel, taking first success.
-- **XMLExtractor**: Extracts section data directly from eCFR/govinfo XML. Tracks word counts and extracts section data (title/chapter/part/section/text).
-- **ECFRFetcher**: Main orchestrator coordinating parallel fetching. Processes current and historical years sequentially to manage memory.
+- **ECFRDatabase** (`database.py`): SQLite persistence and query interface. Handles titles, agencies, sections, word counts. Stores in `~/ecfr_data/ecfr.db`. Provides read operations (navigate, search, get_structure, get_section). Includes FAISS-based global similarity search.
+- **ECFRClient** (`client.py`): Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry. Races both sources in parallel, taking first success.
+- **XMLExtractor** (`extractor.py`): Extracts section data from eCFR/govinfo XML. Tracks word counts and hierarchy.
+- **ECFRFetcher** (`fetcher.py`): Main orchestrator coordinating parallel fetching.
 
 Data flow:
 1. Fetch titles metadata from eCFR API
@@ -53,37 +53,42 @@ Data flow:
 3. Race eCFR and govinfo endpoints for each title XML
 4. Extract sections from XML and save to SQLite
 
-### CFR Web Viewer (`cfr_viewer/`)
+### CFR Web Viewer (`cfr_viewer/src/cfr_viewer/`)
 
 Flask application for browsing CFR data:
-- `app.py` - Flask app factory, registers blueprints, stores database instance on app
-- `services.py` - Service layer wrapping ECFRDatabase
-- `routes_browse.py` - Browse views: titles index, title structure, section detail
-- `routes_statistics.py` - Word count statistics by agencies and titles (URL: `/statistics`)
-- `routes_compare.py` - Compare sections across years
+- `app.py` - Flask app factory, registers blueprints, stores database on app
+- `services.py` - Service layer with shared helpers:
+  - `get_validated_year()` - Extract/validate year from request
+  - `get_title_name()` - Title name with fallback
+  - `compute_change_vs_baseline()` - Directional change percentage
+  - `node_label()` - Display label for structure nodes
+  - `navigate_to_path()` - Structure tree navigation
+- `routes_browse.py` - Browse views: titles, title structure, section detail
+- `routes_agencies.py` - Agency word count statistics (`/agencies/`)
+- `routes_compare.py` - Compare sections across years (`/compare/`)
+- `routes_chart.py` - Word count trends over time (`/chart/`)
 - `routes_api.py` - HTMX partials for similar sections
+
+The `cfr-viewer` entry point runs `python -m ecfr.fetcher` before starting Flask.
 
 ### Relevance Subproject (`relevance/src/relevance/`)
 
 Flat module structure using domain-driven design:
 
 - **domain_models.py**: Core types (Agency, Source, Document, Citation, CitationType)
-- **builder.py**: `CitationDatabaseBuilder` orchestrates database construction from sources
+- **builder.py**: `CitationDatabaseBuilder` orchestrates database construction
 - **adapters_*.py**: Agency-specific HTML/RSS parsers (SEC, EPA, DOL)
-- **adapters_registry.py**: Maps agencies to their adapters
 - **application_*.py**: Services (ingestion, citation extraction, counting)
 - **infrastructure_*.py**: Database, ORM, HTTP fetching, fixtures
 
-Usage:
-```python
-from relevance import CitationDatabaseBuilder
+## Configuration
 
-builder = CitationDatabaseBuilder("sqlite:///data/relevance.sqlite")
-builder.build_live_db(respect_robots=True)  # Live from agency RSS feeds
-# or
-builder.build_offline_starter_db(Path("relevance/tests/fixtures"))  # From fixtures
-top = builder.top_citations(limit=10)
-```
+Settings in `config.yaml` with environment variable overrides (prefix `ECFR_`):
+
+- `database.path` - SQLite database location (default: `~/ecfr_data/ecfr.db`)
+- `fetcher.historical_years` - Years to fetch: [2025, 2020, 2015, 2010, 2005, 2000]
+- `viewer.baseline_year` - Reference year for statistics (default: 2010)
+- `similar_sections.global_search` - Enable FAISS global search (default: true)
 
 ## eCFR API
 
@@ -99,7 +104,7 @@ Govinfo bulk (faster for historical):
 
 ## Database Schema
 
-Main tables in `ecfr/ecfr_data/ecfr.db`:
+Main tables in SQLite:
 - `titles` - CFR title metadata
 - `agencies` - Agency names and relationships
 - `cfr_references` - Maps agencies to CFR chapters
@@ -108,9 +113,8 @@ Main tables in `ecfr/ecfr_data/ecfr.db`:
 
 ## Testing
 
-The project uses pytest with Playwright for verification tests:
-- `tests/` - Unit tests for ecfr package (client, database, extractor, fetcher)
-- `tests/test_fetcher_integration.py` - Integration test comparing fetched data against production DB (marked `@integration`, `@slow`)
-- `cfr_viewer/tests/` - Web viewer route tests
+- `ecfr/tests/` - Unit tests for ecfr package (client, database, extractor, fetcher)
+- `ecfr/tests/test_fetcher_integration.py` - Integration test (marked `@integration`, `@slow`)
+- `cfr_viewer/tests/test_routes.py` - Web viewer route tests (37 tests)
 - `cfr_viewer/tests/test_user_stories.py` - Playwright E2E tests (require running server)
 - `relevance/tests/` - Unit and integration tests using offline fixtures
