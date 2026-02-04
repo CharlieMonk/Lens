@@ -1,6 +1,6 @@
 """SQLite database operations for eCFR data."""
 import hashlib
-import json, re, sqlite3
+import json, pickle, re, sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +58,8 @@ class ECFRDatabase:
         self._stats_cache_ttl = config.cache_stats_ttl
         self._structure_cache = {}
         self._structure_cache_time = 0
+        self._faiss_index = None
+        self._faiss_meta = None
         self._ensure_schema()
 
     @contextmanager
@@ -137,6 +139,7 @@ class ECFRDatabase:
                 ("idx_sections_year_title", "sections(year, title)"),
                 ("idx_sections_year_title_section", "sections(year, title, section)"),
                 ("idx_sections_groupby", "sections(year, title, subtitle, chapter, subchapter, part, subpart)"),
+                ("idx_sections_text_hash", "sections(text_hash)"),
                 ("idx_cfr_title_chapter", "cfr_references(title, chapter)"),
                 ("idx_cfr_agency", "cfr_references(agency_slug)"),
                 ("idx_word_counts_agency", "agency_word_counts(agency_slug)")
@@ -339,7 +342,12 @@ class ECFRDatabase:
         return dict(zip(COLS, r)) if r else None
 
     def get_adjacent_sections(self, title, section, year=0):
-        rows = self._query("SELECT section FROM sections WHERE year=? AND title=?", (year, title))
+        # Optimize: query only sections in same part (e.g., "1910" for section "1910.134")
+        part = section.split(".")[0] if "." in section else ""
+        if part:
+            rows = self._query("SELECT section FROM sections WHERE year=? AND title=? AND part=?", (year, title, part))
+        else:
+            rows = self._query("SELECT section FROM sections WHERE year=? AND title=?", (year, title))
         if not rows: return None, None
         secs = sorted([r[0] for r in rows], key=section_sort_key)
         try:
@@ -439,11 +447,16 @@ class ECFRDatabase:
         # Get title metadata
         title_meta = self.get_titles()
 
+        # Get section counts (exclude empty section identifiers which are aggregate rows)
+        section_count_year = self._query("SELECT COUNT(*) FROM sections WHERE year=? AND section != ''", (year,))[0][0]
+        section_count_baseline = self._query("SELECT COUNT(*) FROM sections WHERE year=? AND section != ''", (baseline_year,))[0][0]
+
         result = {
             "title_counts": {year: title_counts_year, baseline_year: title_counts_baseline},
             "agency_counts": {year: agency_counts_year, baseline_year: agency_counts_baseline},
             "agency_details": agency_details,
             "title_meta": title_meta,
+            "section_counts": {year: section_count_year, baseline_year: section_count_baseline},
         }
         return self._set_cached_stats(cache_key, result)
 
@@ -582,3 +595,227 @@ class ECFRDatabase:
                 res.append({"title": title, "section": s, "similarity": float(sim), "heading": c["headings"][s], "keywords": get_shared_keywords(i)})
         res.sort(key=lambda x: x["similarity"], reverse=True)
         return res[:limit], res[0]["similarity"] if res else None
+
+    def build_similarity_index(self, year=0, progress_callback=None, max_features=2000):
+        """Build FAISS index for global similarity search across all sections.
+
+        Uses memory-efficient Product Quantization for large datasets.
+
+        Args:
+            year: Year to build index for (0 = current)
+            progress_callback: Optional callable(stage, current, total) for progress
+            max_features: TF-IDF vocabulary size (lower = less memory, default 2000)
+
+        Returns:
+            dict with stats: sections_indexed, index_size_mb, build_time_s
+        """
+        import time
+        import numpy as np
+        import faiss
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        start_time = time.time()
+        index_path = config.faiss_index_path
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def report(stage, current=0, total=0):
+            if progress_callback:
+                progress_callback(stage, current, total)
+            else:
+                if total:
+                    print(f"  {stage}: {current}/{total}")
+                else:
+                    print(f"  {stage}...")
+
+        report("Loading sections from database")
+        rows = self._query("""SELECT s.title, s.chapter, s.section, s.heading, t.content
+            FROM sections s JOIN texts t ON s.text_hash = t.hash
+            WHERE s.year=? AND s.section != '' AND s.text_hash != ''
+            ORDER BY s.title, s.chapter, s.section""", (year,))
+
+        if len(rows) < 100:
+            raise ValueError(f"Not enough sections to build index: {len(rows)} (need at least 100)")
+
+        n_sections = len(rows)
+        report(f"Processing {n_sections:,} sections")
+        metadata = []  # (title, chapter, section, heading)
+        texts = []
+        for title, chapter, section, heading, text in rows:
+            metadata.append((title, chapter, section, heading))
+            texts.append(text)
+        del rows  # Free memory
+
+        report(f"Building TF-IDF vectors (max {max_features} features)")
+        vectorizer = TfidfVectorizer(
+            stop_words='english',
+            max_features=max_features,
+            dtype=np.float32
+        )
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        del texts  # Free memory
+        dim = tfidf_matrix.shape[1]
+
+        report("Building FAISS index")
+        if n_sections < 10000:
+            # Small dataset: use flat index with dense vectors
+            report("Converting to dense vectors (small dataset)")
+            vectors = tfidf_matrix.toarray().astype(np.float32)
+            faiss.normalize_L2(vectors)
+            index = faiss.IndexFlatIP(dim)
+            index.add(vectors)
+        else:
+            # Large dataset: use IVF with Product Quantization for memory efficiency
+            # Process in batches to avoid memory exhaustion
+            nlist = min(config.faiss_nlist, n_sections // 39)
+            m = min(32, dim // 4)  # Number of subquantizers (must divide dim)
+            while dim % m != 0 and m > 1:
+                m -= 1
+
+            # Create IVF-PQ index for memory efficiency
+            quantizer = faiss.IndexFlatIP(dim)
+            index = faiss.IndexIVFPQ(quantizer, dim, nlist, m, 8, faiss.METRIC_INNER_PRODUCT)
+
+            # Train on a sample - limit to 20K to avoid memory issues
+            report("Training index quantizers")
+            sample_size = min(20000, n_sections)
+            sample_idx = np.random.choice(n_sections, sample_size, replace=False)
+            train_vectors = tfidf_matrix[sample_idx].toarray().astype(np.float32)
+            faiss.normalize_L2(train_vectors)
+            index.train(train_vectors)
+            del train_vectors
+
+            # Add vectors in batches
+            batch_size = 10000
+            report(f"Adding vectors in batches of {batch_size}")
+            for i in range(0, n_sections, batch_size):
+                end = min(i + batch_size, n_sections)
+                batch = tfidf_matrix[i:end].toarray().astype(np.float32)
+                faiss.normalize_L2(batch)
+                index.add(batch)
+                if (i + batch_size) % 50000 == 0:
+                    report(f"Added vectors", i + batch_size, n_sections)
+            report(f"Added vectors", n_sections, n_sections)
+
+        del tfidf_matrix  # Free memory
+
+        # Save index and metadata
+        report("Saving index to disk")
+        faiss.write_index(index, str(index_path) + ".faiss")
+
+        with open(str(index_path) + ".pkl", 'wb') as f:
+            pickle.dump({
+                'metadata': metadata,
+                'vectorizer': vectorizer,
+                'year': year,
+                'n_sections': len(metadata),
+            }, f)
+
+        build_time = time.time() - start_time
+        index_size = (index_path.with_suffix('.faiss').stat().st_size +
+                      index_path.with_suffix('.pkl').stat().st_size) / (1024 * 1024)
+
+        # Clear cache so next query loads fresh index
+        self._faiss_index = None
+        self._faiss_meta = None
+
+        return {
+            'sections_indexed': len(metadata),
+            'index_size_mb': round(index_size, 2),
+            'build_time_s': round(build_time, 1),
+            'dimensions': dim,
+        }
+
+    def _load_faiss_index(self):
+        """Load FAISS index and metadata from disk. Caches in memory."""
+        if self._faiss_index is not None:
+            return True
+
+        import faiss
+        index_path = config.faiss_index_path
+        faiss_file = str(index_path) + ".faiss"
+        pkl_file = str(index_path) + ".pkl"
+
+        if not Path(faiss_file).exists() or not Path(pkl_file).exists():
+            return False
+
+        self._faiss_index = faiss.read_index(faiss_file)
+        # Set nprobe for IVF indexes
+        if hasattr(self._faiss_index, 'nprobe'):
+            self._faiss_index.nprobe = config.faiss_nprobe
+
+        with open(pkl_file, 'rb') as f:
+            self._faiss_meta = pickle.load(f)
+
+        return True
+
+    def has_similarity_index(self):
+        """Check if FAISS similarity index exists."""
+        index_path = config.faiss_index_path
+        return (Path(str(index_path) + ".faiss").exists() and
+                Path(str(index_path) + ".pkl").exists())
+
+    def get_similar_sections_global(self, title, section, year=0, limit=None, min_similarity=None):
+        """Find similar sections across the entire CFR using FAISS index.
+
+        Args:
+            title: CFR title number
+            section: Section identifier (e.g., "1.1")
+            year: Year (must match index year, typically 0 for current)
+            limit: Max results to return
+            min_similarity: Minimum cosine similarity threshold
+
+        Returns:
+            tuple: (list of similar sections, max_similarity or None)
+        """
+        import numpy as np
+        import faiss
+
+        limit = limit if limit is not None else config.similar_default_limit
+        min_similarity = min_similarity if min_similarity is not None else config.similar_min_similarity
+
+        # Load index
+        if not self._load_faiss_index():
+            # Fall back to chapter-level search if no global index
+            return self.get_similar_sections(title, section, year, limit, min_similarity)
+
+        # Get source section text
+        row = self._query_one("""SELECT t.content FROM sections s
+            JOIN texts t ON s.text_hash = t.hash
+            WHERE s.year=? AND s.title=? AND s.section=?""", (year, title, section))
+        if not row:
+            return [], None
+
+        # Vectorize source text
+        vectorizer = self._faiss_meta['vectorizer']
+        source_vec = vectorizer.transform([row[0]]).toarray().astype(np.float32)
+        faiss.normalize_L2(source_vec)
+
+        # Search FAISS index - get more results than needed to filter
+        k = min(limit * 3 + 1, self._faiss_meta['n_sections'])  # +1 for self-match
+        distances, indices = self._faiss_index.search(source_vec, k)
+
+        # Build results
+        results = []
+        metadata = self._faiss_meta['metadata']
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx < 0:  # FAISS returns -1 for not enough results
+                continue
+            t, ch, s, h = metadata[idx]
+            # Skip self
+            if t == title and s == section:
+                continue
+            similarity = float(dist)  # Inner product on normalized vectors = cosine similarity
+            if similarity < min_similarity:
+                continue
+            results.append({
+                'title': t,
+                'section': s,
+                'similarity': similarity,
+                'heading': h,
+                'chapter': ch,
+            })
+            if len(results) >= limit:
+                break
+
+        max_sim = results[0]['similarity'] if results else None
+        return results, max_sim

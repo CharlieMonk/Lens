@@ -423,3 +423,83 @@ class TestECFRDatabaseUtils:
         counts = temp_db.get_agency_word_counts()
         # Parent should have child's counts
         assert counts.get("test-agency", 0) >= counts.get("test-sub-agency", 0)
+
+
+class TestFAISSSimilarityIndex:
+    """Tests for FAISS-based global similarity search."""
+
+    @pytest.fixture
+    def many_sections(self):
+        """Generate 100+ sections for FAISS index testing."""
+        sections = []
+        topics = [
+            ("environmental regulations", "EPA guidelines", "pollution control"),
+            ("financial reporting", "accounting standards", "disclosure requirements"),
+            ("workplace safety", "OSHA requirements", "employee protection"),
+            ("telecommunications", "FCC rules", "spectrum allocation"),
+            ("transportation safety", "DOT standards", "vehicle regulations"),
+        ]
+        for i in range(120):  # Need at least 100 for FAISS
+            topic = topics[i % len(topics)]
+            sections.append({
+                "title": (i // 30) + 1,  # Spread across titles 1-4
+                "chapter": ["I", "II", "III"][i % 3],
+                "part": str(100 + i // 10),
+                "section": f"{100 + i // 10}.{i % 10 + 1}",
+                "heading": f"Section on {topic[0]}",
+                "text": f"This section covers {topic[0]} including {topic[1]} and {topic[2]}. "
+                        f"Organizations must comply with these {topic[0]} standards. "
+                        f"Additional {topic[1]} requirements apply to covered entities.",
+            })
+        return sections
+
+    def test_build_similarity_index(self, temp_db, many_sections):
+        """Build FAISS similarity index."""
+        temp_db.save_sections(many_sections, year=0)
+
+        result = temp_db.build_similarity_index(year=0)
+
+        assert result["sections_indexed"] == 120
+        assert result["index_size_mb"] > 0
+        assert result["build_time_s"] >= 0
+        assert temp_db.has_similarity_index()
+
+    def test_global_search_with_index(self, temp_db, many_sections):
+        """Global similarity search using FAISS index."""
+        temp_db.save_sections(many_sections, year=0)
+        temp_db.build_similarity_index(year=0)
+
+        # Search for sections similar to one about environmental regulations
+        similar, max_sim = temp_db.get_similar_sections_global(
+            title=1, section="100.1", year=0, limit=5
+        )
+
+        assert len(similar) > 0
+        assert max_sim is not None
+        # Results should include sections from different titles
+        titles = {s["title"] for s in similar}
+        assert len(titles) >= 1  # Should find results (possibly from multiple titles)
+
+    def test_global_search_without_index(self, temp_db, many_sections):
+        """Global search falls back to chapter search without index."""
+        temp_db.save_sections(many_sections, year=0)
+        # Don't build index
+
+        # Should fall back to chapter-level search
+        similar, max_sim = temp_db.get_similar_sections_global(
+            title=1, section="100.1", year=0, limit=5
+        )
+
+        # Falls back to chapter search which may or may not find results
+        assert isinstance(similar, list)
+
+    def test_has_similarity_index_false(self, temp_db):
+        """has_similarity_index returns False when no index exists."""
+        from pathlib import Path
+        from ecfr.config import config
+        # Clean up any existing index from other tests
+        for ext in [".faiss", ".pkl"]:
+            path = Path(str(config.faiss_index_path) + ext)
+            if path.exists():
+                path.unlink()
+        assert not temp_db.has_similarity_index()

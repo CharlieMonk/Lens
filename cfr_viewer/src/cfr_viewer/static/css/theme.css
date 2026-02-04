@@ -221,6 +221,61 @@ tr.reserved {
     opacity: 1;
 }
 
+/* Global search scope indicator */
+.search-scope-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.scope-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.scope-badge.global {
+    background-color: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+}
+
+.search-scope-row .info-icon {
+    cursor: help;
+    opacity: 0.6;
+    font-size: 0.85em;
+    position: relative;
+}
+
+.search-scope-row .info-icon:hover {
+    opacity: 1;
+}
+
+.search-scope-row .info-icon .tooltip {
+    visibility: hidden;
+    position: fixed;
+    z-index: 1000;
+    background: #333;
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: normal;
+    width: 220px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.search-scope-row .info-icon:hover .tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
 /* Similar section table improvements */
 .similar-sections table {
     font-size: 0.85rem;
@@ -1595,20 +1650,6 @@ table tbody tr {
 
 .removed-banner .banner-content strong {
     color: #1b5e20;
-}
-
-/* Added banner - pink to match diff legend (regulatory growth) */
-.added-banner {
-    background: #fce4ec;
-    border: 1px solid #f48fb1;
-}
-
-.added-banner .banner-icon {
-    color: #c2185b;
-}
-
-.added-banner .banner-content strong {
-    color: #ad1457;
 }
 
 /* Single version display (when no diff needed) */

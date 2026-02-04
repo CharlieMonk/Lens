@@ -8,8 +8,25 @@ api_bp = Blueprint("api", __name__)
 @api_bp.route("/similar/<int:title_num>/<path:section>")
 def similar_sections(title_num: int, section: str):
     db = get_database()
-    similar, max_sim = db.get_similar_sections(title_num, section, request.args.get("year", 0, type=int), request.args.get("limit", 10, type=int))
-    return render_template("components/similar_sections.html", similar=similar, distinctness=1-max_sim if max_sim else None, source_title=title_num, source_section=section, year=request.args.get("year", 0, type=int))
+    year = request.args.get("year", 0, type=int)
+    limit = request.args.get("limit", 10, type=int)
+    scope = request.args.get("scope", "global")  # "global" or "chapter"
+
+    # Use global search if available and requested
+    if scope == "global" and config.global_similarity_search and db.has_similarity_index():
+        similar, max_sim = db.get_similar_sections_global(title_num, section, year, limit)
+        is_global = True
+    else:
+        similar, max_sim = db.get_similar_sections(title_num, section, year, limit)
+        is_global = False
+
+    return render_template("components/similar_sections.html",
+                           similar=similar,
+                           distinctness=1-max_sim if max_sim else None,
+                           source_title=title_num,
+                           source_section=section,
+                           year=year,
+                           is_global=is_global)
 
 @api_bp.route("/section/<int:title_num>/<path:section>")
 def section_content(title_num: int, section: str):

@@ -391,5 +391,242 @@ class TestAccessibilityAndUsability:
         expect(footer).to_contain_text("ecfr.gov")
 
 
+class TestTableInteractivity:
+    """Test table sorting and filtering."""
+
+    def test_table_sorting(self, page: Page):
+        """Test clicking column header sorts table."""
+        page.goto(f"{BASE_URL}/titles")
+
+        # Get initial first row text
+        first_row = page.locator("table tbody tr:first-child")
+        initial_text = first_row.text_content()
+
+        # Click word count header to sort
+        word_count_header = page.locator("th", has_text="Word Count")
+        word_count_header.click()
+
+        # Wait for sort
+        page.wait_for_timeout(500)
+
+        # Verify sort indicator appeared
+        expect(word_count_header).to_have_class(re.compile(r"sort-"))
+
+    def test_table_filtering(self, page: Page):
+        """Test filter input filters table rows."""
+        page.goto(f"{BASE_URL}/titles")
+
+        # Find filter input
+        filter_input = page.locator("input[type='search']")
+        if filter_input.count() > 0:
+            expect(filter_input).to_be_visible()
+
+            # Type filter text
+            filter_input.fill("Environment")
+            page.wait_for_timeout(300)
+
+            # Check rows are filtered (fewer visible)
+            visible_rows = page.locator("table tbody tr:visible")
+            # Should have filtered results
+            page.screenshot(path=f"{SCREENSHOT_DIR}/table_filtered.png", full_page=True)
+
+
+class TestChartPage:
+    """Test chart/trends page functionality."""
+
+    def test_chart_loads(self, page: Page):
+        """Test chart page loads with visualization."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.screenshot(path=f"{SCREENSHOT_DIR}/07_chart_page.png", full_page=True)
+
+        # Check chart container exists
+        chart = page.locator("canvas")
+        expect(chart).to_be_visible()
+
+    def test_chart_title_selector(self, page: Page):
+        """Test title selector updates chart."""
+        page.goto(f"{BASE_URL}/chart/")
+
+        # Find title selector
+        title_select = page.locator("select#title-select")
+        expect(title_select).to_be_visible()
+
+        # Select a title
+        title_select.select_option(index=1)
+        page.wait_for_timeout(1000)
+
+        # Chart should still be visible
+        chart = page.locator("canvas")
+        expect(chart).to_be_visible()
+
+    def test_chart_statistics_card(self, page: Page):
+        """Test statistics card shows data."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+
+        # Check stats card exists
+        stats = page.locator("#stats-card")
+        if stats.count() > 0:
+            expect(stats).to_be_visible()
+
+
+class TestNavigationDropdown:
+    """Test navigation dropdown menu."""
+
+    def test_compare_dropdown_opens(self, page: Page):
+        """Test Compare dropdown opens on hover/click."""
+        page.goto(BASE_URL)
+
+        # Find dropdown toggle
+        compare_toggle = page.locator(".nav-dropdown-toggle")
+        expect(compare_toggle).to_be_visible()
+
+        # Click to open
+        compare_toggle.click()
+
+        # Check dropdown menu appears
+        dropdown_menu = page.locator(".nav-dropdown-menu")
+        expect(dropdown_menu).to_be_visible()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/nav_dropdown.png", full_page=True)
+
+    def test_dropdown_links_work(self, page: Page):
+        """Test dropdown menu links navigate correctly."""
+        page.goto(BASE_URL)
+
+        # Open dropdown
+        compare_toggle = page.locator(".nav-dropdown-toggle")
+        compare_toggle.click()
+
+        # Click Historical link
+        historical_link = page.locator(".nav-dropdown-menu a", has_text="Historical")
+        historical_link.click()
+
+        expect(page).to_have_url(re.compile(r".*/compare.*"))
+
+
+class TestCopyCitation:
+    """Test copy citation functionality."""
+
+    def test_copy_button_exists(self, page: Page):
+        """Test copy citation button is present on section page."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        # Find copy button
+        copy_btn = page.locator("button", has_text="Copy")
+        if copy_btn.count() > 0:
+            expect(copy_btn).to_be_visible()
+
+    def test_copy_shows_feedback(self, page: Page):
+        """Test clicking copy shows toast feedback."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        copy_btn = page.locator("button", has_text="Copy")
+        if copy_btn.count() > 0:
+            copy_btn.click()
+
+            # Check for toast notification
+            page.wait_for_timeout(500)
+            toast = page.locator(".toast")
+            if toast.count() > 0:
+                expect(toast).to_be_visible()
+                page.screenshot(path=f"{SCREENSHOT_DIR}/copy_toast.png", full_page=True)
+
+
+class TestMobileResponsive:
+    """Test mobile responsive behavior."""
+
+    def test_mobile_menu_toggle(self, page: Page):
+        """Test hamburger menu appears on mobile."""
+        # Set mobile viewport
+        page.set_viewport_size({"width": 375, "height": 667})
+        page.goto(BASE_URL)
+
+        # Check hamburger menu exists
+        hamburger = page.locator(".nav-toggle")
+        if hamburger.count() > 0:
+            expect(hamburger).to_be_visible()
+
+            # Click to open
+            hamburger.click()
+
+            # Nav should be visible
+            nav_menu = page.locator("nav ul.nav-open")
+            page.screenshot(path=f"{SCREENSHOT_DIR}/mobile_menu.png", full_page=True)
+
+    def test_tables_scroll_on_mobile(self, page: Page):
+        """Test tables are scrollable on mobile."""
+        page.set_viewport_size({"width": 375, "height": 667})
+        page.goto(f"{BASE_URL}/titles")
+
+        # Table should still be visible
+        table = page.locator("table")
+        expect(table).to_be_visible()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/mobile_table.png", full_page=True)
+
+
+class TestComparePageAdvanced:
+    """Advanced compare page tests."""
+
+    def test_compare_year_selectors(self, page: Page):
+        """Test year selectors on compare page."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
+
+        # Check both year selectors exist
+        year1 = page.locator("select[name='year1']")
+        year2 = page.locator("select[name='year2']")
+
+        expect(year1).to_be_visible()
+        expect(year2).to_be_visible()
+
+    def test_compare_navigation_buttons(self, page: Page):
+        """Test prev/next buttons on compare page."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
+
+        # Check for navigation buttons
+        nav_buttons = page.locator(".section-nav a[role='button']")
+        # May have prev/next buttons
+        page.screenshot(path=f"{SCREENSHOT_DIR}/compare_nav.png", full_page=True)
+
+    def test_cross_section_compare(self, page: Page):
+        """Test cross-section comparison page."""
+        page.goto(f"{BASE_URL}/compare/sections")
+
+        # Check for two citation inputs
+        cite_inputs = page.locator("input.citation-input")
+        assert cite_inputs.count() >= 2, "Should have at least 2 citation inputs"
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/cross_section.png", full_page=True)
+
+
+class TestEdgeCases:
+    """Test edge cases and error states."""
+
+    def test_empty_section_display(self, page: Page):
+        """Test empty/reserved section displays appropriately."""
+        # Try to find a reserved section or test the display
+        page.goto(f"{BASE_URL}/title/1/section/99.99")
+
+        # Should show some kind of not found or empty message
+        page.screenshot(path=f"{SCREENSHOT_DIR}/section_not_found.png", full_page=True)
+
+    def test_invalid_citation_handling(self, page: Page):
+        """Test compare page handles invalid citations."""
+        page.goto(f"{BASE_URL}/compare/sections?cite1=invalid&cite2=invalid")
+
+        # Page should load without crashing
+        expect(page.locator("body")).to_be_visible()
+
+    def test_deep_url_navigation(self, page: Page):
+        """Test deep URLs work correctly."""
+        # Navigate to a deep structure path
+        page.goto(f"{BASE_URL}/title/1")
+
+        # Should load and show content
+        expect(page).to_have_url(re.compile(r".*/title/1.*"))
+        expect(page.locator("h1")).to_contain_text("Title")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--headed"])

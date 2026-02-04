@@ -93,7 +93,7 @@ def index():
 
     # Aggregate stats
     total_words = sum(title_counts.values())
-    total_sections = db._query("SELECT COUNT(*) FROM sections WHERE year = 0 AND section != ''")[0][0]
+    total_sections = stats["section_counts"][0]
     baseline_words = sum(baseline_title_counts.values()) if baseline_title_counts else 0
 
     aggregate = {
