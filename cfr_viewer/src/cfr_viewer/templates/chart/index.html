@@ -683,44 +683,46 @@ async function handleCitationSubmit(event) {
     hideSelectorsFrom(1);
     await fetchChartData();
 
-    // Try to navigate to the section
-    let currentPath = '';
-    for (let i = 1; i < LEVELS.length; i++) {
-        const level = LEVELS[i];
-        const children = await loadChildren(i - 1);
+    // Fetch the path to this section from the API
+    try {
+        const pathResponse = await fetch(`/chart/section-path/${citation.title}/${citation.section}`);
+        const pathData = await pathResponse.json();
 
-        if (children.length === 0) break;
-
-        populateSelector(level, children);
-
-        // If this is the section level, look for our section
-        if (level === 'section') {
-            const sectionOption = Array.from(selectors.section.options).find(
-                opt => opt.value === `section/${citation.section}`
-            );
-            if (sectionOption) {
-                selectors.section.value = sectionOption.value;
-                await fetchChartData();
-                updateURL();
-                Toast.show(`Loaded § ${citation.section}`, 'success');
-                return false;
-            }
+        if (!pathData.found) {
+            updateURL();
+            Toast.show(`Section ${citation.section} not found in Title ${citation.title}`, 'info');
+            return false;
         }
 
-        // For non-section levels, try to find a path that contains our section
-        // Select first child with children to drill down
-        const childWithChildren = children.find(c => c.has_children);
-        if (childWithChildren) {
-            selectors[level].value = `${childWithChildren.type}/${childWithChildren.identifier}`;
+        // Navigate step by step through the path
+        // Use position-based navigation since structure types (subtitle, chapter, etc.) vary
+        for (let i = 0; i < pathData.path.length; i++) {
+            const step = pathData.path[i];
+            const selectorIndex = i + 1;  // +1 because title is at index 0
+
+            if (selectorIndex >= LEVELS.length) break;
+
+            const level = LEVELS[selectorIndex];
+
+            // Load children for the current position
+            const children = await loadChildren(selectorIndex - 1);
+            if (children.length === 0) break;
+
+            populateSelector(level, children);
+
+            // Select this step in the path (use the actual type from the path)
+            selectors[level].value = `${step.type}/${step.identifier}`;
             await fetchChartData();
-        } else {
-            break;
         }
+
+        updateURL();
+        Toast.show(`Loaded § ${citation.section}`, 'success');
+    } catch (error) {
+        console.error('Error navigating to section:', error);
+        updateURL();
+        Toast.show(`Loaded Title ${citation.title}`, 'info');
     }
 
-    // If we got here, we loaded the title but couldn't find the exact section
-    updateURL();
-    Toast.show(`Loaded Title ${citation.title}`, 'info');
     return false;
 }
 
@@ -729,7 +731,12 @@ initChart();
 
 // Check if URL has params, otherwise load total CFR data
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('title')) {
+if (urlParams.get('cite')) {
+    // Auto-fill citation input and submit
+    const citeInput = document.getElementById('citation-input');
+    citeInput.value = urlParams.get('cite');
+    handleCitationSubmit(new Event('submit'));
+} else if (urlParams.get('title')) {
     restoreFromURL();
 } else {
     loadTotalCFRData();

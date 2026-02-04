@@ -3,7 +3,7 @@ import difflib
 import re
 from flask import Blueprint, redirect, render_template, request, url_for
 from markupsafe import Markup
-from .services import get_database, COMPARE_DEFAULT_YEAR
+from .services import get_database, get_validated_year, get_title_name, COMPARE_DEFAULT_YEAR
 
 compare_bp = Blueprint("compare", __name__)
 
@@ -106,13 +106,13 @@ def diff(title_num: int, section: str):
                 unchanged_since = y
                 break
 
-    return render_template("compare/diff.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec, available_years=available_years, unchanged_since=unchanged_since)
+    return render_template("compare/diff.html", title_num=title_num, title_name=get_title_name(title_num), section_id=section, section1=s1, section2=s2, year1=year1, year2=year2, years=years, old_html=old_html, new_html=new_html, has_changes=has_changes, prev_section=prev_sec, next_section=next_sec, available_years=available_years, unchanged_since=unchanged_since)
 
 @compare_bp.route("/sections")
 def compare_sections():
     """Compare two different sections side by side."""
     db = get_database()
-    year = request.args.get("year", 0, type=int)
+    year = get_validated_year()
 
     # Accept direct title/section params or citation strings
     title1 = request.args.get("title1", type=int)

@@ -1,16 +1,6 @@
 {% if similar %}
-{# Search scope indicator #}
-{% if is_global %}
-<div class="search-scope-row">
-    <span class="scope-badge global">&#x1F30D; All CFR</span>
-    <span class="info-icon" tabindex="0">
-        &#x24D8;
-        <span class="tooltip">Searching across all {{ "{:,}".format(similar|length) }}+ sections in the entire CFR.</span>
-    </span>
-</div>
-{% else %}
-{# Distinctness score with info tooltip (#3) #}
-{% if distinctness is not none %}
+{# Distinctness score with info tooltip (only for chapter-level search) #}
+{% if not is_global and distinctness is not none %}
 <div class="distinctness-row">
     <strong>Distinctness:</strong>
     <span>{{ "%.1f" | format(distinctness * 100) }}%</span>
@@ -19,7 +9,6 @@
         <span class="tooltip">How unique this section's language is compared to others in the same chapter. 100% = completely unique.</span>
     </span>
 </div>
-{% endif %}
 {% endif %}
 
 {# Similar sections list - card-style instead of table for better mobile (#4, #6, #10) #}
@@ -36,10 +25,6 @@
             {% endif %}
         </div>
 
-        <div class="similar-meta">
-            <span class="similarity-badge">{{ "%.0f" | format(s.similarity * 100) }}%</span>
-        </div>
-
         {# Keywords if available (#9) #}
         {% if s.keywords %}
         <div class="similar-keywords">
@@ -49,7 +34,7 @@
         </div>
         {% endif %}
 
-        {# Action buttons (#10, #2) #}
+        {# Action buttons and similarity badge in a row #}
         <div class="similar-actions">
             <a href="{{ url_for('compare.compare_sections', title1=source_title, section1=source_section, title2=s.title, section2=s.section, year=year) }}"
                class="action-btn"
@@ -64,6 +49,7 @@
                     title="Preview section text">
                 &#x1F441; Preview
             </button>
+            <span class="similarity-badge">{{ "%.0f" | format(s.similarity * 100) }}%</span>
         </div>
 
         {# Preview area - loaded on demand (#2) #}
