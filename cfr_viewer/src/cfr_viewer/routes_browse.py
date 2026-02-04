@@ -1,6 +1,6 @@
 """Browse routes for navigating CFR titles and sections."""
 from flask import Blueprint, render_template, request, redirect, url_for
-from .services import get_database, list_titles_with_metadata, get_structure_with_changes, compute_change_pct, BASELINE_YEAR
+from .services import get_database, get_validated_year, get_title_name, list_titles_with_metadata, get_structure_with_changes, compute_change_pct, node_label, BASELINE_YEAR
 
 browse_bp = Blueprint("browse", __name__)
 
@@ -47,23 +47,11 @@ def _find_node(structure, path):
         if not match:
             return None, []
 
-        label = _node_label(match)
         actual_path = "/".join(parts[:i] + [node_type, match.get("identifier")]) if i > 0 else f"{node_type}/{match.get('identifier')}"
-        breadcrumb.append({"type": node_type, "identifier": match.get("identifier"), "label": label, "path": actual_path})
+        breadcrumb.append({"type": node_type, "identifier": match.get("identifier"), "label": node_label(match), "path": actual_path})
         node = match
 
     return node, breadcrumb
-
-
-def _node_label(node):
-    """Get display label for a structure node."""
-    t, ident = node.get("type", ""), node.get("identifier", "")
-    # Map type to prefix, skip if identifier already has it (case-insensitive)
-    prefixes = {"subtitle": "Subtitle", "chapter": "Chapter", "subchapter": "Subchapter", "part": "Part", "subpart": "Subpart"}
-    if t in prefixes:
-        prefix = prefixes[t]
-        return ident if ident.upper().startswith(prefix.upper()) else f"{prefix} {ident}"
-    return ident
 
 
 @browse_bp.route("/")
@@ -113,37 +101,37 @@ def index():
 def titles():
     """Full list of all CFR titles."""
     db = get_database()
-    year = request.args.get("year", 0, type=int)
+    year = get_validated_year()
     return render_template("browse/titles.html", titles=list_titles_with_metadata(year), year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
 
 
 @browse_bp.route("/title/<int:title_num>")
 def title(title_num: int):
     db = get_database()
-    year = request.args.get("year", 0, type=int)
-    return render_template("browse/title.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"),
+    year = get_validated_year()
+    return render_template("browse/title.html", title_num=title_num, title_name=get_title_name(title_num),
                            structure=get_structure_with_changes(title_num, year), word_count=db.get_total_words(title_num, year), year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
 
 
 @browse_bp.route("/title/<int:title_num>/section/<path:section>")
 def section(title_num: int, section: str):
     db = get_database()
-    year = request.args.get("year", 0, type=int)
+    year = get_validated_year()
     prev_sec, next_sec = db.get_adjacent_sections(title_num, section, year)
-    return render_template("browse/section.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"),
+    return render_template("browse/section.html", title_num=title_num, title_name=get_title_name(title_num),
                            section=db.get_section(title_num, section, year), prev_section=prev_sec, next_section=next_sec, year=year, years=db.list_years())
 
 
 @browse_bp.route("/title/<int:title_num>/<path:path>")
 def structure(title_num: int, path: str):
     db = get_database()
-    year = request.args.get("year", 0, type=int)
+    year = get_validated_year()
     full_structure = get_structure_with_changes(title_num, year)
     node, breadcrumb = _find_node(full_structure, path)
     if not node:
         # Path doesn't exist in this year (identifiers may differ), redirect to title page
         return redirect(url_for("browse.title", title_num=title_num, year=year))
-    return render_template("browse/structure.html", title_num=title_num, title_name=db.get_titles().get(title_num, {}).get("name", f"Title {title_num}"),
+    return render_template("browse/structure.html", title_num=title_num, title_name=get_title_name(title_num),
                            node=node, breadcrumb=breadcrumb, year=year, years=db.list_years(), BASELINE_YEAR=BASELINE_YEAR)
 
 
