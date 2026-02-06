@@ -1,6 +1,6 @@
 # Lens
 
-A Python toolkit for fetching, storing, and browsing Code of Federal Regulations (CFR) data from ecfr.gov and govinfo.gov.
+A Python web app that fetches, stores, and displays the Code of Federal Regulations (CFR). Sourced from ecfr.gov and govinfo.gov.
 
 **Lens: [https://lens.charlesmonk.org](https://lens.charlesmonk.org)**
 
