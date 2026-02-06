@@ -1,4 +1,4 @@
-# eCFR
+# Lens
 
 A Python toolkit for fetching, storing, and browsing Code of Federal Regulations (CFR) data from ecfr.gov and govinfo.gov.
 
