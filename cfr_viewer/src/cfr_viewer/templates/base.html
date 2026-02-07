@@ -23,6 +23,7 @@
         <ul>
             <li><button type="button" class="nav-link {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}nav-active{% endif %}" data-href="{{ url_for('browse.titles') }}">Titles</button></li>
             <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('agencies') %}nav-active{% endif %}" data-href="{{ url_for('agencies.index') }}">Agencies</button></li>
+            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('search') %}nav-active{% endif %}" data-href="{{ url_for('search.index') }}">Search</button></li>
             <li class="nav-dropdown" data-dropdown>
                 <button type="button" class="nav-dropdown-toggle {% if request.endpoint and request.endpoint.startswith('compare') %}nav-active{% endif %}" aria-expanded="false" aria-haspopup="true">
                     <span>Compare</span> <span class="dropdown-arrow">▾</span>

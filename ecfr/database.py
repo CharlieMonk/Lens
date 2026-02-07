@@ -880,3 +880,56 @@ class ECFRDatabase:
 
         max_sim = results[0]['similarity'] if results else None
         return results, max_sim
+
+    def search_by_query(self, query: str, year: int = 0, limit: int = 50, min_similarity: float = 0.05) -> list[dict]:
+        """Search CFR sections by keyword/phrase similarity using FAISS.
+
+        Args:
+            query: Search query (keywords or phrase)
+            year: Year to search (must match index year, typically 0 for current)
+            limit: Maximum results to return
+            min_similarity: Minimum cosine similarity threshold
+
+        Returns:
+            List of matching sections: [{title, section, heading, chapter, similarity}]
+        """
+        import numpy as np
+        import faiss
+
+        if not query or not query.strip():
+            return []
+
+        # Load index
+        if not self._load_faiss_index():
+            return []
+
+        # Vectorize query using stored vectorizer
+        vectorizer = self._faiss_meta['vectorizer']
+        query_vec = vectorizer.transform([query]).toarray().astype(np.float32)
+        faiss.normalize_L2(query_vec)
+
+        # Search FAISS index
+        k = min(limit * 2, self._faiss_meta['n_sections'])  # Get extra to filter
+        distances, indices = self._faiss_index.search(query_vec, k)
+
+        # Build results
+        results = []
+        metadata = self._faiss_meta['metadata']
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx < 0:  # FAISS returns -1 for not enough results
+                continue
+            t, ch, s, h = metadata[idx]
+            similarity = float(dist)  # Inner product on normalized vectors = cosine similarity
+            if similarity < min_similarity:
+                continue
+            results.append({
+                'title': t,
+                'section': s,
+                'similarity': similarity,
+                'heading': h,
+                'chapter': ch,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
