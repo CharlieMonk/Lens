@@ -10,26 +10,23 @@
     </ul>
 </nav>
 
-<form method="get" action="{{ url_for('compare.compare_sections') }}" class="compare-form sections-compare-form">
-    <div class="sections-compare-toolbar">
-        <div class="sections-cite-field">
-            <label for="cite1">Section 1</label>
-            <input type="text" id="cite1" name="cite1"
-                   value="{{ title1 ~ ' CFR § ' ~ section1 if title1 and section1 else '' }}"
-                   placeholder="e.g., 29 CFR 1910.134">
-        </div>
-        <div class="sections-cite-field">
-            <label for="cite2">Section 2</label>
-            <input type="text" id="cite2" name="cite2"
-                   value="{{ title2 ~ ' CFR § ' ~ section2 if title2 and section2 else '' }}"
-                   placeholder="e.g., 42 CFR 84.3">
-        </div>
-        <input type="submit" value="Compare" class="sections-compare-go">
-    </div>
-    <p class="citation-help">
-        Compare two different CFR sections side by side. Format: <code>29 CFR 1910.134</code>
-    </p>
+<div class="grid sections-compare-labels">
+    <label for="cite1">Section 1</label>
+    <label for="cite2">Section 2</label>
+    <span></span>
+</div>
+<form method="get" action="{{ url_for('compare.compare_sections') }}" class="sections-compare-form" role="search">
+    <input type="search" id="cite1" name="cite1"
+           value="{{ title1 ~ ' CFR § ' ~ section1 if title1 and section1 else '' }}"
+           placeholder="e.g., 29 CFR 1910.134">
+    <input type="search" id="cite2" name="cite2"
+           value="{{ title2 ~ ' CFR § ' ~ section2 if title2 and section2 else '' }}"
+           placeholder="e.g., 42 CFR 84.3">
+    <input type="submit" value="Compare">
 </form>
+<p class="citation-help">
+    Compare two different CFR sections side by side. Format: <code>29 CFR 1910.134</code>
+</p>
 
 {% if s1 and s2 %}
 <div class="grid compare-versions">

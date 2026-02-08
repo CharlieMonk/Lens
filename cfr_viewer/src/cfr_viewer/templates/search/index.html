@@ -19,7 +19,7 @@
     <h1>Search the Code of Federal Regulations</h1>
     <p class="search-hero-subtitle">Find relevant sections using natural language queries</p>
 
-    <form class="search-form search-form-hero" role="search" method="get" action="{{ url_for('search.index') }}">
+    <form role="search" method="get" action="{{ url_for('search.index') }}">
         <input type="search" name="q" placeholder="e.g., environmental compliance, workplace safety..." value="{{ query }}" autofocus {% if not has_index %}disabled{% endif %}>
         <input type="submit" value="Search" {% if not has_index %}disabled{% endif %}>
     </form>

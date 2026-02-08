@@ -648,46 +648,21 @@ footer {
     margin-bottom: 0.25rem;
 }
 
-/* Sections compare toolbar */
-.sections-compare-toolbar {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 1rem;
-    align-items: end;
+/* Sections compare form - uses Pico's role="search" */
+.sections-compare-labels {
+    margin-bottom: 0.25rem;
 }
 
-.sections-cite-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.sections-cite-field label {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--pico-muted-color);
-    margin: 0;
-}
-
-.sections-cite-field input {
+.sections-compare-labels label {
     margin-bottom: 0;
 }
 
-.sections-compare-go {
+.sections-compare-form {
+    max-width: 700px;
+}
+
+.sections-compare-form input[type="submit"] {
     width: auto;
-    white-space: nowrap;
-    align-self: end;
-    margin-bottom: 0;
-}
-
-@media (max-width: 768px) {
-    .sections-compare-toolbar {
-        grid-template-columns: 1fr;
-    }
-
-    .sections-compare-go {
-        width: 100%;
-    }
 }
 
 .compare-controls {
@@ -1818,20 +1793,6 @@ table tbody tr {
     margin-bottom: 2rem;
 }
 
-/* Hero Search Form - Uses Pico's role="search" */
-.search-form-hero {
-    max-width: 700px;
-    margin: 0 auto 2.5rem;
-}
-
-.search-form-hero input[type="search"] {
-    margin-bottom: 0;
-}
-
-.search-form-hero input[type="submit"] {
-    width: auto;
-    margin-bottom: 0;
-}
 
 /* Popular Searches Tags */
 .search-landing {
