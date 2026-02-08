@@ -617,17 +617,16 @@ footer {
     opacity: 1;
 }
 
-/* Citation input group - uses Pico's role="group" */
-.citation-group {
+/* Citation forms use Pico's role="search" */
+.compare-form[role="search"] {
     max-width: 400px;
+}
+
+.compare-form[role="search"] input[type="search"] {
     margin-bottom: 0;
 }
 
-.citation-group input[type="text"] {
-    margin-bottom: 0;
-}
-
-.citation-group input[type="submit"] {
+.compare-form[role="search"] input[type="submit"] {
     width: auto;
     margin-bottom: 0;
 }
