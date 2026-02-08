@@ -14,17 +14,17 @@
     <div class="sections-compare-toolbar">
         <div class="sections-cite-field">
             <label for="cite1">Section 1</label>
-            <input type="text" id="cite1" name="cite1" class="citation-input"
+            <input type="text" id="cite1" name="cite1"
                    value="{{ title1 ~ ' CFR § ' ~ section1 if title1 and section1 else '' }}"
                    placeholder="e.g., 29 CFR 1910.134">
         </div>
         <div class="sections-cite-field">
             <label for="cite2">Section 2</label>
-            <input type="text" id="cite2" name="cite2" class="citation-input"
+            <input type="text" id="cite2" name="cite2"
                    value="{{ title2 ~ ' CFR § ' ~ section2 if title2 and section2 else '' }}"
                    placeholder="e.g., 42 CFR 84.3">
         </div>
-        <button type="submit" class="sections-compare-go">Compare</button>
+        <input type="submit" value="Compare" class="sections-compare-go">
     </div>
     <p class="citation-help">
         Compare two different CFR sections side by side. Format: <code>29 CFR 1910.134</code>
