@@ -761,89 +761,54 @@ nav ul li a.nav-active {
     text-underline-offset: 4px;
 }
 
-/* Navigation dropdown */
-.nav-dropdown {
-    position: relative;
-}
-
-.nav-dropdown-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.nav-dropdown-toggle:hover span:first-child {
-    text-decoration: underline;
-    text-underline-offset: 4px;
-}
-
-.nav-dropdown-toggle.nav-active span:first-child {
-    font-weight: bold;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-}
-
-.dropdown-arrow {
-    font-size: 0.7em;
-}
-
-.nav-dropdown-menu {
-    display: none;
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--pico-background-color);
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: var(--pico-border-radius);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-    min-width: 180px;
-    padding: 0.75rem 0;
+/* Navigation dropdown - uses Pico's details.dropdown */
+nav details.dropdown,
+nav li details.dropdown {
+    border: none;
+    padding: 0;
     margin: 0;
-    z-index: 1000;
-    flex-direction: column;
-    list-style: none;
+    display: inline;
 }
 
-.nav-dropdown.open .nav-dropdown-menu {
-    display: flex;
+nav details.dropdown > summary,
+nav li details.dropdown > summary {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: var(--pico-primary) !important;
+    font-size: inherit;
+    font-family: inherit;
+    font-weight: inherit;
+    cursor: pointer;
+    padding: 0 !important;
+    margin: 0;
 }
 
-.nav-dropdown-menu li {
-    padding: 0.6rem;
+nav details.dropdown > summary:hover,
+nav details.dropdown > summary:focus,
+nav details.dropdown > summary:active,
+nav details.dropdown[open] > summary {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    text-decoration: underline;
+    text-underline-offset: 4px;
 }
 
-.nav-dropdown-menu li a {
-    display: block;
-    padding: 0.2rem 1rem;
-    white-space: nowrap;
-    color: var(--pico-color);
-    text-decoration: none;
-    font-size: 0.95rem;
+nav details.dropdown > summary.nav-active {
+    font-weight: bold;
+    text-decoration: underline;
+    text-underline-offset: 4px;
 }
 
-.nav-dropdown-menu li a:hover,
-.nav-dropdown-menu li a:focus {
-    background: var(--pico-primary-focus);
-    color: var(--pico-primary);
-    outline: none;
+nav details.dropdown > summary::after {
+    display: none;
 }
 
-.nav-dropdown-menu li a.dropdown-active {
+nav details.dropdown a.dropdown-active {
     font-weight: bold;
     color: var(--pico-primary);
-    background: var(--pico-primary-focus);
-}
-
-/* Focus visible for keyboard navigation */
-.nav-dropdown-toggle:focus-visible {
-    outline: 2px solid var(--pico-primary);
-    outline-offset: 2px;
-}
-
-.nav-dropdown-menu li a:focus-visible {
-    outline: 2px solid var(--pico-primary);
-    outline-offset: -2px;
 }
 
 /* Mobile hamburger menu */
@@ -886,39 +851,17 @@ nav ul li a.nav-active {
         padding: 0.5rem 0;
     }
 
-    /* Mobile dropdown - show inline */
-    .nav-dropdown {
+    /* Mobile dropdown - Pico handles stacking */
+    nav .dropdown {
         width: 100%;
     }
 
-    .nav-dropdown-toggle {
-        width: 100%;
-        text-align: left;
-        padding: 0.5rem 0;
-    }
-
-    .nav-dropdown-menu {
+    nav .dropdown ul {
         position: static;
-        transform: none;
         box-shadow: none;
         border: none;
         background: transparent;
-        padding: 0;
         padding-left: 1rem;
-        display: none;
-    }
-
-    .nav-dropdown.open .nav-dropdown-menu {
-        display: flex;
-    }
-
-    .nav-dropdown-menu li a {
-        padding: 0.5rem 0;
-    }
-
-    .nav-dropdown-menu li a:hover,
-    .nav-dropdown-menu li a:focus {
-        background: transparent;
     }
 }
 

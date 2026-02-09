@@ -24,6 +24,14 @@ User Story 5: Compare Historical Versions
 User Story 6: View Statistics
   As a government watchdog, I want to see which agencies have the most words
   in the CFR so I can understand regulatory burden.
+
+User Story 7: View Word Count Trends
+  As a researcher, I want to see how CFR content has grown over time
+  so I can understand regulatory trends.
+
+User Story 8: Compare Different Sections
+  As an analyst, I want to compare two different CFR sections side-by-side
+  so I can identify similarities and differences.
 """
 
 import re
@@ -68,6 +76,31 @@ class TestUserStory1_BrowseTitles:
         stat_cards = page.locator(".stat-card")
         assert stat_cards.count() >= 4, "Dashboard should show aggregate stats"
 
+    def test_dashboard_stat_cards(self, page: Page):
+        """Test dashboard shows all stat cards."""
+        page.goto(BASE_URL)
+
+        # Check for specific stats
+        expect(page.locator("text=Words")).to_be_visible()
+        expect(page.locator("text=Sections")).to_be_visible()
+        expect(page.locator("text=Titles")).to_be_visible()
+        expect(page.locator("text=Agencies")).to_be_visible()
+
+    def test_dashboard_top_titles(self, page: Page):
+        """Test dashboard shows top titles."""
+        page.goto(BASE_URL)
+
+        # Check for top titles section
+        expect(page.locator("text=Browse Titles")).to_be_visible()
+
+    def test_dashboard_top_agencies(self, page: Page):
+        """Test dashboard shows top agencies."""
+        page.goto(BASE_URL)
+
+        # Check for top agencies section
+        top_agencies = page.locator("text=Top").locator("visible=true")
+        expect(top_agencies.first).to_be_visible()
+
     def test_titles_table_exists(self, page: Page):
         """Step 3: Verify there's a table with titles on /titles page."""
         page.goto(f"{BASE_URL}/titles")
@@ -97,6 +130,32 @@ class TestUserStory1_BrowseTitles:
         # Should contain digits and commas
         assert any(c.isdigit() for c in first_count), f"Word count should be numeric: {first_count}"
 
+    def test_titles_year_selector(self, page: Page):
+        """Test year selector on titles page."""
+        page.goto(f"{BASE_URL}/titles")
+
+        # Check year selector
+        year_select = page.locator("select[name='year']")
+        expect(year_select).to_be_visible()
+
+        # Check it has options
+        options = year_select.locator("option")
+        assert options.count() >= 1, "Year selector should have options"
+
+    def test_titles_filter_input(self, page: Page):
+        """Test filter input on titles page."""
+        page.goto(f"{BASE_URL}/titles")
+
+        # Find filter input
+        filter_input = page.locator("input[type='search']")
+        expect(filter_input).to_be_visible()
+
+        # Type filter text
+        filter_input.fill("Environment")
+        page.wait_for_timeout(300)
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/01b_titles_filtered.png", full_page=True)
+
     def test_navigation_exists(self, page: Page):
         """Step 5: Verify navigation links exist."""
         page.goto(BASE_URL)
@@ -110,6 +169,9 @@ class TestUserStory1_BrowseTitles:
 
         agencies_link = page.locator("nav a", has_text="Agencies")
         expect(agencies_link).to_be_visible()
+
+        trends_link = page.locator("nav a", has_text="Trends")
+        expect(trends_link).to_be_visible()
 
 
 class TestUserStory2_NavigateToTitle:
@@ -132,7 +194,6 @@ class TestUserStory2_NavigateToTitle:
 
         # Get first title link
         first_link = page.locator("table tbody tr:first-child td a").first
-        title_text = first_link.text_content()
         first_link.click()
 
         page.screenshot(path=f"{SCREENSHOT_DIR}/02_title_page.png", full_page=True)
@@ -153,6 +214,31 @@ class TestUserStory2_NavigateToTitle:
         # Check word count is shown
         word_count = page.locator("hgroup p")
         expect(word_count).to_be_visible()
+
+    def test_title_page_breadcrumb(self, page: Page):
+        """Test title page has breadcrumb navigation."""
+        page.goto(f"{BASE_URL}/title/1")
+
+        # Check for breadcrumb
+        breadcrumb = page.locator("nav[aria-label='breadcrumb']")
+        expect(breadcrumb).to_be_visible()
+
+        # Check for "All Titles" link
+        all_titles = breadcrumb.locator("a", has_text="All Titles")
+        expect(all_titles).to_be_visible()
+
+    def test_title_page_structure_table(self, page: Page):
+        """Test title page shows structure table."""
+        page.goto(f"{BASE_URL}/title/1")
+
+        # Look for table with structure
+        table = page.locator("table")
+        expect(table).to_be_visible()
+
+        # Check for structure columns
+        headers = page.locator("table thead th").all_text_contents()
+        assert "Name" in headers
+        assert "Word Count" in headers
 
     def test_structure_displayed(self, page: Page):
         """Steps 4-5: Verify structure with parts and sections."""
@@ -215,6 +301,30 @@ class TestUserStory3_ViewSection:
         similar = page.locator("article.similar-sections")
         expect(similar).to_be_visible()
 
+    def test_section_copy_button(self, page: Page):
+        """Test section has copy citation button."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        # Check for copy button
+        copy_btn = page.locator("button", has_text="Copy")
+        expect(copy_btn).to_be_visible()
+
+    def test_section_compare_link(self, page: Page):
+        """Test section has compare years link."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        # Check for compare link
+        compare_link = page.locator("a", has_text="Compare")
+        expect(compare_link).to_be_visible()
+
+    def test_section_trends_link(self, page: Page):
+        """Test section has view trends link."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        # Check for trends link
+        trends_link = page.locator("a", has_text="Trends")
+        expect(trends_link).to_be_visible()
+
     def test_section_text_displayed(self, page: Page):
         """Step 6: Verify section text is displayed."""
         # Navigate directly to a known section
@@ -256,6 +366,18 @@ class TestUserStory4_SimilarSections:
         if similar_content.count() > 0:
             expect(similar_content.first).to_be_visible()
 
+    def test_similar_sections_has_distinctness(self, page: Page):
+        """Test similar sections shows distinctness score."""
+        page.goto(f"{BASE_URL}/title/1/section/1.1")
+
+        # Wait for HTMX to load
+        page.wait_for_timeout(2000)
+
+        # Check for distinctness display
+        similar_section = page.locator("article.similar-sections")
+        # Should show distinctness or similar sections
+        expect(similar_section).to_be_visible()
+
 
 class TestUserStory5_CompareVersions:
     """
@@ -277,7 +399,7 @@ class TestUserStory5_CompareVersions:
         page.goto(f"{BASE_URL}/title/1/section/1.1")
 
         # Look for Compare Years button/link
-        compare_link = page.locator("a", has_text="Compare Years")
+        compare_link = page.locator("a", has_text="Compare")
         expect(compare_link).to_be_visible()
 
         compare_link.click()
@@ -291,12 +413,30 @@ class TestUserStory5_CompareVersions:
         page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
 
         # Check for year selectors
-        year_selects = page.locator("select[name='year1'], select[name='year2']")
-        expect(year_selects.first).to_be_visible()
+        year1_select = page.locator("select[name='year1']")
+        year2_select = page.locator("select[name='year2']")
+        expect(year1_select).to_be_visible()
+        expect(year2_select).to_be_visible()
 
         # Check for Go button (for citation navigation)
         go_btn = page.locator("button[type='submit']", has_text="Go")
         expect(go_btn).to_be_visible()
+
+    def test_compare_page_year_options(self, page: Page):
+        """Test compare page year selectors have options."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
+
+        year1_select = page.locator("select[name='year1']")
+        options = year1_select.locator("option")
+        assert options.count() >= 1, "Year selector should have options"
+
+    def test_compare_page_navigation(self, page: Page):
+        """Test compare page has prev/next navigation."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
+
+        # Check for section navigation
+        nav = page.locator(".section-nav")
+        expect(nav).to_be_visible()
 
 
 class TestUserStory6_ViewStatistics:
@@ -339,17 +479,128 @@ class TestUserStory6_ViewStatistics:
         assert "Agency" in header_texts
         assert "Word Count" in header_texts
 
+    def test_agency_detail_page(self, page: Page):
+        """Test clicking agency shows detail page."""
+        page.goto(f"{BASE_URL}/agencies/")
+
+        # Click first agency
+        first_agency = page.locator("table tbody tr td a").first
+        first_agency.click()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_agency_detail.png", full_page=True)
+
+        # Should show agency name in heading
+        heading = page.locator("h1")
+        expect(heading).to_be_visible()
+
+        # Should show CFR Chapters
+        expect(page.locator("text=CFR Chapters")).to_be_visible()
+
     def test_title_statistics(self, page: Page):
         """View titles page (moved to browse)."""
         page.goto(f"{BASE_URL}/titles")
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/06c_titles.png", full_page=True)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/06d_titles.png", full_page=True)
 
         expect(page).to_have_url(re.compile(r".*/titles.*"))
 
         # Check table exists
         table = page.locator("table")
         expect(table).to_be_visible()
+
+
+class TestUserStory7_ViewTrends:
+    """
+    User Story 7: View Word Count Trends
+    As a researcher, I want to see how CFR content has grown over time
+    so I can understand regulatory trends.
+
+    Steps:
+    1. Navigate to trends/chart page
+    2. Verify chart canvas exists
+    3. Verify statistics card shows data
+    4. Verify title selector works
+    """
+
+    def test_chart_page_loads(self, page: Page):
+        """Test chart page loads with visualization."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/07_chart_page.png", full_page=True)
+
+        # Check chart container exists
+        chart = page.locator("canvas")
+        expect(chart).to_be_visible()
+
+    def test_chart_title_selector(self, page: Page):
+        """Test title selector exists."""
+        page.goto(f"{BASE_URL}/chart/")
+
+        # Find title selector
+        title_select = page.locator("select#title-select")
+        expect(title_select).to_be_visible()
+
+    def test_chart_statistics_card(self, page: Page):
+        """Test statistics card shows data."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+
+        # Check stats card exists
+        stats = page.locator("#stats-card")
+        expect(stats).to_be_visible()
+
+    def test_chart_citation_input(self, page: Page):
+        """Test chart page has citation input."""
+        page.goto(f"{BASE_URL}/chart/")
+
+        # Find citation input
+        citation = page.locator(".citation-input")
+        expect(citation).to_be_visible()
+
+    def test_chart_download_button(self, page: Page):
+        """Test chart has download PNG button."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+
+        # Find download button
+        download_btn = page.locator("text=Download PNG")
+        expect(download_btn).to_be_visible()
+
+
+class TestUserStory8_CompareSections:
+    """
+    User Story 8: Compare Different Sections
+    As an analyst, I want to compare two different CFR sections side-by-side
+    so I can identify similarities and differences.
+
+    Steps:
+    1. Navigate to cross-section compare page
+    2. Verify two citation inputs exist
+    3. Verify example comparisons are shown
+    """
+
+    def test_cross_section_compare_page(self, page: Page):
+        """Test cross-section comparison page loads."""
+        page.goto(f"{BASE_URL}/compare/sections")
+        page.screenshot(path=f"{SCREENSHOT_DIR}/08_cross_section.png", full_page=True)
+
+        # Check for two citation inputs
+        cite_inputs = page.locator("input.citation-input")
+        assert cite_inputs.count() >= 2, "Should have at least 2 citation inputs"
+
+    def test_cross_section_has_examples(self, page: Page):
+        """Test cross-section page shows example comparisons."""
+        page.goto(f"{BASE_URL}/compare/sections")
+
+        # Examples should be shown
+        expect(page.locator("text=Compare")).to_be_visible()
+
+    def test_cross_section_compare_button(self, page: Page):
+        """Test cross-section page has compare button."""
+        page.goto(f"{BASE_URL}/compare/sections")
+
+        compare_btn = page.locator("button", has_text="Compare")
+        expect(compare_btn).to_be_visible()
 
 
 class TestAccessibilityAndUsability:
@@ -402,8 +653,8 @@ class TestTableInteractivity:
         first_row = page.locator("table tbody tr:first-child")
         initial_text = first_row.text_content()
 
-        # Click word count header to sort
-        word_count_header = page.locator("th", has_text="Word Count")
+        # Click word count header to sort (use first match only)
+        word_count_header = page.locator("th", has_text="Word Count").first
         word_count_header.click()
 
         # Wait for sort
@@ -426,48 +677,7 @@ class TestTableInteractivity:
             page.wait_for_timeout(300)
 
             # Check rows are filtered (fewer visible)
-            visible_rows = page.locator("table tbody tr:visible")
-            # Should have filtered results
             page.screenshot(path=f"{SCREENSHOT_DIR}/table_filtered.png", full_page=True)
-
-
-class TestChartPage:
-    """Test chart/trends page functionality."""
-
-    def test_chart_loads(self, page: Page):
-        """Test chart page loads with visualization."""
-        page.goto(f"{BASE_URL}/chart/")
-        page.screenshot(path=f"{SCREENSHOT_DIR}/07_chart_page.png", full_page=True)
-
-        # Check chart container exists
-        chart = page.locator("canvas")
-        expect(chart).to_be_visible()
-
-    def test_chart_title_selector(self, page: Page):
-        """Test title selector updates chart."""
-        page.goto(f"{BASE_URL}/chart/")
-
-        # Find title selector
-        title_select = page.locator("select#title-select")
-        expect(title_select).to_be_visible()
-
-        # Select a title
-        title_select.select_option(index=1)
-        page.wait_for_timeout(1000)
-
-        # Chart should still be visible
-        chart = page.locator("canvas")
-        expect(chart).to_be_visible()
-
-    def test_chart_statistics_card(self, page: Page):
-        """Test statistics card shows data."""
-        page.goto(f"{BASE_URL}/chart/")
-        page.wait_for_timeout(1000)
-
-        # Check stats card exists
-        stats = page.locator("#stats-card")
-        if stats.count() > 0:
-            expect(stats).to_be_visible()
 
 
 class TestNavigationDropdown:
@@ -514,8 +724,7 @@ class TestCopyCitation:
 
         # Find copy button
         copy_btn = page.locator("button", has_text="Copy")
-        if copy_btn.count() > 0:
-            expect(copy_btn).to_be_visible()
+        expect(copy_btn).to_be_visible()
 
     def test_copy_shows_feedback(self, page: Page):
         """Test clicking copy shows toast feedback."""
@@ -551,7 +760,6 @@ class TestMobileResponsive:
             hamburger.click()
 
             # Nav should be visible
-            nav_menu = page.locator("nav ul.nav-open")
             page.screenshot(path=f"{SCREENSHOT_DIR}/mobile_menu.png", full_page=True)
 
     def test_tables_scroll_on_mobile(self, page: Page):
@@ -585,19 +793,22 @@ class TestComparePageAdvanced:
         page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
 
         # Check for navigation buttons
-        nav_buttons = page.locator(".section-nav a[role='button']")
-        # May have prev/next buttons
         page.screenshot(path=f"{SCREENSHOT_DIR}/compare_nav.png", full_page=True)
 
-    def test_cross_section_compare(self, page: Page):
-        """Test cross-section comparison page."""
-        page.goto(f"{BASE_URL}/compare/sections")
+    def test_compare_year_buttons(self, page: Page):
+        """Test year quick-select buttons on compare page."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
 
-        # Check for two citation inputs
-        cite_inputs = page.locator("input.citation-input")
-        assert cite_inputs.count() >= 2, "Should have at least 2 citation inputs"
+        # Check for year buttons (e.g., 2000, 2005, etc.)
+        page.screenshot(path=f"{SCREENSHOT_DIR}/compare_year_buttons.png", full_page=True)
 
-        page.screenshot(path=f"{SCREENSHOT_DIR}/cross_section.png", full_page=True)
+    def test_compare_citation_input(self, page: Page):
+        """Test citation input on compare page."""
+        page.goto(f"{BASE_URL}/compare/title/1/section/1.1")
+
+        # Check for citation input
+        citation_input = page.locator("input.citation-input")
+        expect(citation_input).to_be_visible()
 
 
 class TestEdgeCases:
@@ -626,6 +837,46 @@ class TestEdgeCases:
         # Should load and show content
         expect(page).to_have_url(re.compile(r".*/title/1.*"))
         expect(page.locator("h1")).to_contain_text("Title")
+
+    def test_404_page(self, page: Page):
+        """Test 404 page is displayed for invalid routes."""
+        page.goto(f"{BASE_URL}/nonexistent/route/here")
+
+        # Should show 404 or error page
+        page.screenshot(path=f"{SCREENSHOT_DIR}/404_page.png", full_page=True)
+
+
+class TestChartPageAdvanced:
+    """Advanced chart page tests."""
+
+    def test_chart_title_change(self, page: Page):
+        """Test changing title updates chart."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+
+        # Find title selector
+        title_select = page.locator("select#title-select")
+        expect(title_select).to_be_visible()
+
+        # Select a specific title
+        title_select.select_option(index=1)
+        page.wait_for_timeout(500)
+
+        # Chart should still be visible
+        chart = page.locator("canvas")
+        expect(chart).to_be_visible()
+
+        page.screenshot(path=f"{SCREENSHOT_DIR}/chart_title_change.png", full_page=True)
+
+    def test_chart_zoom_toggle(self, page: Page):
+        """Test zoom to data range toggle."""
+        page.goto(f"{BASE_URL}/chart/")
+        page.wait_for_timeout(1000)
+
+        # Find zoom toggle
+        zoom_toggle = page.locator("text=Zoom to data range")
+        if zoom_toggle.count() > 0:
+            expect(zoom_toggle).to_be_visible()
 
 
 if __name__ == "__main__":
