@@ -20,10 +20,10 @@ pip install -e .                    # Install package
 pip install -e ".[dev]"             # Include dev dependencies
 
 # Fetch CFR data (standalone)
-python fetch_titles.py              # Fetch current + historical (default)
-python fetch_titles.py --current    # Fetch only current data
-python fetch_titles.py --historical # Fetch only historical years
-python fetch_titles.py --build-index # Build FAISS similarity index only
+python -m ecfr.fetcher              # Fetch current + historical (default)
+python -m ecfr.fetcher --current    # Fetch only current data
+python -m ecfr.fetcher --historical # Fetch only historical years
+python -m ecfr.fetcher --build-index # Build FAISS similarity index only
 
 # Run web viewer (auto-fetches data on startup)
 cfr-viewer                          # Starts Flask at localhost:5000
@@ -46,6 +46,7 @@ Four classes handle data fetching:
 - **ECFRClient** (`client.py`): Async HTTP requests to eCFR API and govinfo bulk endpoints. Uses exponential backoff retry. Races both sources in parallel, taking first success.
 - **XMLExtractor** (`extractor.py`): Extracts section data from eCFR/govinfo XML. Tracks word counts and hierarchy.
 - **ECFRFetcher** (`fetcher.py`): Main orchestrator coordinating parallel fetching.
+- **config** (`config.py`): YAML configuration with environment variable overrides (prefix `ECFR_`).
 
 Data flow:
 1. Fetch titles metadata from eCFR API
@@ -67,7 +68,8 @@ Flask application for browsing CFR data:
 - `routes_agencies.py` - Agency word count statistics (`/agencies/`)
 - `routes_compare.py` - Compare sections across years (`/compare/`)
 - `routes_chart.py` - Word count trends over time (`/chart/`)
-- `routes_api.py` - HTMX partials for similar sections
+- `routes_search.py` - Full-text search (`/search/`)
+- `routes_api.py` - HTMX partials for similar sections and previews
 
 The `cfr-viewer` entry point runs `python -m ecfr.fetcher` before starting Flask.
 
