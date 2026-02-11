@@ -649,20 +649,24 @@ footer {
 }
 
 /* Sections compare form - uses Pico's role="search" */
-.sections-compare-labels {
-    margin-bottom: 0.25rem;
-}
-
-.sections-compare-labels label {
-    margin-bottom: 0;
-}
-
-.sections-compare-form {
-    max-width: 700px;
+.sections-compare-form input[type="search"] {
+    min-width: 280px;
 }
 
 .sections-compare-form input[type="submit"] {
     width: auto;
+}
+
+@media (max-width: 600px) {
+    .sections-compare-form {
+        flex-direction: column;
+    }
+
+    .sections-compare-form input[type="search"],
+    .sections-compare-form input[type="submit"] {
+        width: 100%;
+        border-radius: var(--pico-border-radius);
+    }
 }
 
 .compare-controls {
