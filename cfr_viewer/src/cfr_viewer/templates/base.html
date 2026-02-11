@@ -23,16 +23,21 @@
         <ul>
             <li><button type="button" class="nav-link {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}nav-active{% endif %}" data-href="{{ url_for('browse.titles') }}">Titles</button></li>
             <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('agencies') %}nav-active{% endif %}" data-href="{{ url_for('agencies.index') }}">Agencies</button></li>
-            <li class="nav-dropdown" data-dropdown>
-                <button type="button" class="nav-dropdown-toggle {% if request.endpoint and request.endpoint.startswith('compare') %}nav-active{% endif %}" aria-expanded="false" aria-haspopup="true">
-                    <span>Compare</span> <span class="dropdown-arrow">▾</span>
-                </button>
-                <ul class="nav-dropdown-menu" role="menu">
-                    <li role="none"><a href="{{ url_for('compare.index') }}" role="menuitem" {% if request.endpoint == 'compare.index' or request.endpoint == 'compare.diff' %}class="dropdown-active"{% endif %}>Historical</a></li>
-                    <li role="none"><a href="{{ url_for('compare.compare_sections') }}" role="menuitem" {% if request.endpoint == 'compare.compare_sections' %}class="dropdown-active"{% endif %}>Cross-Section</a></li>
-                </ul>
+            <li>
+                <details class="dropdown">
+                    <summary {% if request.endpoint and request.endpoint.startswith('compare') %}class="nav-active"{% endif %}>Compare</summary>
+                    <ul>
+                        <li><a href="{{ url_for('compare.index') }}" {% if request.endpoint == 'compare.index' or request.endpoint == 'compare.diff' %}class="dropdown-active"{% endif %}>Historical</a></li>
+                        <li><a href="{{ url_for('compare.compare_sections') }}" {% if request.endpoint == 'compare.compare_sections' %}class="dropdown-active"{% endif %}>Cross-Section</a></li>
+                    </ul>
+                </details>
             </li>
             <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('chart') %}nav-active{% endif %}" data-href="{{ url_for('chart.index') }}">Trends</button></li>
+            <li class="nav-search-wrapper">
+                <form action="{{ url_for('search.index') }}" method="get" class="nav-search-form">
+                    <input type="search" name="q" class="nav-search-input" placeholder="Search..." title="Search (/)">
+                </form>
+            </li>
         </ul>
     </nav>
 

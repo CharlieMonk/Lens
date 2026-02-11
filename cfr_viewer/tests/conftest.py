@@ -32,7 +32,10 @@ def test_db():
         {"title": 1, "subtitle": "", "chapter": "", "subchapter": "", "part": "1", "subpart": "", "section": "1.2", "heading": "Definitions", "text": "Terms used in this part for administrative procedures and regulatory standards.", "word_count": 11},
     ], year=0)
 
-    db.save_agencies([{"slug": "test-agency", "name": "Test Agency", "short_name": "TA"}])
+    db.save_agencies([
+        {"slug": "test-agency", "name": "Test Agency", "short_name": "TA",
+         "cfr_references": [{"title": 1, "chapter": "I"}]}
+    ])
 
     # Insert word counts directly (no dedicated save methods for these)
     conn = sqlite3.connect(db_path)

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}{% if query %}{{ query }} - Search{% else %}Search{% endif %} - Lens{% endblock %}
+
+{% block content %}
+{% if not has_index %}
+<article class="partial-data-banner">
+    <span class="banner-icon">&#9888;</span>
+    <div class="banner-content">
+        <strong>Search Unavailable</strong>
+        <p>The search index is still being built. Please check back shortly.</p>
+    </div>
+</article>
+{% endif %}
+
+{% if not query %}
+{# Landing state - hero search #}
+<div class="search-hero">
+    <h1>Search the Code of Federal Regulations</h1>
+    <p class="search-hero-subtitle">Just describe what you're looking for</p>
+
+    <form role="search" method="get" action="{{ url_for('search.index') }}">
+        <input type="search" name="q" placeholder="e.g., environmental compliance, workplace safety..." value="{{ query }}" autofocus {% if not has_index %}disabled{% endif %}>
+        <input type="submit" value="Search" {% if not has_index %}disabled{% endif %}>
+    </form>
+
+    {% if has_index %}
+    <div class="search-landing">
+        <div class="popular-searches">
+            <h3>Popular Searches</h3>
+            <div class="search-tags">
+                <a href="{{ url_for('search.index', q='environmental protection') }}" class="search-tag">environmental protection</a>
+                <a href="{{ url_for('search.index', q='workplace safety') }}" class="search-tag">workplace safety</a>
+                <a href="{{ url_for('search.index', q='financial disclosure') }}" class="search-tag">financial disclosure</a>
+                <a href="{{ url_for('search.index', q='data privacy') }}" class="search-tag">data privacy</a>
+                <a href="{{ url_for('search.index', q='hazardous materials') }}" class="search-tag">hazardous materials</a>
+                <a href="{{ url_for('search.index', q='food safety') }}" class="search-tag">food safety</a>
+            </div>
+        </div>
+
+    </div>
+    {% endif %}
+</div>
+
+{% else %}
+{# Results state #}
+<div class="search-results-header">
+    <form class="search-form-compact" role="search" method="get" action="{{ url_for('search.index') }}">
+        <input type="search" name="q" placeholder="Search..." value="{{ query }}" {% if not has_index %}disabled{% endif %}>
+        <input type="submit" value="Search" {% if not has_index %}disabled{% endif %}>
+    </form>
+</div>
+
+{% if results %}
+<div class="search-results-meta">
+    <p class="search-results-count">
+        <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %} for "<em>{{ query }}</em>"
+        {% if results|length >= 50 %}<span class="results-capped">(top 50)</span>{% endif %}
+    </p>
+    <div class="search-results-actions">
+        <input type="search" class="filter-inline" placeholder="Filter results..." data-filter-table="search-results">
+    </div>
+</div>
+
+<div class="search-results-list" id="search-results">
+    {% for r in results %}
+    <article class="search-result-card" data-filter-content>
+        <div class="result-main">
+            <div class="result-citation">
+                <a href="{{ url_for('browse.section', title_num=r.title, section=r.section) }}" class="citation-link">{{ r.title }} CFR {{ r.section }}</a>
+                <span class="relevance-badge relevance-{{ 'high' if r.similarity >= 0.5 else 'medium' if r.similarity >= 0.3 else 'low' }}">{{ "%.0f"|format(r.similarity * 100) }}%</span>
+            </div>
+            <h3 class="result-heading">{{ r.heading|strip_section_prefix(r.section) }}</h3>
+            {% if titles and titles.get(r.title) %}
+            <p class="result-title-name">Title {{ r.title }}: {{ titles.get(r.title).name }}</p>
+            {% endif %}
+        </div>
+        <div class="result-actions">
+            <a href="{{ url_for('browse.section', title_num=r.title, section=r.section) }}" class="action-btn" title="View section">View</a>
+            <a href="{{ url_for('compare.diff', title_num=r.title, section=r.section) }}" class="action-btn" title="Compare years">Compare</a>
+            <a href="{{ url_for('chart.index', citation=r.title ~ ' CFR ' ~ r.section) }}" class="action-btn" title="View trends">Trends</a>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+
+{% else %}
+{# No results state #}
+<div class="search-empty">
+    <div class="empty-icon">&#128269;</div>
+    <h2>No results found</h2>
+    <p>We couldn't find any CFR sections matching "<em>{{ query }}</em>"</p>
+
+    <div class="empty-suggestions">
+        <h3>Suggestions</h3>
+        <ul>
+            <li>Check your spelling</li>
+            <li>Try more general terms</li>
+            <li>Use different keywords</li>
+        </ul>
+    </div>
+
+    <div class="empty-try">
+        <p>Try one of these searches:</p>
+        <div class="search-tags">
+            <a href="{{ url_for('search.index', q='environmental') }}" class="search-tag">environmental</a>
+            <a href="{{ url_for('search.index', q='safety') }}" class="search-tag">safety</a>
+            <a href="{{ url_for('search.index', q='compliance') }}" class="search-tag">compliance</a>
+            <a href="{{ url_for('search.index', q='reporting') }}" class="search-tag">reporting</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

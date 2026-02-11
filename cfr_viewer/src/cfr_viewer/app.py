@@ -11,6 +11,7 @@ from .routes_agencies import agencies_bp
 from .routes_compare import compare_bp
 from .routes_chart import chart_bp
 from .routes_api import api_bp
+from .routes_search import search_bp
 from .services import BASELINE_YEAR
 
 
@@ -25,6 +26,7 @@ def create_app(db_path: str | None = None):
     app.register_blueprint(compare_bp, url_prefix="/compare")
     app.register_blueprint(chart_bp, url_prefix="/chart")
     app.register_blueprint(api_bp, url_prefix="/api")
+    app.register_blueprint(search_bp, url_prefix="/search")
 
     @app.errorhandler(404)
     def page_not_found(e):
