@@ -63,22 +63,8 @@ def main():
     total_sections = 0
     for year, sections in sorted(sections_by_year.items()):
         print(f"\nInserting {len(sections)} sections for year {year}...")
-
-        for section in sections:
-            db.insert_section(
-                year=section.get('year', year),
-                title=section['title'],
-                chapter=section.get('chapter', ''),
-                part=section.get('part', ''),
-                section=section['section'],
-                heading=section.get('heading', ''),
-                text=section.get('text', ''),
-                word_count=section.get('word_count', 0)
-            )
-            total_sections += 1
-
-        # Commit after each year
-        db.commit()
+        db.save_sections(sections, year=year)
+        total_sections += len(sections)
 
     print(f"\nInserted {total_sections} total sections")
 
@@ -91,12 +77,12 @@ def main():
         print(f"Warning: Could not build similarity index: {e}")
 
     # Compute word counts
-    print("\nComputing agency word counts...")
+    print("\nPopulating title word counts...")
     try:
-        db.compute_agency_word_counts()
-        print("Word counts computed successfully")
+        db.populate_title_word_counts()
+        print("Title word counts populated successfully")
     except Exception as e:
-        print(f"Warning: Could not compute word counts: {e}")
+        print(f"Warning: Could not populate word counts: {e}")
 
     print("\n" + "=" * 50)
     print("Consolidation complete!")
