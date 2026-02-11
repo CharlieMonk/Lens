@@ -5,6 +5,7 @@ Reads JSON files from S3 and writes to SQLite + builds FAISS index.
 
 import json
 import os
+import urllib.request
 import boto3
 from pathlib import Path
 
@@ -17,6 +18,21 @@ s3 = boto3.client('s3')
 S3_BUCKET = os.environ.get('S3_BUCKET')
 DATABASE_PATH = os.environ.get('ECFR_DATABASE_PATH', '/data/ecfr.db')
 OUTPUT_DIR = os.environ.get('ECFR_OUTPUT_DIR', '/data')
+
+ECFR_API_URL = "https://www.ecfr.gov/api"
+
+
+def fetch_titles_metadata():
+    """Fetch titles metadata from eCFR API."""
+    url = f"{ECFR_API_URL}/versioner/v1/titles.json"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'eCFR-Consolidator/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read())
+            return data.get("titles", [])
+    except Exception as e:
+        print(f"Warning: Could not fetch titles metadata: {e}")
+        return []
 
 
 def main():
@@ -32,6 +48,16 @@ def main():
 
     # Initialize database
     db = ECFRDatabase(DATABASE_PATH)
+
+    # Fetch and save titles metadata from eCFR API
+    print("\nFetching titles metadata from eCFR API...")
+    titles = fetch_titles_metadata()
+    if titles:
+        print(f"  Found {len(titles)} titles")
+        db.save_titles(titles)
+        print("  Saved titles metadata to database")
+    else:
+        print("  Warning: No titles metadata retrieved")
 
     # List all JSON files in S3
     sections_by_year = {}

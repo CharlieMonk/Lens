@@ -8,8 +8,9 @@ from ecfr.config import config
 
 def main():
     """Entry point for cfr-viewer command."""
-    # Run fetcher as subprocess so nice 19 doesn't affect web server
-    subprocess.run([sys.executable, "-m", "ecfr.fetcher"])
+    # Run fetcher as subprocess unless ECFR_SKIP_FETCH is set (for containerized deployments)
+    if not os.environ.get("ECFR_SKIP_FETCH", "").lower() in ("1", "true", "yes"):
+        subprocess.run([sys.executable, "-m", "ecfr.fetcher"])
     app = create_app()
 
     # Warm structure cache if requested via config or environment variable

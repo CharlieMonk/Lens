@@ -122,7 +122,7 @@ resource "aws_ecs_task_definition" "webapp" {
     mountPoints = [{
       sourceVolume  = "efs-data"
       containerPath = "/data"
-      readOnly      = true
+      readOnly      = false  # SQLite needs write access for WAL files
     }]
 
     healthCheck = {
@@ -193,7 +193,6 @@ resource "aws_ecs_service" "webapp" {
   cluster         = var.ecs_cluster_arn
   task_definition = aws_ecs_task_definition.webapp.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
 
   network_configuration {
     subnets          = var.subnet_ids

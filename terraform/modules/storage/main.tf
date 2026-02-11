@@ -14,6 +14,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
     id     = "expire-old-data"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     expiration {
       days = 7
     }

@@ -19,6 +19,26 @@ S3_BUCKET = os.environ.get('S3_BUCKET')
 ECFR_BASE_URL = "https://www.ecfr.gov/api"
 GOVINFO_CFR_URL = "https://www.govinfo.gov/bulkdata/CFR"
 
+# Cache for titles metadata (reused across invocations in same container)
+_titles_cache = {}
+
+
+def get_title_metadata(title: int) -> Optional[dict]:
+    """Get metadata for a title from eCFR API (cached)."""
+    global _titles_cache
+
+    if not _titles_cache:
+        try:
+            url = f"{ECFR_BASE_URL}/versioner/v1/titles.json"
+            content = fetch_with_retry(url)
+            if content:
+                data = json.loads(content)
+                _titles_cache = {t["number"]: t for t in data.get("titles", [])}
+        except Exception as e:
+            print(f"Warning: Could not fetch titles metadata: {e}")
+
+    return _titles_cache.get(title)
+
 
 def handler(event, context):
     """
@@ -77,35 +97,35 @@ def handler(event, context):
 def fetch_title_xml(title: int, year: int) -> Optional[bytes]:
     """Fetch title XML from eCFR or govinfo."""
 
-    # Try eCFR first for current data
+    # For current data (year=0), get the latest_issue_date from metadata
     if year == 0:
-        xml = fetch_from_ecfr(title)
+        metadata = get_title_metadata(title)
+        if metadata and metadata.get("latest_issue_date"):
+            date_str = metadata["latest_issue_date"]
+            print(f"  Using latest_issue_date: {date_str}")
+            xml = fetch_from_ecfr(title, date_str=date_str)
+            if xml:
+                return xml
+
+    # Try govinfo for historical data
+    if year > 0:
+        xml = fetch_from_govinfo(title, year)
         if xml:
             return xml
 
-    # Try govinfo for historical or as fallback
-    xml = fetch_from_govinfo(title, year)
-    if xml:
-        return xml
-
-    # Try eCFR as final fallback
-    if year != 0:
-        xml = fetch_from_ecfr(title, year)
+    # Try eCFR as fallback for historical
+    if year > 0:
+        xml = fetch_from_ecfr(title, date_str=f"{year}-01-01")
         if xml:
             return xml
 
     return None
 
 
-def fetch_from_ecfr(title: int, year: int = 0) -> Optional[bytes]:
-    """Fetch from eCFR API."""
-    if year == 0:
-        # Current data
-        from datetime import date
-        date_str = date.today().isoformat()
-    else:
-        # Historical - use Jan 1 of that year
-        date_str = f"{year}-01-01"
+def fetch_from_ecfr(title: int, date_str: str = None) -> Optional[bytes]:
+    """Fetch from eCFR API using the specified date."""
+    if not date_str:
+        return None
 
     url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml"
 
@@ -113,10 +133,9 @@ def fetch_from_ecfr(title: int, year: int = 0) -> Optional[bytes]:
 
 
 def fetch_from_govinfo(title: int, year: int) -> Optional[bytes]:
-    """Fetch from govinfo bulk data."""
-    if year == 0:
-        from datetime import date
-        year = date.today().year
+    """Fetch from govinfo bulk data for historical years."""
+    if year <= 0:
+        return None  # govinfo doesn't work for current data
 
     # Govinfo has multiple volumes per title, try to find them
     volumes_content = []
