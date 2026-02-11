@@ -30,12 +30,43 @@ def _log(msg, indent=0):
 class ECFRFetcher:
     """Main orchestrator for fetching and processing eCFR data."""
 
-    def __init__(self, output_dir: Path | str | None = None, max_workers: int = None):
+    def __init__(self, output_dir: Path | str | None = None, max_workers: int = None, atomic_writes: bool = False):
         output_dir = output_dir or config.output_dir
         self.output_dir = Path(output_dir) if isinstance(output_dir, str) else output_dir
         self.max_workers = max_workers or MAX_WORKERS
-        self.db = ECFRDatabase(self.output_dir / "ecfr.db")
+        self.atomic_writes = atomic_writes
+
+        # When atomic_writes is True, write to .new suffix and rename at end
+        db_filename = "ecfr.db.new" if atomic_writes else "ecfr.db"
+        self.db = ECFRDatabase(self.output_dir / db_filename)
         self.client = ECFRClient()
+
+    def atomic_finalize(self):
+        """Atomically replace database and FAISS files after successful fetch.
+
+        Renames .new files to their final names. POSIX rename is atomic.
+        Should only be called after a successful fetch when atomic_writes=True.
+        """
+        if not self.atomic_writes:
+            return
+
+        _log("Finalizing atomic writes...")
+
+        # Finalize database
+        db_new = self.output_dir / "ecfr.db.new"
+        db_final = self.output_dir / "ecfr.db"
+        if db_new.exists():
+            db_new.rename(db_final)
+            _log(f"  Renamed {db_new.name} -> {db_final.name}")
+
+        # Finalize FAISS index files
+        faiss_base = config.faiss_index_path
+        for suffix in [".faiss", ".pkl"]:
+            new_file = Path(str(faiss_base) + ".new" + suffix)
+            final_file = Path(str(faiss_base) + suffix)
+            if new_file.exists():
+                new_file.rename(final_file)
+                _log(f"  Renamed {new_file.name} -> {final_file.name}")
 
     def clear_cache(self):
         if self.output_dir.exists():
@@ -328,13 +359,22 @@ class ECFRFetcher:
         else:
             _log("Building similarity index...")
             try:
-                result = self.db.build_similarity_index()
+                # When using atomic writes, write FAISS to .new suffix
+                result = self.db.build_similarity_index(use_temp_suffix=self.atomic_writes)
                 _log(f"{result['sections_indexed']:,} sections indexed ({result['index_size_mb']:.1f} MB)", indent=1)
             except Exception as e:
                 _log(f"Warning: Could not build similarity index: {e}", indent=1)
 
 
-def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
+def main(historical_years: list[int] = None, max_retries: int = 3, atomic_writes: bool = False) -> int:
+    """Main entry point for eCFR data fetching.
+
+    Args:
+        historical_years: List of years to fetch historical data for
+        max_retries: Number of retry attempts for failed fetches
+        atomic_writes: If True, write to .new files and rename atomically at end.
+                      Use for deployments where data must not be partially updated.
+    """
     historical_years = historical_years or HISTORICAL_YEARS
     all_titles = set(range(1, 51)) - {35}  # All CFR titles except 35 (reserved)
 
@@ -344,16 +384,24 @@ def main(historical_years: list[int] = None, max_retries: int = 3) -> int:
         pass
 
     _log("=" * 50 + "\neCFR Database Population\n" + "=" * 50)
+    if atomic_writes:
+        _log("Atomic writes enabled - will finalize at end")
 
-    fetcher = ECFRFetcher()
+    fetcher = ECFRFetcher(atomic_writes=atomic_writes)
     if not fetcher.ensure_metadata():
         return 1
     fetcher.ensure_current_sections(all_titles, max_retries)
     fetcher.ensure_historical_sections(historical_years)
     fetcher.ensure_derived_data()
 
+    # Atomically finalize if using atomic writes
+    if atomic_writes:
+        fetcher.atomic_finalize()
+
     _log("\n" + "=" * 50 + "\nDatabase population complete\n" + "=" * 50)
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Check for atomic writes via environment variable (for containerized deployments)
+    atomic = os.environ.get("ECFR_ATOMIC_WRITES", "").lower() in ("1", "true", "yes")
+    sys.exit(main(atomic_writes=atomic))

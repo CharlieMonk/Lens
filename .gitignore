@@ -214,3 +214,17 @@ __marimo__/
 SQL_QUERY_TIMINGS.md
 sql_query_timings.csv
 screenshots/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

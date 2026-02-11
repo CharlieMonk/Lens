@@ -73,6 +73,7 @@ class ECFRDatabase:
         self._structure_cache_time = 0
         self._faiss_index = None
         self._faiss_meta = None
+        self._faiss_mtime = None  # Track file modification time for hot reload
         self._ensure_schema()
 
     @contextmanager
@@ -627,7 +628,7 @@ class ECFRDatabase:
         res.sort(key=lambda x: x["similarity"], reverse=True)
         return res[:limit], res[0]["similarity"] if res else None
 
-    def build_similarity_index(self, year=0, progress_callback=None, max_features=2000):
+    def build_similarity_index(self, year=0, progress_callback=None, max_features=2000, use_temp_suffix=False):
         """Build FAISS index for global similarity search across all sections.
 
         Uses memory-efficient Product Quantization for large datasets.
@@ -636,6 +637,7 @@ class ECFRDatabase:
             year: Year to build index for (0 = current)
             progress_callback: Optional callable(stage, current, total) for progress
             max_features: TF-IDF vocabulary size (lower = less memory, default 2000)
+            use_temp_suffix: If True, write to .new suffix for atomic replacement
 
         Returns:
             dict with stats: sections_indexed, index_size_mb, build_time_s
@@ -648,6 +650,9 @@ class ECFRDatabase:
         start_time = time.time()
         index_path = config.faiss_index_path
         index_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # When using temp suffix, write to .new files for atomic replacement
+        suffix = ".new" if use_temp_suffix else ""
 
         def report(stage, current=0, total=0):
             if progress_callback:
@@ -731,9 +736,12 @@ class ECFRDatabase:
 
         # Save index and metadata
         report("Saving index to disk")
-        faiss.write_index(index, str(index_path) + ".faiss")
+        faiss_file = str(index_path) + suffix + ".faiss"
+        pkl_file = str(index_path) + suffix + ".pkl"
 
-        with open(str(index_path) + ".pkl", 'wb') as f:
+        faiss.write_index(index, faiss_file)
+
+        with open(pkl_file, 'wb') as f:
             pickle.dump({
                 'metadata': metadata,
                 'vectorizer': vectorizer,
@@ -742,12 +750,13 @@ class ECFRDatabase:
             }, f)
 
         build_time = time.time() - start_time
-        index_size = (index_path.with_suffix('.faiss').stat().st_size +
-                      index_path.with_suffix('.pkl').stat().st_size) / (1024 * 1024)
+        index_size = (Path(faiss_file).stat().st_size +
+                      Path(pkl_file).stat().st_size) / (1024 * 1024)
 
         # Clear cache so next query loads fresh index
         self._faiss_index = None
         self._faiss_meta = None
+        self._faiss_mtime = None
 
         return {
             'sections_indexed': len(metadata),
@@ -757,10 +766,7 @@ class ECFRDatabase:
         }
 
     def _load_faiss_index(self):
-        """Load FAISS index and metadata from disk. Caches in memory."""
-        if self._faiss_index is not None:
-            return True
-
+        """Load FAISS index and metadata from disk. Reloads if file changed (hot reload)."""
         import faiss
         index_path = config.faiss_index_path
         faiss_file = str(index_path) + ".faiss"
@@ -769,13 +775,19 @@ class ECFRDatabase:
         if not Path(faiss_file).exists() or not Path(pkl_file).exists():
             return False
 
-        self._faiss_index = faiss.read_index(faiss_file)
-        # Set nprobe for IVF indexes
-        if hasattr(self._faiss_index, 'nprobe'):
-            self._faiss_index.nprobe = config.faiss_nprobe
+        current_mtime = Path(faiss_file).stat().st_mtime
 
-        with open(pkl_file, 'rb') as f:
-            self._faiss_meta = pickle.load(f)
+        # Reload if file changed or not loaded yet
+        if self._faiss_index is None or self._faiss_mtime != current_mtime:
+            self._faiss_index = faiss.read_index(faiss_file)
+            # Set nprobe for IVF indexes
+            if hasattr(self._faiss_index, 'nprobe'):
+                self._faiss_index.nprobe = config.faiss_nprobe
+
+            with open(pkl_file, 'rb') as f:
+                self._faiss_meta = pickle.load(f)
+
+            self._faiss_mtime = current_mtime
 
         return True
 
