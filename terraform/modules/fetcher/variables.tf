@@ -8,50 +8,17 @@ variable "environment" {
   type        = string
 }
 
-variable "aws_region" {
-  description = "AWS region"
+variable "s3_bucket_name" {
+  description = "S3 bucket name for storing fetched data"
   type        = string
 }
 
-variable "vpc_id" {
-  description = "VPC ID"
+variable "s3_bucket_arn" {
+  description = "S3 bucket ARN"
   type        = string
 }
 
-variable "subnet_ids" {
-  description = "Subnet IDs for Fargate tasks"
-  type        = list(string)
-}
-
-variable "fetcher_security_group" {
-  description = "Security group ID for fetcher"
+variable "lambda_zip_path" {
+  description = "Path to the Lambda deployment package"
   type        = string
-}
-
-variable "efs_file_system_id" {
-  description = "EFS filesystem ID"
-  type        = string
-}
-
-variable "efs_access_point_id" {
-  description = "EFS access point ID"
-  type        = string
-}
-
-variable "fetcher_cpu" {
-  description = "CPU units for fetcher task"
-  type        = number
-  default     = 2048
-}
-
-variable "fetcher_memory" {
-  description = "Memory for fetcher task in MB"
-  type        = number
-  default     = 4096
-}
-
-variable "fetcher_schedule" {
-  description = "EventBridge schedule expression"
-  type        = string
-  default     = "cron(0 6 ? * SUN *)"
 }

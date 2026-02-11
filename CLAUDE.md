@@ -120,3 +120,60 @@ Main tables in SQLite:
 - `cfr_viewer/tests/test_routes.py` - Web viewer route tests (37 tests)
 - `cfr_viewer/tests/test_user_stories.py` - Playwright E2E tests (require running server)
 - `relevance/tests/` - Unit and integration tests using offline fixtures
+
+## AWS Deployment
+
+Infrastructure is defined in Terraform under `terraform/`:
+
+### Architecture
+- **Elastic Beanstalk**: Flask app with ALB, auto-scaling 1-4 t3.small instances
+- **ECS Fargate**: Weekly scheduled task fetches CFR data (Sundays 6 AM UTC)
+- **EFS**: Shared filesystem at `/data` for SQLite database and FAISS index
+- **Public subnets only**: No NAT Gateway; security groups control access
+
+### Terraform Structure
+```
+terraform/
+├── modules/
+│   ├── network/          # VPC, subnets, security groups
+│   ├── storage/          # EFS filesystem and access points
+│   ├── fetcher/          # ECR, ECS cluster, task definition, EventBridge
+│   └── elastic_beanstalk/ # EB app, environment, IAM roles
+└── environments/
+    └── dev/              # Dev environment configuration
+```
+
+### Deployment Commands
+```bash
+# Deploy infrastructure
+cd terraform/environments/dev
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+
+# Build and push fetcher image
+aws ecr get-login-password | docker login --username AWS --password-stdin <account>.dkr.ecr.<region>.amazonaws.com
+docker build -t ecfr-fetcher -f docker/Dockerfile.fetcher .
+docker tag ecfr-fetcher:latest <ecr-url>:latest
+docker push <ecr-url>:latest
+
+# Run manual fetch
+aws ecs run-task --cluster ecfr-dev-fetcher --task-definition ecfr-dev-fetcher \
+  --launch-type FARGATE --network-configuration "awsvpcConfiguration={...}"
+
+# Deploy app to EB
+python3 -c "import zipfile; ..." # Create app.zip (see deploy.sh)
+aws s3 cp app.zip s3://ecfr-dev-deployments/app-v1.zip
+aws elasticbeanstalk create-application-version --application-name ecfr-dev --version-label v1 --source-bundle S3Bucket=...,S3Key=...
+aws elasticbeanstalk update-environment --environment-name ecfr-dev --version-label v1
+```
+
+### Environment Variables
+- `ECFR_DATABASE_PATH=/data/ecfr.db` - EFS-mounted database path
+- `ECFR_OUTPUT_DIR=/data` - EFS-mounted output directory
+- `ECFR_ATOMIC_WRITES=true` - Enable atomic file replacement (for containerized fetcher)
+
+### Atomic Writes
+The fetcher supports atomic file replacement for production deployments:
+- Set `ECFR_ATOMIC_WRITES=true` to write to `.new` suffixes then rename
+- FAISS index hot-reloads when file mtime changes (no restart needed)

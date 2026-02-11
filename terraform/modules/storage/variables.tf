@@ -8,8 +8,8 @@ variable "environment" {
   type        = string
 }
 
-variable "vpc_id" {
-  description = "VPC ID"
+variable "aws_account_id" {
+  description = "AWS account ID for unique S3 bucket naming"
   type        = string
 }
 

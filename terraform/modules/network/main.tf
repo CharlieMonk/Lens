@@ -53,27 +53,11 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Security Group: ALB
-resource "aws_security_group" "alb" {
-  name        = "${var.app_name}-${var.environment}-alb-sg"
-  description = "Security group for Application Load Balancer"
+# Security Group: VPC Link (API Gateway)
+resource "aws_security_group" "vpc_link" {
+  name        = "${var.app_name}-${var.environment}-vpc-link-sg"
+  description = "Security group for API Gateway VPC Link"
   vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTP from anywhere"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTPS from anywhere"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   egress {
     description = "All outbound traffic"
@@ -84,22 +68,22 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name = "${var.app_name}-${var.environment}-alb-sg"
+    Name = "${var.app_name}-${var.environment}-vpc-link-sg"
   }
 }
 
-# Security Group: Elastic Beanstalk instances
-resource "aws_security_group" "eb" {
-  name        = "${var.app_name}-${var.environment}-eb-sg"
-  description = "Security group for Elastic Beanstalk instances"
+# Security Group: Web App (Fargate)
+resource "aws_security_group" "webapp" {
+  name        = "${var.app_name}-${var.environment}-webapp-sg"
+  description = "Security group for Fargate web app"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "HTTP from ALB"
+    description     = "HTTP from VPC Link"
     from_port       = 5000
     to_port         = 5000
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.vpc_link.id]
   }
 
   egress {
@@ -111,7 +95,28 @@ resource "aws_security_group" "eb" {
   }
 
   tags = {
-    Name = "${var.app_name}-${var.environment}-eb-sg"
+    Name = "${var.app_name}-${var.environment}-webapp-sg"
+  }
+}
+
+# Security Group: Consolidator (Fargate)
+resource "aws_security_group" "consolidator" {
+  name        = "${var.app_name}-${var.environment}-consolidator-sg"
+  description = "Security group for Fargate consolidator task"
+  vpc_id      = aws_vpc.main.id
+
+  # No inbound rules - consolidator only makes outbound requests
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-${var.environment}-consolidator-sg"
   }
 }
 
@@ -122,11 +127,19 @@ resource "aws_security_group" "efs" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "NFS from EB instances"
+    description     = "NFS from webapp"
     from_port       = 2049
     to_port         = 2049
     protocol        = "tcp"
-    security_groups = [aws_security_group.eb.id]
+    security_groups = [aws_security_group.webapp.id]
+  }
+
+  ingress {
+    description     = "NFS from consolidator"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.consolidator.id]
   }
 
   egress {
@@ -140,36 +153,4 @@ resource "aws_security_group" "efs" {
   tags = {
     Name = "${var.app_name}-${var.environment}-efs-sg"
   }
-}
-
-# Security Group: Fetcher (ECS Fargate)
-resource "aws_security_group" "fetcher" {
-  name        = "${var.app_name}-${var.environment}-fetcher-sg"
-  description = "Security group for ECS Fargate fetcher task"
-  vpc_id      = aws_vpc.main.id
-
-  # No inbound rules - fetcher only makes outbound requests
-
-  egress {
-    description = "All outbound traffic (for EFS and internet APIs)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.app_name}-${var.environment}-fetcher-sg"
-  }
-}
-
-# Add fetcher to EFS security group ingress
-resource "aws_security_group_rule" "efs_from_fetcher" {
-  type                     = "ingress"
-  from_port                = 2049
-  to_port                  = 2049
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.fetcher.id
-  security_group_id        = aws_security_group.efs.id
-  description              = "NFS from fetcher"
 }

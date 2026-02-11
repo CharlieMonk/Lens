@@ -1,3 +1,34 @@
+# S3 Bucket for intermediate JSON storage
+resource "aws_s3_bucket" "data" {
+  bucket = "${var.app_name}-${var.environment}-data-${var.aws_account_id}"
+
+  tags = {
+    Name = "${var.app_name}-${var.environment}-data"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+
+  rule {
+    id     = "expire-old-data"
+    status = "Enabled"
+
+    expiration {
+      days = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "data" {
+  bucket = aws_s3_bucket.data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 # EFS Filesystem
 resource "aws_efs_file_system" "main" {
   creation_token = "${var.app_name}-${var.environment}-efs"

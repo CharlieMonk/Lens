@@ -8,22 +8,22 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
 }
 
-output "alb_security_group_id" {
-  description = "ALB security group ID"
-  value       = aws_security_group.alb.id
+output "vpc_link_security_group_id" {
+  description = "VPC Link security group ID"
+  value       = aws_security_group.vpc_link.id
 }
 
-output "eb_security_group_id" {
-  description = "Elastic Beanstalk security group ID"
-  value       = aws_security_group.eb.id
+output "webapp_security_group_id" {
+  description = "Web app security group ID"
+  value       = aws_security_group.webapp.id
+}
+
+output "consolidator_security_group_id" {
+  description = "Consolidator security group ID"
+  value       = aws_security_group.consolidator.id
 }
 
 output "efs_security_group_id" {
   description = "EFS security group ID"
   value       = aws_security_group.efs.id
-}
-
-output "fetcher_security_group_id" {
-  description = "Fetcher security group ID"
-  value       = aws_security_group.fetcher.id
 }

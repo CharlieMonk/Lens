@@ -12,12 +12,10 @@ COPY pyproject.toml .
 COPY ecfr/ ecfr/
 COPY cfr_viewer/ cfr_viewer/
 COPY config.yaml .
+COPY lambda/consolidator.py .
 
-# Install Python package
-RUN pip install --no-cache-dir .
+# Install Python package with additional dependencies
+RUN pip install --no-cache-dir . boto3
 
-# Enable atomic writes for containerized deployments
-ENV ECFR_ATOMIC_WRITES=true
-
-# Run fetcher
-CMD ["python", "-m", "ecfr.fetcher"]
+# Run consolidator
+CMD ["python", "consolidator.py"]
