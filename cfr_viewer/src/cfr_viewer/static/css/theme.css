@@ -820,6 +820,56 @@ nav details.dropdown a.dropdown-active {
     color: var(--pico-primary);
 }
 
+/* Expanding navbar search */
+.nav-search-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.nav-search-form {
+    margin: 0;
+}
+
+.nav-search-input {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0.4rem 0.4rem 0.4rem 2rem !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: var(--pico-border-radius) !important;
+    background-color: transparent !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230172ad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: 18px !important;
+    font-size: 0.9rem !important;
+    color: var(--pico-color) !important;
+    cursor: pointer;
+    transition: width 0.3s ease-in-out, background-color 0.3s, border 0.3s;
+}
+
+.nav-search-input:hover:not(:focus) {
+    background-color: var(--pico-secondary-focus) !important;
+}
+
+.nav-search-input::placeholder {
+    color: transparent;
+}
+
+.nav-search-input:focus {
+    width: 200px !important;
+    cursor: text;
+    outline: none !important;
+    border: 1px solid var(--pico-primary) !important;
+    background-color: var(--pico-background-color) !important;
+    background-position: 10px center !important;
+    padding-left: 2.2rem !important;
+}
+
+.nav-search-input:focus::placeholder {
+    color: var(--pico-muted-color);
+}
+
 /* Mobile hamburger menu */
 .nav-toggle {
     display: none;

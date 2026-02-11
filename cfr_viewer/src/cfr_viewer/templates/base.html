@@ -23,7 +23,6 @@
         <ul>
             <li><button type="button" class="nav-link {% if request.endpoint == 'browse.titles' or request.endpoint == 'browse.title' or request.endpoint == 'browse.structure' or request.endpoint == 'browse.section' %}nav-active{% endif %}" data-href="{{ url_for('browse.titles') }}">Titles</button></li>
             <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('agencies') %}nav-active{% endif %}" data-href="{{ url_for('agencies.index') }}">Agencies</button></li>
-            <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('search') %}nav-active{% endif %}" data-href="{{ url_for('search.index') }}">Search</button></li>
             <li>
                 <details class="dropdown">
                     <summary {% if request.endpoint and request.endpoint.startswith('compare') %}class="nav-active"{% endif %}>Compare</summary>
@@ -34,6 +33,11 @@
                 </details>
             </li>
             <li><button type="button" class="nav-link {% if request.endpoint and request.endpoint.startswith('chart') %}nav-active{% endif %}" data-href="{{ url_for('chart.index') }}">Trends</button></li>
+            <li class="nav-search-wrapper">
+                <form action="{{ url_for('search.index') }}" method="get" class="nav-search-form">
+                    <input type="search" name="q" class="nav-search-input" placeholder="Search..." title="Search (/)">
+                </form>
+            </li>
         </ul>
     </nav>
 
