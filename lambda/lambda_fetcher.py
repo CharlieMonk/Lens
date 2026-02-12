@@ -1,12 +1,13 @@
 """
 Lambda function to fetch a single CFR title for a given year.
-Writes extracted sections as JSON to S3.
+Writes extracted sections as gzipped JSON to S3.
 
 Supports dynamic timeouts based on title size and per-title retry with exponential backoff.
 """
 
 import json
 import os
+import gzip
 import boto3
 import urllib.request
 import urllib.error
@@ -20,7 +21,8 @@ S3_BUCKET = os.environ.get('S3_BUCKET')
 
 # API endpoints
 ECFR_BASE_URL = "https://www.ecfr.gov/api"
-GOVINFO_CFR_URL = "https://www.govinfo.gov/bulkdata/CFR"
+GOVINFO_BULK_URL = "https://www.govinfo.gov/bulkdata/CFR"
+GOVINFO_CONTENT_URL = "https://www.govinfo.gov/content/pkg"
 
 # Title size categories (from historical XML sizes)
 # Large titles: Tax (26), EPA (40), Health (42, 45), Acquisition (48)
@@ -142,13 +144,15 @@ def handler(event, context):
         # Extract sections
         sections = extract_sections(xml_content, title, year)
 
-        # Write to S3
-        s3_key = f"sections/{year}/title-{title}.json"
+        # Write to S3 as gzipped JSON (80%+ smaller)
+        s3_key = f"sections/{year}/title-{title}.json.gz"
+        json_bytes = json.dumps(sections, ensure_ascii=False).encode('utf-8')
+        compressed = gzip.compress(json_bytes, compresslevel=6)
         s3.put_object(
             Bucket=S3_BUCKET,
             Key=s3_key,
-            Body=json.dumps(sections, ensure_ascii=False),
-            ContentType='application/json'
+            Body=compressed,
+            ContentType='application/gzip'
         )
 
         duration = time.time() - start_time
@@ -204,10 +208,17 @@ def fetch_title_xml(title: int, year: int) -> tuple[Optional[bytes], str, list[F
             if xml:
                 return xml, "ecfr", all_errors
 
-    # For recent year (current or last year), use eCFR - govinfo bulk not available
-    if year >= CURRENT_YEAR - 1 and year > 0:
-        print(f"  Year {year} is recent, using eCFR (govinfo bulk not available)")
-        # Check if title has minimum eCFR date requirement
+    # For recent years (last year), try govinfo content API first, then eCFR
+    # Govinfo bulk data isn't available, but content API has individual volumes
+    if year == CURRENT_YEAR - 1 and year > 0:
+        print(f"  Year {year} is recent, trying govinfo content API...")
+        xml, errors = fetch_from_govinfo(title, year, use_content_api=True)
+        all_errors.extend(errors)
+        if xml:
+            return xml, "govinfo", all_errors
+
+        # Fall back to eCFR
+        print(f"  Falling back to eCFR for year {year}...")
         ecfr_min_date = availability.get("ecfr_min_date")
         if ecfr_min_date and f"{year}-01-01" < ecfr_min_date:
             print(f"  Title {title} not available on eCFR before {ecfr_min_date}")
@@ -258,20 +269,36 @@ def fetch_from_ecfr(title: int, date_str: str = None) -> tuple[Optional[bytes], 
     return fetch_with_retry(url, timeout=timeout)
 
 
-def fetch_from_govinfo(title: int, year: int) -> tuple[Optional[bytes], list[FetchError]]:
-    """Fetch from govinfo bulk data for historical years."""
+def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> tuple[Optional[bytes], list[FetchError]]:
+    """
+    Fetch from govinfo for historical years.
+
+    Args:
+        title: CFR title number
+        year: Year to fetch
+        use_content_api: If True, use content API (for recent years like 2025).
+                        If False, use bulk data API (for older historical years).
+    """
     if year <= 0:
         return None, []  # govinfo doesn't work for current data
 
     timeout = get_timeout_for_title(title)
-    print(f"  Fetching from govinfo (timeout={timeout}s)...")
+    api_type = "content" if use_content_api else "bulk"
+    print(f"  Fetching from govinfo {api_type} API (timeout={timeout}s)...")
 
     # Govinfo has multiple volumes per title, try to find them
     volumes_content = []
     all_errors = []
 
-    for vol in range(1, 20):  # Most titles have fewer than 20 volumes
-        url = f"{GOVINFO_CFR_URL}/{year}/title-{title}/CFR-{year}-title{title}-vol{vol}.xml"
+    for vol in range(1, 40):  # Some titles have many volumes (Title 40 has 37+)
+        if use_content_api:
+            # Content API URL format: /content/pkg/CFR-{year}-title{N}-vol{V}/xml/CFR-{year}-title{N}-vol{V}.xml
+            pkg_name = f"CFR-{year}-title{title}-vol{vol}"
+            url = f"{GOVINFO_CONTENT_URL}/{pkg_name}/xml/{pkg_name}.xml"
+        else:
+            # Bulk data URL format: /bulkdata/CFR/{year}/title-{N}/CFR-{year}-title{N}-vol{V}.xml
+            url = f"{GOVINFO_BULK_URL}/{year}/title-{title}/CFR-{year}-title{title}-vol{vol}.xml"
+
         content, errors = fetch_with_retry(url, retries=1, timeout=timeout)
         all_errors.extend(errors)
 
@@ -288,6 +315,7 @@ def fetch_from_govinfo(title: int, year: int) -> tuple[Optional[bytes], list[Fet
     if not volumes_content:
         return None, all_errors
 
+    print(f"  Found {len(volumes_content)} volume(s)")
     # For simplicity, return first volume (consolidator will merge)
     result = volumes_content[0] if len(volumes_content) == 1 else merge_volumes(volumes_content)
     return result, all_errors
@@ -323,11 +351,31 @@ def fetch_with_retry(url: str, retries: int = 3, timeout: int = 60) -> tuple[Opt
             })
 
             with urllib.request.urlopen(req, timeout=timeout) as response:
+                # Check for redirects to error pages (govinfo returns 302 for missing content)
+                if response.url != url and 'error' in response.url.lower():
+                    errors.append(FetchError(
+                        title=0, year=0, source="http",
+                        error_type="not_found",
+                        message=f"Redirected to error page: {response.url}",
+                        attempt=attempt
+                    ))
+                    return None, errors
+
                 if response.status == 200:
-                    return response.read(), errors
+                    content = response.read()
+                    # Verify we got XML, not an HTML error page (only for .xml URLs)
+                    if url.endswith('.xml') and content and not content.strip().startswith(b'<'):
+                        errors.append(FetchError(
+                            title=0, year=0, source="http",
+                            error_type="invalid_content",
+                            message="Response is not XML",
+                            attempt=attempt
+                        ))
+                        return None, errors
+                    return content, errors
 
         except urllib.error.HTTPError as e:
-            if e.code == 404:
+            if e.code in (404, 302):
                 errors.append(FetchError(
                     title=0, year=0, source="http",
                     error_type="not_found",
