@@ -40,9 +40,9 @@ variable "schedule_expression" {
 }
 
 variable "max_concurrency" {
-  description = "Max concurrent Lambda invocations in Map state"
+  description = "Max concurrent Lambda invocations in Map state (should match Lambda concurrency limit)"
   type        = number
-  default     = 25
+  default     = 10  # Matches typical Lambda concurrent execution limit
 }
 
 variable "historical_years" {

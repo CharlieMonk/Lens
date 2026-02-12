@@ -1,6 +1,8 @@
 """
 Lambda function to fetch a single CFR title for a given year.
 Writes extracted sections as JSON to S3.
+
+Supports dynamic timeouts based on title size and per-title retry with exponential backoff.
 """
 
 import json
@@ -10,6 +12,7 @@ import urllib.request
 import urllib.error
 from xml.etree import ElementTree as ET
 from typing import Optional
+from dataclasses import dataclass, field
 import time
 
 s3 = boto3.client('s3')
@@ -19,8 +22,62 @@ S3_BUCKET = os.environ.get('S3_BUCKET')
 ECFR_BASE_URL = "https://www.ecfr.gov/api"
 GOVINFO_CFR_URL = "https://www.govinfo.gov/bulkdata/CFR"
 
+# Title size categories (from historical XML sizes)
+# Large titles: Tax (26), EPA (40), Health (42, 45), Acquisition (48)
+LARGE_TITLES = {26, 40, 42, 45, 48}
+# Medium titles: Agriculture (7), Banks (12), Aviation (14), Commodities (17),
+#               Food/Drug (21), Labor (29), Transportation (49)
+MEDIUM_TITLES = {7, 12, 14, 17, 21, 29, 49}
+# Reserved title (no content)
+RESERVED_TITLES = {35}
+
+# Special title availability - some titles have limited historical data
+# Title 3 (The President): Only available from 2010 on govinfo, 2015 on eCFR
+TITLE_AVAILABILITY = {
+    3: {"govinfo_min_year": 2010, "ecfr_min_date": "2015-03-17"},
+    2: {"govinfo_min_year": 2001},  # Title 2 added later
+    6: {"govinfo_min_year": 2003},  # Homeland Security created 2002
+}
+
+# Current year - govinfo bulk data not available for current/recent year
+import datetime
+CURRENT_YEAR = datetime.datetime.now().year
+
 # Cache for titles metadata (reused across invocations in same container)
 _titles_cache = {}
+
+
+@dataclass
+class FetchError:
+    """Structured error for tracking fetch failures."""
+    title: int
+    year: int
+    source: str  # "ecfr", "govinfo", or "both"
+    error_type: str  # "timeout", "http_error", "parse_error", "not_found"
+    message: str
+    attempt: int
+
+
+@dataclass
+class FetchResult:
+    """Structured result for tracking fetch outcomes."""
+    title: int
+    year: int
+    success: bool
+    source: str = ""
+    sections_count: int = 0
+    duration: float = 0.0
+    errors: list = field(default_factory=list)
+    s3_key: str = ""
+
+
+def get_timeout_for_title(title_num: int) -> int:
+    """Get timeout in seconds based on title size category."""
+    if title_num in LARGE_TITLES:
+        return 300
+    if title_num in MEDIUM_TITLES:
+        return 120
+    return 60
 
 
 def get_title_metadata(title: int) -> Optional[dict]:
@@ -30,7 +87,7 @@ def get_title_metadata(title: int) -> Optional[dict]:
     if not _titles_cache:
         try:
             url = f"{ECFR_BASE_URL}/versioner/v1/titles.json"
-            content = fetch_with_retry(url)
+            content, _ = fetch_with_retry(url, timeout=30)
             if content:
                 data = json.loads(content)
                 _titles_cache = {t["number"]: t for t in data.get("titles", [])}
@@ -45,6 +102,8 @@ def handler(event, context):
     Lambda handler. Expects event with:
     - title: CFR title number (1-50)
     - year: Year to fetch (0 for current)
+
+    Returns FetchResult as dict with success/failure info.
     """
     title = event.get('title')
     year = event.get('year', 0)
@@ -52,21 +111,34 @@ def handler(event, context):
     if not title:
         raise ValueError("Missing required 'title' parameter")
 
-    print(f"Fetching title {title}, year {year}")
+    start_time = time.time()
+    timeout = get_timeout_for_title(title)
+
+    # Skip reserved titles
+    if title in RESERVED_TITLES:
+        print(f"Title {title} is reserved, skipping")
+        return FetchResult(
+            title=title, year=year, success=True,
+            source="reserved", sections_count=0,
+            duration=time.time() - start_time
+        ).__dict__
+
+    print(f"Fetching title {title}, year {year} (timeout={timeout}s)")
+
+    # Fetch XML from eCFR or govinfo
+    xml_content, source, errors = fetch_title_xml(title, year)
+
+    if not xml_content:
+        duration = time.time() - start_time
+        print(f"No content for title {title}, year {year} after {duration:.1f}s")
+        result = FetchResult(
+            title=title, year=year, success=False,
+            source="none", sections_count=0,
+            duration=duration, errors=[e.__dict__ for e in errors]
+        )
+        return result.__dict__
 
     try:
-        # Fetch XML from eCFR or govinfo
-        xml_content = fetch_title_xml(title, year)
-
-        if not xml_content:
-            print(f"No content for title {title}, year {year}")
-            return {
-                'title': title,
-                'year': year,
-                'status': 'empty',
-                'sections': 0
-            }
-
         # Extract sections
         sections = extract_sections(xml_content, title, year)
 
@@ -79,81 +151,146 @@ def handler(event, context):
             ContentType='application/json'
         )
 
-        print(f"Wrote {len(sections)} sections to s3://{S3_BUCKET}/{s3_key}")
+        duration = time.time() - start_time
+        print(f"Wrote {len(sections)} sections to s3://{S3_BUCKET}/{s3_key} in {duration:.1f}s")
 
-        return {
-            'title': title,
-            'year': year,
-            'status': 'success',
-            'sections': len(sections),
-            's3_key': s3_key
-        }
+        result = FetchResult(
+            title=title, year=year, success=True,
+            source=source, sections_count=len(sections),
+            duration=duration, s3_key=s3_key
+        )
+        return result.__dict__
 
     except Exception as e:
-        print(f"Error fetching title {title}, year {year}: {e}")
-        raise
+        duration = time.time() - start_time
+        print(f"Error extracting/saving title {title}, year {year}: {e}")
+        errors.append(FetchError(
+            title=title, year=year, source=source,
+            error_type="parse_error", message=str(e), attempt=0
+        ))
+        result = FetchResult(
+            title=title, year=year, success=False,
+            source=source, sections_count=0,
+            duration=duration, errors=[e.__dict__ for e in errors]
+        )
+        return result.__dict__
 
 
-def fetch_title_xml(title: int, year: int) -> Optional[bytes]:
-    """Fetch title XML from eCFR or govinfo."""
+def fetch_title_xml(title: int, year: int) -> tuple[Optional[bytes], str, list[FetchError]]:
+    """
+    Fetch title XML from eCFR or govinfo.
 
-    # For current data (year=0), get the latest_issue_date from metadata
+    Strategy:
+    - Current year (0): Use eCFR with latest_issue_date
+    - Recent year (current-1): Use eCFR (govinfo bulk not available yet)
+    - Historical years: Try govinfo first (faster/reliable), fall back to eCFR
+
+    Returns:
+        Tuple of (xml_content, source_name, errors)
+    """
+    all_errors = []
+
+    # Check if this title has limited availability
+    availability = TITLE_AVAILABILITY.get(title, {})
+
+    # For current data (year=0), use eCFR with latest_issue_date
     if year == 0:
         metadata = get_title_metadata(title)
         if metadata and metadata.get("latest_issue_date"):
             date_str = metadata["latest_issue_date"]
             print(f"  Using latest_issue_date: {date_str}")
-            xml = fetch_from_ecfr(title, date_str=date_str)
+            xml, errors = fetch_from_ecfr(title, date_str=date_str)
+            all_errors.extend(errors)
             if xml:
-                return xml
+                return xml, "ecfr", all_errors
 
-    # Try govinfo for historical data
-    if year > 0:
-        xml = fetch_from_govinfo(title, year)
+    # For recent year (current or last year), use eCFR - govinfo bulk not available
+    if year >= CURRENT_YEAR - 1 and year > 0:
+        print(f"  Year {year} is recent, using eCFR (govinfo bulk not available)")
+        # Check if title has minimum eCFR date requirement
+        ecfr_min_date = availability.get("ecfr_min_date")
+        if ecfr_min_date and f"{year}-01-01" < ecfr_min_date:
+            print(f"  Title {title} not available on eCFR before {ecfr_min_date}")
+            return None, "", all_errors
+
+        xml, errors = fetch_from_ecfr(title, date_str=f"{year}-01-01")
+        all_errors.extend(errors)
         if xml:
-            return xml
+            return xml, "ecfr", all_errors
+        return None, "", all_errors
 
-    # Try eCFR as fallback for historical
+    # For historical years, try govinfo first (faster and more reliable)
     if year > 0:
-        xml = fetch_from_ecfr(title, date_str=f"{year}-01-01")
+        # Check if title is available on govinfo for this year
+        govinfo_min = availability.get("govinfo_min_year", 0)
+        if year >= govinfo_min:
+            xml, errors = fetch_from_govinfo(title, year)
+            all_errors.extend(errors)
+            if xml:
+                return xml, "govinfo", all_errors
+        else:
+            print(f"  Title {title} not available on govinfo before {govinfo_min}")
+
+    # Fall back to eCFR for historical
+    if year > 0:
+        ecfr_min_date = availability.get("ecfr_min_date")
+        if ecfr_min_date and f"{year}-01-01" < ecfr_min_date:
+            print(f"  Title {title} not available before {ecfr_min_date}")
+            return None, "", all_errors
+
+        xml, errors = fetch_from_ecfr(title, date_str=f"{year}-01-01")
+        all_errors.extend(errors)
         if xml:
-            return xml
+            return xml, "ecfr", all_errors
 
-    return None
+    return None, "", all_errors
 
 
-def fetch_from_ecfr(title: int, date_str: str = None) -> Optional[bytes]:
+def fetch_from_ecfr(title: int, date_str: str = None) -> tuple[Optional[bytes], list[FetchError]]:
     """Fetch from eCFR API using the specified date."""
     if not date_str:
-        return None
+        return None, []
 
     url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml"
+    timeout = get_timeout_for_title(title)
+    print(f"  Fetching from eCFR (timeout={timeout}s)...")
 
-    return fetch_with_retry(url)
+    return fetch_with_retry(url, timeout=timeout)
 
 
-def fetch_from_govinfo(title: int, year: int) -> Optional[bytes]:
+def fetch_from_govinfo(title: int, year: int) -> tuple[Optional[bytes], list[FetchError]]:
     """Fetch from govinfo bulk data for historical years."""
     if year <= 0:
-        return None  # govinfo doesn't work for current data
+        return None, []  # govinfo doesn't work for current data
+
+    timeout = get_timeout_for_title(title)
+    print(f"  Fetching from govinfo (timeout={timeout}s)...")
 
     # Govinfo has multiple volumes per title, try to find them
     volumes_content = []
+    all_errors = []
 
     for vol in range(1, 20):  # Most titles have fewer than 20 volumes
         url = f"{GOVINFO_CFR_URL}/{year}/title-{title}/CFR-{year}-title{title}-vol{vol}.xml"
-        content = fetch_with_retry(url, retries=1)
+        content, errors = fetch_with_retry(url, retries=1, timeout=timeout)
+        all_errors.extend(errors)
 
         if content:
             volumes_content.append(content)
         else:
-            break  # No more volumes
+            # Check if it's a 404 (no more volumes) vs error
+            if errors and errors[-1].error_type == "not_found":
+                break  # No more volumes
+            elif vol == 1:
+                # First volume failed with non-404 error
+                break
 
     if not volumes_content:
-        return None
+        return None, all_errors
 
     # For simplicity, return first volume (consolidator will merge)
-    return volumes_content[0] if len(volumes_content) == 1 else merge_volumes(volumes_content)
+    result = volumes_content[0] if len(volumes_content) == 1 else merge_volumes(volumes_content)
+    return result, all_errors
 
 
 def merge_volumes(volumes: list) -> bytes:
@@ -163,34 +300,86 @@ def merge_volumes(volumes: list) -> bytes:
     return b'\n'.join(volumes)
 
 
-def fetch_with_retry(url: str, retries: int = 3) -> Optional[bytes]:
-    """Fetch URL with exponential backoff retry."""
+def fetch_with_retry(url: str, retries: int = 3, timeout: int = 60) -> tuple[Optional[bytes], list[FetchError]]:
+    """
+    Fetch URL with exponential backoff retry.
+
+    Returns:
+        Tuple of (content bytes or None, list of errors encountered)
+    """
+    errors = []
+    base_delay = 5
+
     for attempt in range(retries):
+        if attempt > 0:
+            delay = base_delay * (2 ** (attempt - 1))  # 5s, 10s
+            print(f"  Retry {attempt + 1}/{retries} in {delay}s...")
+            time.sleep(delay)
+
         try:
             req = urllib.request.Request(url, headers={
                 'User-Agent': 'eCFR-Fetcher/1.0',
                 'Accept': 'application/xml'
             })
 
-            with urllib.request.urlopen(req, timeout=120) as response:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
                 if response.status == 200:
-                    return response.read()
+                    return response.read(), errors
 
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                return None  # Not found, don't retry
+                errors.append(FetchError(
+                    title=0, year=0, source="http",
+                    error_type="not_found",
+                    message=f"HTTP 404: {url}",
+                    attempt=attempt
+                ))
+                return None, errors  # Not found, don't retry
             print(f"HTTP error {e.code} for {url}, attempt {attempt + 1}")
+            errors.append(FetchError(
+                title=0, year=0, source="http",
+                error_type="http_error",
+                message=f"HTTP {e.code}: {url}",
+                attempt=attempt
+            ))
 
         except urllib.error.URLError as e:
-            print(f"URL error for {url}: {e}, attempt {attempt + 1}")
+            if "timed out" in str(e).lower() or isinstance(e.reason, TimeoutError):
+                print(f"Timeout for {url}, attempt {attempt + 1}")
+                errors.append(FetchError(
+                    title=0, year=0, source="http",
+                    error_type="timeout",
+                    message=f"Timeout after {timeout}s: {url}",
+                    attempt=attempt
+                ))
+            else:
+                print(f"URL error for {url}: {e}, attempt {attempt + 1}")
+                errors.append(FetchError(
+                    title=0, year=0, source="http",
+                    error_type="url_error",
+                    message=f"URL error: {e}",
+                    attempt=attempt
+                ))
+
+        except TimeoutError:
+            print(f"Timeout for {url}, attempt {attempt + 1}")
+            errors.append(FetchError(
+                title=0, year=0, source="http",
+                error_type="timeout",
+                message=f"Timeout after {timeout}s: {url}",
+                attempt=attempt
+            ))
 
         except Exception as e:
             print(f"Error fetching {url}: {e}, attempt {attempt + 1}")
+            errors.append(FetchError(
+                title=0, year=0, source="http",
+                error_type="error",
+                message=str(e),
+                attempt=attempt
+            ))
 
-        if attempt < retries - 1:
-            time.sleep(2 ** attempt)  # Exponential backoff
-
-    return None
+    return None, errors
 
 
 def extract_sections(xml_content: bytes, title: int, year: int) -> list:
@@ -307,3 +496,193 @@ def extract_sections_regex(xml_content: bytes, title: int, year: int) -> list:
         })
 
     return sections
+
+
+def print_fetch_summary(results: list[dict]) -> None:
+    """Print final summary of fetch results."""
+    successful = [r for r in results if r.get('success')]
+    failed = [r for r in results if not r.get('success')]
+    total_sections = sum(r.get('sections_count', 0) for r in successful)
+    total_duration = sum(r.get('duration', 0) for r in results)
+
+    print(f"\n{'='*60}")
+    print(f"FETCH SUMMARY")
+    print(f"{'='*60}")
+    print(f"Titles: {len(successful)}/{len(results)} succeeded")
+    print(f"Sections: {total_sections:,}")
+    print(f"Duration: {total_duration:.1f}s")
+
+    if failed:
+        print(f"\nFailed titles:")
+        for r in failed:
+            errors = r.get('errors', [])
+            last_error = errors[-1] if errors else None
+            msg = last_error.get('message', 'Unknown') if last_error else "Unknown"
+            print(f"  Title {r['title']}: {msg}")
+
+    print(f"{'='*60}\n")
+
+
+def batch_handler(event, context):
+    """
+    Batch handler for fetching multiple titles with optimal parallelism.
+
+    Uses a worker pool that matches the Lambda concurrency limit (default 10).
+    Prioritizes large titles first so they start early and smaller titles
+    fill in as workers become available.
+
+    Expects event with:
+    - titles: List of title numbers (default: 1-50)
+    - year: Year to fetch (0 for current)
+    - max_retries: Max retries per title (default: 3)
+    - max_workers: Concurrent fetches (default: 10, matches typical Lambda limit)
+
+    Returns summary of all fetch results.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    titles = event.get('titles', list(range(1, 51)))
+    year = event.get('year', 0)
+    max_retries = event.get('max_retries', 3)
+    max_workers = event.get('max_workers', 10)  # Match Lambda concurrency limit
+
+    # Sort titles by expected duration (large first, then medium, then small)
+    # This ensures slow titles start immediately and fast titles fill gaps
+    def title_priority(t):
+        if t in RESERVED_TITLES:
+            return 3  # Process last (instant)
+        if t in LARGE_TITLES:
+            return 0  # Process first (slowest)
+        if t in MEDIUM_TITLES:
+            return 1  # Process second
+        return 2  # Small titles last (fastest)
+
+    sorted_titles = sorted(titles, key=title_priority)
+
+    results = []
+    start_time = time.time()
+    completed_count = 0
+
+    print(f"Starting optimized batch fetch of {len(titles)} titles for year {year}")
+    print(f"Worker pool size: {max_workers} (matches Lambda concurrency limit)")
+    print(f"Processing order: large titles first, then medium, then small")
+    print(f"Large titles: {sorted(LARGE_TITLES)}")
+    print(f"Medium titles: {sorted(MEDIUM_TITLES)}")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_title = {
+            executor.submit(fetch_title_with_retry, title, year, max_retries): title
+            for title in sorted_titles
+        }
+
+        for future in as_completed(future_to_title):
+            title = future_to_title[future]
+            completed_count += 1
+            try:
+                result = future.result()
+                results.append(result)
+                # Progress indicator
+                elapsed = time.time() - start_time
+                print(f"  [{completed_count}/{len(titles)}] Title {title} done "
+                      f"({result.get('sections_count', 0)} sections, {elapsed:.1f}s elapsed)")
+            except Exception as e:
+                print(f"  [{completed_count}/{len(titles)}] Title {title} FAILED: {e}")
+                results.append(FetchResult(
+                    title=title, year=year, success=False,
+                    source="exception", errors=[{"message": str(e)}]
+                ).__dict__)
+
+    # Sort results by title number for consistent output
+    results.sort(key=lambda r: r['title'])
+
+    total_duration = time.time() - start_time
+
+    print_fetch_summary(results)
+
+    return {
+        'year': year,
+        'total_titles': len(results),
+        'successful': len([r for r in results if r.get('success')]),
+        'failed': len([r for r in results if not r.get('success')]),
+        'total_sections': sum(r.get('sections_count', 0) for r in results if r.get('success')),
+        'total_duration': total_duration,
+        'results': results
+    }
+
+
+def fetch_title_with_retry(title: int, year: int, max_attempts: int = 3) -> dict:
+    """
+    Fetch a single title with retry logic.
+
+    This wraps the handler function with additional retry attempts
+    at the title level (not just HTTP level).
+    """
+    errors = []
+    base_delay = 10
+    start_time = time.time()
+
+    # Skip reserved titles
+    if title in RESERVED_TITLES:
+        print(f"Title {title} is reserved, skipping")
+        return FetchResult(
+            title=title, year=year, success=True,
+            source="reserved", sections_count=0,
+            duration=time.time() - start_time
+        ).__dict__
+
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            delay = base_delay * (2 ** (attempt - 1))  # 10s, 20s
+            print(f"  Retry {attempt + 1}/{max_attempts} for title {title} in {delay}s...")
+            time.sleep(delay)
+
+        try:
+            result = handler({'title': title, 'year': year}, None)
+
+            # If successful, return immediately
+            if result.get('success'):
+                return result
+
+            # Collect errors from failed attempt
+            errors.extend(result.get('errors', []))
+
+        except Exception as e:
+            print(f"  Exception for title {title}: {e}")
+            errors.append(FetchError(
+                title=title, year=year, source="handler",
+                error_type="exception", message=str(e), attempt=attempt
+            ).__dict__)
+
+    # All retries exhausted
+    duration = time.time() - start_time
+    print(f"  Failed title {title} after {max_attempts} attempts ({duration:.1f}s)")
+
+    return FetchResult(
+        title=title, year=year, success=False,
+        source="none", sections_count=0,
+        duration=duration, errors=errors
+    ).__dict__
+
+
+if __name__ == "__main__":
+    """Local testing entry point."""
+    import sys
+
+    # Parse command line args
+    year = 0
+    titles = list(range(1, 51))
+
+    for i, arg in enumerate(sys.argv[1:]):
+        if arg == "--year" and i + 2 < len(sys.argv):
+            year = int(sys.argv[i + 2])
+        elif arg == "--title" and i + 2 < len(sys.argv):
+            titles = [int(sys.argv[i + 2])]
+        elif arg == "--titles" and i + 2 < len(sys.argv):
+            titles = [int(t) for t in sys.argv[i + 2].split(",")]
+
+    # Run batch fetch
+    result = batch_handler({'titles': titles, 'year': year}, None)
+
+    # Exit with error code if any failed
+    if result['failed'] > 0:
+        sys.exit(1)

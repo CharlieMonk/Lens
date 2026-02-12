@@ -1,47 +1,58 @@
 # Step Functions State Machine
+# Optimized for Lambda concurrency limit of 10
+# - Titles ordered: large first (40,26,42,45,48), then medium, then small
+# - MaxConcurrency=10 to match Lambda limit and avoid throttling
+# - Worker pool pattern: as each title completes, next one starts
 resource "aws_sfn_state_machine" "main" {
   name     = "${var.app_name}-${var.environment}-orchestrator"
   role_arn = aws_iam_role.step_functions.arn
 
   definition = jsonencode({
-    Comment = "eCFR data fetching orchestrator"
+    Comment = "eCFR data fetching orchestrator - optimized for Lambda concurrency"
     StartAt = "GenerateMatrix"
     States = {
       GenerateMatrix = {
         Type = "Pass"
         Result = {
-          titles = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-                    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39,
-                    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
+          # Titles ordered by expected duration: large first, then medium, then small
+          # Large (slowest): 40, 26, 42, 45, 48
+          # Medium: 7, 12, 14, 17, 21, 29, 49
+          # Small: remaining titles
+          # Reserved (35) excluded - no content
+          titles = [
+            40, 26, 42, 45, 48,           # Large titles first (slowest)
+            7, 12, 14, 17, 21, 29, 49,    # Medium titles
+            1, 2, 3, 4, 5, 6, 8, 9, 10,   # Small titles
+            11, 13, 15, 16, 18, 19, 20,
+            22, 23, 24, 25, 27, 28,
+            30, 31, 32, 33, 34, 36, 37, 38, 39,
+            41, 43, 44, 46, 47, 50
+          ]
           years = var.historical_years
         }
-        Next = "BuildItems"
-      }
-      BuildItems = {
-        Type = "Pass"
-        Parameters = {
-          "items.$" = "States.Array(States.ArrayRange(1, 50, 1))"
-        }
-        ResultPath = "$.matrix"
-        Next       = "FetchCurrentTitles"
+        Next = "FetchCurrentTitles"
       }
       FetchCurrentTitles = {
-        Type = "Map"
-        ItemsPath = "$.titles"
+        Type       = "Map"
+        ItemsPath  = "$.titles"
         MaxConcurrency = var.max_concurrency
+        ToleratedFailurePercentage = 10
         Parameters = {
           "title.$" = "$$.Map.Item.Value"
           "year"    = 0
         }
-        Iterator = {
+        ItemProcessor = {
+          ProcessorConfig = {
+            Mode = "INLINE"
+          }
           StartAt = "FetchTitle"
           States = {
             FetchTitle = {
               Type     = "Task"
               Resource = var.fetcher_lambda_arn
               Retry = [{
-                ErrorEquals     = ["States.TaskFailed", "Lambda.ServiceException"]
-                IntervalSeconds = 30
+                ErrorEquals     = ["States.TaskFailed", "Lambda.ServiceException", "Lambda.TooManyRequestsException"]
+                IntervalSeconds = 10
                 MaxAttempts     = 3
                 BackoffRate     = 2
               }]
@@ -53,33 +64,40 @@ resource "aws_sfn_state_machine" "main" {
         Next       = "FetchHistoricalYears"
       }
       FetchHistoricalYears = {
-        Type      = "Map"
-        ItemsPath = "$.years"
-        MaxConcurrency = 1
+        Type       = "Map"
+        ItemsPath  = "$.years"
+        MaxConcurrency = 1  # Process one year at a time to avoid overwhelming resources
         Parameters = {
           "year.$"   = "$$.Map.Item.Value"
           "titles.$" = "$.titles"
         }
-        Iterator = {
+        ItemProcessor = {
+          ProcessorConfig = {
+            Mode = "INLINE"
+          }
           StartAt = "FetchYearTitles"
           States = {
             FetchYearTitles = {
-              Type      = "Map"
-              ItemsPath = "$.titles"
+              Type       = "Map"
+              ItemsPath  = "$.titles"
               MaxConcurrency = var.max_concurrency
+              ToleratedFailurePercentage = 10
               Parameters = {
                 "title.$" = "$$.Map.Item.Value"
                 "year.$"  = "$.year"
               }
-              Iterator = {
+              ItemProcessor = {
+                ProcessorConfig = {
+                  Mode = "INLINE"
+                }
                 StartAt = "FetchHistoricalTitle"
                 States = {
                   FetchHistoricalTitle = {
                     Type     = "Task"
                     Resource = var.fetcher_lambda_arn
                     Retry = [{
-                      ErrorEquals     = ["States.TaskFailed", "Lambda.ServiceException"]
-                      IntervalSeconds = 30
+                      ErrorEquals     = ["States.TaskFailed", "Lambda.ServiceException", "Lambda.TooManyRequestsException"]
+                      IntervalSeconds = 10
                       MaxAttempts     = 3
                       BackoffRate     = 2
                     }]

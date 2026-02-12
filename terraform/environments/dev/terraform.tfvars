@@ -7,7 +7,7 @@ public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
 
 # Fetcher Lambda
 fetcher_lambda_zip_path = "../../../lambda/fetcher.zip"
-fetcher_max_concurrency = 25
+fetcher_max_concurrency = 10  # Match Lambda concurrent execution limit
 
 # Consolidator (Fargate)
 consolidator_cpu    = 2048
