@@ -89,6 +89,19 @@ class ECFRDatabase:
     def _execute(self, sql, params=()):
         with self._connection() as c: c.cursor().execute(sql, params); c.commit()
 
+    def enable_bulk_mode(self):
+        """Enable fast bulk insert mode. Call disable_bulk_mode() when done."""
+        with self._connection() as c:
+            c.execute("PRAGMA synchronous = OFF")
+            c.execute("PRAGMA journal_mode = MEMORY")
+            c.execute("PRAGMA cache_size = -64000")  # 64MB cache
+
+    def disable_bulk_mode(self):
+        """Restore safe defaults after bulk operations."""
+        with self._connection() as c:
+            c.execute("PRAGMA synchronous = FULL")
+            c.execute("PRAGMA journal_mode = DELETE")
+
     def _ensure_schema(self):
         """Initialize schema only if database is new or missing tables."""
         if not self.db_path.exists() or self.db_path.stat().st_size == 0:
@@ -314,6 +327,34 @@ class ECFRDatabase:
                      s.get("subchapter") or "", s.get("part") or "", s.get("subpart") or "",
                      s.get("section") or "", s.get("heading") or "", text_hash, s.get("word_count", 0)))
             c.commit()
+
+    def save_sections_bulk(self, sections, year=0):
+        """Bulk insert sections using executemany for better performance."""
+        if not sections: return
+        # Prepare data
+        texts_data = []
+        sections_data = []
+        for s in sections:
+            text = s.get("text") or ""
+            text_hash = _hash_text(text) if text else ""
+            if text:
+                texts_data.append((text_hash, text))
+            sections_data.append((
+                year, int(s.get("title", 0)), s.get("subtitle") or "", s.get("chapter") or "",
+                s.get("subchapter") or "", s.get("part") or "", s.get("subpart") or "",
+                s.get("section") or "", s.get("heading") or "", text_hash, s.get("word_count", 0)
+            ))
+        # Bulk insert
+        with self._connection() as c:
+            cur = c.cursor()
+            if texts_data:
+                cur.executemany("INSERT OR IGNORE INTO texts (hash, content) VALUES (?, ?)", texts_data)
+            cur.executemany("INSERT OR REPLACE INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", sections_data)
+            c.commit()
+
+    def delete_year_sections(self, year):
+        """Delete all sections for a specific year."""
+        self._execute("DELETE FROM sections WHERE year = ?", (year,))
 
     def update_word_counts(self, title_num, chapter_wc, agency_lookup, year=0):
         if not chapter_wc: return
