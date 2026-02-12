@@ -74,6 +74,7 @@ def process_files_streaming(db, all_keys):
     """
     Process S3 files one at a time with immediate DB insertion.
     Memory-efficient: only one file's data in memory at a time.
+    Uses deferred commits (single commit at end) for better performance.
     """
     total_sections = 0
     s3_time = 0
@@ -88,11 +89,11 @@ def process_files_streaming(db, all_keys):
         if not sections:
             continue
 
-        # Insert immediately in batches
+        # Insert immediately in batches (no commit per batch)
         t0 = time.time()
         for j in range(0, len(sections), DB_BATCH_SIZE):
             batch = sections[j:j + DB_BATCH_SIZE]
-            db.save_sections_bulk(batch, year=year)
+            db.save_sections_bulk(batch, year=year, commit=False)
         db_time += time.time() - t0
 
         total_sections += len(sections)
@@ -148,9 +149,7 @@ def main():
 
     # Step 3: Enable bulk mode and process files
     print("\n[3/5] Reading S3 and inserting (streaming)...")
-    db._execute("PRAGMA synchronous = OFF")
-    db._execute("PRAGMA journal_mode = MEMORY")
-    db._execute("PRAGMA cache_size = -64000")
+    db.begin_bulk_transaction()
 
     t0 = time.time()
     stats = process_files_streaming(db, all_keys)
@@ -158,9 +157,8 @@ def main():
     timings['db_insert'] = stats['db_insert']
     timings['total_sections'] = stats['total_sections']
 
-    # Restore safe pragmas
-    db._execute("PRAGMA synchronous = FULL")
-    db._execute("PRAGMA journal_mode = DELETE")
+    # Commit and restore safe pragmas
+    db.end_bulk_transaction()
 
     print(f"  S3 read: {timings['s3_read']:.1f}s, DB insert: {timings['db_insert']:.1f}s")
     print(f"  Total sections: {timings['total_sections']:,}")

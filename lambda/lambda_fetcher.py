@@ -8,6 +8,7 @@ Supports dynamic timeouts based on title size and per-title retry with exponenti
 import json
 import os
 import gzip
+import hashlib
 import boto3
 import urllib.request
 import urllib.error
@@ -15,6 +16,11 @@ from xml.etree import ElementTree as ET
 from typing import Optional
 from dataclasses import dataclass, field
 import time
+
+
+def _hash_text(text: str) -> str:
+    """Compute SHA-256 hash of text content."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 s3 = boto3.client('s3')
 S3_BUCKET = os.environ.get('S3_BUCKET')
@@ -490,6 +496,7 @@ def parse_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
         'section': section_num,
         'heading': heading,
         'text': text,
+        'text_hash': _hash_text(text) if text else '',
         'word_count': word_count
     }
 
@@ -519,6 +526,7 @@ def parse_div8_section(element: ET.Element, title: int, year: int) -> Optional[d
         'section': section_num,
         'heading': section_num,
         'text': text,
+        'text_hash': _hash_text(text) if text else '',
         'word_count': word_count
     }
 
@@ -540,6 +548,7 @@ def extract_sections_regex(xml_content: bytes, title: int, year: int) -> list:
             'section': f"§ {match.group(1)}",
             'heading': '',
             'text': '',
+            'text_hash': '',
             'word_count': 0
         })
 

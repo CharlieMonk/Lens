@@ -74,13 +74,18 @@ class ECFRDatabase:
         self._faiss_index = None
         self._faiss_meta = None
         self._faiss_mtime = None  # Track file modification time for hot reload
+        self._bulk_conn = None  # Persistent connection for bulk operations
         self._ensure_schema()
 
     @contextmanager
     def _connection(self):
-        conn = sqlite3.connect(self.db_path)
-        try: yield conn
-        finally: conn.close()
+        # Use bulk connection if active, otherwise create new
+        if self._bulk_conn:
+            yield self._bulk_conn
+        else:
+            conn = sqlite3.connect(self.db_path)
+            try: yield conn
+            finally: conn.close()
 
     def _query(self, sql, params=()):
         with self._connection() as c: return c.cursor().execute(sql, params).fetchall()
@@ -88,6 +93,25 @@ class ECFRDatabase:
         with self._connection() as c: return c.cursor().execute(sql, params).fetchone()
     def _execute(self, sql, params=()):
         with self._connection() as c: c.cursor().execute(sql, params); c.commit()
+
+    def begin_bulk_transaction(self):
+        """Start a persistent connection for bulk operations with optimized pragmas."""
+        if self._bulk_conn:
+            return  # Already in bulk mode
+        self._bulk_conn = sqlite3.connect(self.db_path)
+        self._bulk_conn.execute("PRAGMA synchronous = OFF")
+        self._bulk_conn.execute("PRAGMA journal_mode = MEMORY")
+        self._bulk_conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
+
+    def end_bulk_transaction(self):
+        """Commit and close the bulk connection, restore safe defaults."""
+        if not self._bulk_conn:
+            return
+        self._bulk_conn.commit()
+        self._bulk_conn.execute("PRAGMA synchronous = FULL")
+        self._bulk_conn.execute("PRAGMA journal_mode = DELETE")
+        self._bulk_conn.close()
+        self._bulk_conn = None
 
     def enable_bulk_mode(self):
         """Enable fast bulk insert mode. Call disable_bulk_mode() when done."""
@@ -328,15 +352,22 @@ class ECFRDatabase:
                      s.get("section") or "", s.get("heading") or "", text_hash, s.get("word_count", 0)))
             c.commit()
 
-    def save_sections_bulk(self, sections, year=0):
-        """Bulk insert sections using executemany for better performance."""
+    def save_sections_bulk(self, sections, year=0, commit=True):
+        """Bulk insert sections using executemany for better performance.
+
+        Args:
+            sections: List of section dicts
+            year: Year for the sections
+            commit: If False, don't commit (caller manages transaction)
+        """
         if not sections: return
         # Prepare data
         texts_data = []
         sections_data = []
         for s in sections:
             text = s.get("text") or ""
-            text_hash = _hash_text(text) if text else ""
+            # Use precomputed hash if available, otherwise compute
+            text_hash = s.get("text_hash") or (_hash_text(text) if text else "")
             if text:
                 texts_data.append((text_hash, text))
             sections_data.append((
@@ -350,6 +381,12 @@ class ECFRDatabase:
             if texts_data:
                 cur.executemany("INSERT OR IGNORE INTO texts (hash, content) VALUES (?, ?)", texts_data)
             cur.executemany("INSERT OR REPLACE INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?)", sections_data)
+            if commit:
+                c.commit()
+
+    def commit(self):
+        """Explicitly commit the current transaction."""
+        with self._connection() as c:
             c.commit()
 
     def delete_year_sections(self, year):
