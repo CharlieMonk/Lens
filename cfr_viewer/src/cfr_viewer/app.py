@@ -28,6 +28,10 @@ def create_app(db_path: str | None = None):
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(search_bp, url_prefix="/search")
 
+    @app.route("/health")
+    def health():
+        return "OK", 200
+
     @app.errorhandler(404)
     def page_not_found(e):
         return render_template("errors/404.html"), 404

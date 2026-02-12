@@ -211,8 +211,15 @@ class Config:
 
     @property
     def faiss_index_path(self):
-        path = self._get("similar_sections", "faiss_index_path", default="~/ecfr_data/similarity_index")
-        return Path(path).expanduser()
+        # Check ECFR_FAISS_INDEX_PATH env var first, then config, then derive from output_dir
+        env_path = os.environ.get("ECFR_FAISS_INDEX_PATH")
+        if env_path:
+            return Path(env_path).expanduser()
+        path = self._get("similar_sections", "faiss_index_path")
+        if path:
+            return Path(path).expanduser()
+        # Default: use output_dir/similarity_index
+        return self.output_dir / "similarity_index"
 
     @property
     def faiss_nlist(self):
