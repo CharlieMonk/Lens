@@ -510,6 +510,9 @@ def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> 
         year: Year to fetch
         use_content_api: If True, use content API (for recent years like 2025).
                         If False, use bulk data API (for older historical years).
+
+    For multi-volume titles, saves each volume to /tmp and returns a marker
+    so the handler can process them separately (avoids invalid XML from concatenation).
     """
     if year <= 0:
         return None, []  # govinfo doesn't work for current data
@@ -519,8 +522,14 @@ def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> 
     print(f"  Fetching from govinfo {api_type} API (timeout={timeout}s)...")
 
     # Govinfo has multiple volumes per title, try to find them
-    volumes_content = []
     all_errors = []
+    tmp_dir = f"/tmp/title_{title}_{year}_govinfo"
+
+    # Clean up any previous attempt
+    if os.path.exists(tmp_dir):
+        shutil.rmtree(tmp_dir)
+
+    volumes_found = 0
 
     for vol in range(1, 40):  # Some titles have many volumes (Title 40 has 37+)
         if use_content_api:
@@ -535,7 +544,13 @@ def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> 
         all_errors.extend(errors)
 
         if content:
-            volumes_content.append(content)
+            # Save to tmp for multi-volume processing
+            os.makedirs(tmp_dir, exist_ok=True)
+            filepath = os.path.join(tmp_dir, f"vol_{vol:02d}.xml")
+            with open(filepath, 'wb') as f:
+                f.write(content)
+            volumes_found += 1
+            del content  # Free memory
         else:
             # Check if it's a 404 (no more volumes) vs error
             if errors and errors[-1].error_type == "not_found":
@@ -544,20 +559,23 @@ def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> 
                 # First volume failed with non-404 error
                 break
 
-    if not volumes_content:
+    if volumes_found == 0:
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
         return None, all_errors
 
-    print(f"  Found {len(volumes_content)} volume(s)")
-    # For simplicity, return first volume (consolidator will merge)
-    result = volumes_content[0] if len(volumes_content) == 1 else merge_volumes(volumes_content)
-    return result, all_errors
+    print(f"  Found {volumes_found} volume(s)")
 
+    # Single volume: return content directly
+    if volumes_found == 1:
+        filepath = os.path.join(tmp_dir, "vol_01.xml")
+        with open(filepath, 'rb') as f:
+            content = f.read()
+        shutil.rmtree(tmp_dir)
+        return content, all_errors
 
-def merge_volumes(volumes: list) -> bytes:
-    """Merge multiple volume XMLs into one."""
-    # Simple approach: return all volumes concatenated
-    # The section extractor will handle duplicates
-    return b'\n'.join(volumes)
+    # Multiple volumes: return tmp_dir marker for separate processing
+    return f"__TMP_DIR__:{tmp_dir}".encode(), all_errors
 
 
 def fetch_with_retry(url: str, retries: int = 3, timeout: int = 60) -> tuple[Optional[bytes], list[FetchError]]:
