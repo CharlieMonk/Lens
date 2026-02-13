@@ -681,26 +681,24 @@ def fetch_with_retry(url: str, retries: int = 3, timeout: int = 60) -> tuple[Opt
 
 
 def extract_sections(xml_content: bytes, title: int, year: int) -> list:
-    """Extract sections from XML content."""
+    """Extract sections from XML content with chapter/part hierarchy."""
     sections = []
 
     try:
         # Try parsing as XML
         root = ET.fromstring(xml_content)
 
-        # Find all section elements
-        for section in root.iter():
-            if section.tag.endswith('SECTION') or section.tag == 'SECTION':
-                section_data = parse_section(section, title, year)
-                if section_data:
-                    sections.append(section_data)
+        # Govinfo format: CHAPTER > PART > SECTION
+        # Track hierarchy as we traverse
+        extract_sections_with_hierarchy(root, title, year, sections)
 
-        # Also try DIV8 elements (eCFR format)
-        for div in root.iter():
-            if div.tag == 'DIV8' and div.get('TYPE') == 'SECTION':
-                section_data = parse_div8_section(div, title, year)
-                if section_data:
-                    sections.append(section_data)
+        # Also try DIV8 elements (eCFR format) if no sections found
+        if not sections:
+            for div in root.iter():
+                if div.tag == 'DIV8' and div.get('TYPE') == 'SECTION':
+                    section_data = parse_div8_section(div, title, year)
+                    if section_data:
+                        sections.append(section_data)
 
     except ET.ParseError as e:
         print(f"XML parse error: {e}")
@@ -710,14 +708,68 @@ def extract_sections(xml_content: bytes, title: int, year: int) -> list:
     return sections
 
 
-def parse_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
-    """Parse a SECTION element."""
+def extract_sections_with_hierarchy(element: ET.Element, title: int, year: int,
+                                     sections: list, chapter: str = "", part: str = ""):
+    """Recursively extract sections while tracking chapter/part context."""
+    # Check if this is a CHAPTER element
+    if element.tag == 'CHAPTER':
+        # Get chapter number from HD element (e.g., "CHAPTER I—ENVIRONMENTAL PROTECTION AGENCY")
+        hd = element.find('.//HD')
+        if hd is not None and hd.text:
+            hd_text = hd.text.strip()
+            if hd_text.startswith('CHAPTER '):
+                # Extract Roman numeral or number after "CHAPTER "
+                chapter_part = hd_text[8:].split('—')[0].split('-')[0].strip()
+                if chapter_part:
+                    chapter = chapter_part
+        # Also try NO element as fallback
+        if not chapter:
+            no_elem = element.find('NO')
+            if no_elem is not None and no_elem.text:
+                chapter = no_elem.text.strip()
+
+    # Check if this is a PART element
+    if element.tag == 'PART':
+        # Get part number from EAR element (e.g., "Pt. 1") or PARTNO
+        ear = element.find('EAR')
+        if ear is not None and ear.text:
+            # Parse "Pt. 1" -> "1"
+            part_text = ear.text.strip()
+            if part_text.startswith('Pt.'):
+                part = part_text[3:].strip()
+            else:
+                part = part_text
+        else:
+            partno = element.find('.//PARTNO')
+            if partno is not None and partno.text:
+                part = partno.text.strip()
+
+    # Check if this is a SECTION element
+    if element.tag == 'SECTION':
+        section_data = parse_section_with_context(element, title, year, chapter, part)
+        if section_data:
+            sections.append(section_data)
+        return  # Don't recurse into SECTION children
+
+    # Recurse into children
+    for child in element:
+        extract_sections_with_hierarchy(child, title, year, sections, chapter, part)
+
+
+def parse_section_with_context(element: ET.Element, title: int, year: int,
+                                chapter: str, part: str) -> Optional[dict]:
+    """Parse a SECTION element with chapter/part context."""
     # Get section number
     sectno = element.find('.//SECTNO')
     if sectno is None or not sectno.text:
         return None
 
     section_num = sectno.text.strip()
+
+    # Clean section number (remove § prefix for storage)
+    clean_section = section_num
+    if clean_section.startswith('§'):
+        clean_section = clean_section[1:].strip()
 
     # Get section subject/heading
     subject = element.find('.//SUBJECT')
@@ -737,12 +789,19 @@ def parse_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
     return {
         'title': title,
         'year': year,
-        'section': section_num,
+        'chapter': chapter,
+        'part': part,
+        'section': clean_section,
         'heading': heading,
         'text': text,
         'text_hash': _hash_text(text) if text else '',
         'word_count': word_count
     }
+
+
+def parse_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
+    """Parse a SECTION element (legacy, no hierarchy)."""
+    return parse_section_with_context(element, title, year, "", "")
 
 
 def parse_div8_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
@@ -767,6 +826,8 @@ def parse_div8_section(element: ET.Element, title: int, year: int) -> Optional[d
     return {
         'title': title,
         'year': year,
+        'chapter': '',
+        'part': '',
         'section': section_num,
         'heading': section_num,
         'text': text,
