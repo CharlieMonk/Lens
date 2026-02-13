@@ -44,6 +44,19 @@ def fetch_titles_metadata():
         return []
 
 
+def fetch_agencies_metadata():
+    """Fetch agencies metadata from eCFR API."""
+    url = f"{ECFR_API_URL}/admin/v1/agencies.json"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'eCFR-Consolidator/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read())
+            return data.get("agencies", [])
+    except Exception as e:
+        print(f"Warning: Could not fetch agencies metadata: {e}")
+        return []
+
+
 def stream_s3_json(key):
     """
     Stream and parse a JSON file from S3.
@@ -127,16 +140,25 @@ def main():
 
     # Step 1: Fetch titles metadata
     t0 = time.time()
-    print("\n[1/5] Fetching titles metadata...")
+    print("\n[1/6] Fetching titles metadata...")
     titles = fetch_titles_metadata()
     if titles:
         db.save_titles(titles)
     timings['titles'] = time.time() - t0
     print(f"  {len(titles)} titles - {timings['titles']:.1f}s")
 
-    # Step 2: List S3 files
+    # Step 1b: Fetch agencies metadata
     t0 = time.time()
-    print("\n[2/5] Listing S3 files...")
+    print("\n[2/6] Fetching agencies metadata...")
+    agencies = fetch_agencies_metadata()
+    if agencies:
+        db.save_agencies(agencies)
+    timings['agencies'] = time.time() - t0
+    print(f"  {len(agencies)} agencies - {timings['agencies']:.1f}s")
+
+    # Step 3: List S3 files
+    t0 = time.time()
+    print("\n[3/6] Listing S3 files...")
     all_keys = []
     paginator = s3.get_paginator('list_objects_v2')
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix='sections/'):
@@ -147,8 +169,8 @@ def main():
     timings['list_s3'] = time.time() - t0
     print(f"  {len(all_keys)} files - {timings['list_s3']:.1f}s")
 
-    # Step 3: Enable bulk mode and process files
-    print("\n[3/5] Reading S3 and inserting (streaming)...")
+    # Step 4: Enable bulk mode and process files
+    print("\n[4/6] Reading S3 and inserting (streaming)...")
     db.begin_bulk_transaction()
 
     t0 = time.time()
@@ -163,9 +185,9 @@ def main():
     print(f"  S3 read: {timings['s3_read']:.1f}s, DB insert: {timings['db_insert']:.1f}s")
     print(f"  Total sections: {timings['total_sections']:,}")
 
-    # Step 4: Build FAISS index
+    # Step 5: Build FAISS index
     t0 = time.time()
-    print("\n[4/5] Building similarity index...")
+    print("\n[5/6] Building similarity index...")
     try:
         build_similarity_index(db)
         timings['faiss'] = time.time() - t0
@@ -174,9 +196,9 @@ def main():
         timings['faiss'] = time.time() - t0
         print(f"  Failed: {e} - {timings['faiss']:.1f}s")
 
-    # Step 5: Word counts
+    # Step 6: Word counts
     t0 = time.time()
-    print("\n[5/5] Populating word counts...")
+    print("\n[6/6] Populating word counts...")
     try:
         db.populate_title_word_counts()
         timings['word_counts'] = time.time() - t0
