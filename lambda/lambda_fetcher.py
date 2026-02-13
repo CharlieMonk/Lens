@@ -595,13 +595,22 @@ def extract_sections(xml_content: bytes, title: int, year: int) -> list:
         # Try parsing as XML
         root = ET.fromstring(xml_content)
 
-        # Govinfo format: CHAPTER > PART > SECTION
-        # Track hierarchy as we traverse
-        extract_sections_with_hierarchy(root, title, year, sections)
+        # Detect format: eCFR uses DIV3 TYPE="CHAPTER", govinfo uses CHAPTER elements
+        has_div3_chapters = any(
+            e.tag == 'DIV3' and e.get('TYPE') == 'CHAPTER'
+            for e in root.iter('DIV3')
+        )
 
-        # Also try DIV elements (eCFR format) if no sections found
-        if not sections:
+        if has_div3_chapters:
+            # eCFR format: DIV3 (chapter) > DIV5 (part) > DIV8 (section)
             extract_sections_ecfr_div(root, title, year, sections)
+        else:
+            # Govinfo format: CHAPTER > PART > SECTION
+            extract_sections_with_hierarchy(root, title, year, sections)
+
+            # Fallback to eCFR DIV format if no sections found
+            if not sections:
+                extract_sections_ecfr_div(root, title, year, sections)
 
     except ET.ParseError as e:
         print(f"XML parse error: {e}")
