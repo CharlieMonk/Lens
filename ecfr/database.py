@@ -323,7 +323,9 @@ class ECFRDatabase:
         # Fall back to computing from sections if no cached data for this year
         if not direct and self.has_year_data(year):
             direct = {r[0]: r[1] for r in self._query("SELECT r.agency_slug, SUM(s.word_count) FROM sections s JOIN cfr_references r ON s.title = r.title AND s.chapter = COALESCE(r.chapter, r.subtitle, r.subchapter) WHERE s.year = ? GROUP BY r.agency_slug", (year,))}
-        totals = dict(direct)
+        # Start with all agencies (including those with 0 word counts)
+        totals = {r[0]: 0 for r in self._query("SELECT slug FROM agencies")}
+        totals.update(direct)
         for child, parent in {r[0]: r[1] for r in self._query("SELECT slug, parent_slug FROM agencies WHERE parent_slug IS NOT NULL")}.items():
             if child in direct: totals[parent] = totals.get(parent, 0) + direct[child]
         return totals
