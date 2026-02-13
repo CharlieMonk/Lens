@@ -33,10 +33,9 @@ GOVINFO_BULK_URL = "https://www.govinfo.gov/bulkdata/CFR"
 GOVINFO_CONTENT_URL = "https://www.govinfo.gov/content/pkg"
 
 # Title size categories (from historical XML sizes)
-# Very large titles that need subchapter-level fetching to avoid timeouts
-VERY_LARGE_TITLES = {40}  # EPA - 39 volumes, ~800MB total
-# Large titles: Tax (26), Health (42, 45), Acquisition (48)
-LARGE_TITLES = {26, 42, 45, 48}
+# Large titles: EPA (40), Tax (26), Health (42, 45), Acquisition (48)
+# Title 40 is ~150MB and needs extended timeout
+LARGE_TITLES = {26, 40, 42, 45, 48}
 # Medium titles: Agriculture (7), Banks (12), Aviation (14), Commodities (17),
 #               Food/Drug (21), Labor (29), Transportation (49)
 MEDIUM_TITLES = {7, 12, 14, 17, 21, 29, 49}
@@ -85,6 +84,8 @@ class FetchResult:
 
 def get_timeout_for_title(title_num: int) -> int:
     """Get timeout in seconds based on title size category."""
+    if title_num == 40:
+        return 600  # Title 40 (EPA) is ~150MB, needs 10 minutes
     if title_num in LARGE_TITLES:
         return 300
     if title_num in MEDIUM_TITLES:
@@ -151,7 +152,7 @@ def handler(event, context):
         return result.__dict__
 
     try:
-        # Extract sections - check for tmp_dir marker from subchapter fetching
+        # Check for tmp_dir marker from govinfo multi-volume fetching
         if xml_content.startswith(b"__TMP_DIR__:"):
             tmp_dir = xml_content.decode().split(":", 1)[1]
             # For very large titles, stream directly to S3
@@ -284,109 +285,15 @@ def fetch_title_xml(title: int, year: int) -> tuple[Optional[bytes], str, list[F
 
 
 def fetch_from_ecfr(title: int, date_str: str = None) -> tuple[Optional[bytes], list[FetchError]]:
-    """Fetch from eCFR API using the specified date."""
+    """Fetch full title XML from eCFR API."""
     if not date_str:
         return None, []
-
-    # For very large titles, fetch by subchapter to avoid timeouts
-    if title in VERY_LARGE_TITLES:
-        return fetch_from_ecfr_by_subchapter(title, date_str)
 
     url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml"
     timeout = get_timeout_for_title(title)
     print(f"  Fetching from eCFR (timeout={timeout}s)...")
 
     return fetch_with_retry(url, timeout=timeout)
-
-
-def fetch_from_ecfr_by_subchapter(title: int, date_str: str) -> tuple[Optional[bytes], list[FetchError]]:
-    """
-    Fetch a very large title by fetching each subchapter separately.
-    Uses /tmp storage to avoid memory issues with 800+ MB titles.
-    Returns a special marker that tells the handler to use the temp files.
-    """
-    all_errors = []
-    tmp_dir = f"/tmp/title_{title}_{date_str.replace('-', '')}"
-
-    # Clean up any previous attempt
-    if os.path.exists(tmp_dir):
-        shutil.rmtree(tmp_dir)
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    # First, get the title structure to find all subchapters
-    structure_url = f"{ECFR_BASE_URL}/versioner/v1/structure/{date_str}/title-{title}.json"
-    print(f"  Fetching title {title} structure...")
-
-    try:
-        req = urllib.request.Request(structure_url, headers={
-            'User-Agent': 'eCFR-Lambda/1.0',
-            'Accept': 'application/json'
-        })
-        with urllib.request.urlopen(req, timeout=30) as response:
-            structure = json.loads(response.read())
-    except Exception as e:
-        all_errors.append(FetchError(
-            title=title, year=0, source="ecfr",
-            error_type="structure_error",
-            message=f"Failed to get structure: {e}",
-            attempt=0
-        ))
-        return None, all_errors
-
-    # Extract all subchapters from the structure
-    def get_subchapters(node):
-        results = []
-        for child in node.get('children', []):
-            if child.get('type') == 'subchapter':
-                results.append(child.get('identifier', ''))
-            else:
-                results.extend(get_subchapters(child))
-        return results
-
-    subchapters = get_subchapters(structure)
-    if not subchapters:
-        # No subchapters found, fall back to chapters
-        for child in structure.get('children', []):
-            if child.get('type') == 'chapter':
-                subchapters.append(f"chapter_{child.get('identifier', '')}")
-
-    print(f"  Found {len(subchapters)} subchapters, fetching to /tmp...")
-
-    # Fetch each subchapter and save to /tmp
-    successful_files = []
-    timeout = 120  # 2 minutes per subchapter
-
-    for i, subchapter in enumerate(subchapters):
-        if subchapter.startswith('chapter_'):
-            chapter_id = subchapter.replace('chapter_', '')
-            url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml?chapter={chapter_id}"
-            filename = f"chapter_{chapter_id}.xml"
-        else:
-            url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml?subchapter={subchapter}"
-            filename = f"subchapter_{subchapter}.xml"
-
-        filepath = os.path.join(tmp_dir, filename)
-        content, errors = fetch_with_retry(url, retries=2, timeout=timeout)
-        all_errors.extend(errors)
-
-        if content:
-            # Write to /tmp file immediately, free memory
-            with open(filepath, 'wb') as f:
-                f.write(content)
-            size_mb = len(content) / 1024 / 1024
-            successful_files.append(filepath)
-            print(f"    [{i+1}/{len(subchapters)}] {subchapter}: {size_mb:.1f} MB -> {filename}")
-            del content  # Free memory
-        else:
-            print(f"    [{i+1}/{len(subchapters)}] {subchapter}: FAILED")
-
-    if not successful_files:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        return None, all_errors
-
-    # Return marker with tmp_dir path - handler will process files
-    print(f"  Saved {len(successful_files)} subchapters to {tmp_dir}")
-    return f"__TMP_DIR__:{tmp_dir}".encode(), all_errors
 
 
 def extract_and_upload_from_tmp_dir(tmp_dir: str, title: int, year: int, bucket: str, s3_client) -> tuple:
