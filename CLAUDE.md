@@ -104,6 +104,23 @@ Key endpoints:
 Govinfo bulk (faster for historical):
 - `https://www.govinfo.gov/bulkdata/CFR/{year}/title-{n}/CFR-{year}-title{n}-vol{vol}.xml`
 
+### Title Availability Notes
+
+Not all CFR titles are available for all years:
+
+| Title | Issue | Notes |
+|-------|-------|-------|
+| 35 | Reserved | No regulatory content in any year (reserved for future use) |
+| 2, 3, 6 | Not in 2000 | Govinfo bulk data doesn't include these titles for year 2000 |
+| 3 | Not in 2005 | Presidential documents, published separately from CFR bulk data |
+
+**Very large titles** (40 EPA, 42 Health, etc.) may timeout when fetching the full XML. The Lambda fetcher handles these by:
+1. Fetching the title structure from `/versioner/v1/structure/{date}/title-{n}.json`
+2. Downloading each subchapter separately using `?subchapter={id}` parameter
+3. Streaming results to /tmp to avoid memory issues
+
+**Year 2025 data**: Govinfo bulk data for 2025 is not yet available. The fetcher falls back to the eCFR historical API, using subchapter-level fetching for large titles.
+
 ## Database Schema
 
 Main tables in SQLite:

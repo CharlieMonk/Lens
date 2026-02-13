@@ -7,8 +7,10 @@ Supports dynamic timeouts based on title size and per-title retry with exponenti
 
 import json
 import os
+import glob
 import gzip
 import hashlib
+import shutil
 import boto3
 import urllib.request
 import urllib.error
@@ -31,8 +33,10 @@ GOVINFO_BULK_URL = "https://www.govinfo.gov/bulkdata/CFR"
 GOVINFO_CONTENT_URL = "https://www.govinfo.gov/content/pkg"
 
 # Title size categories (from historical XML sizes)
-# Large titles: Tax (26), EPA (40), Health (42, 45), Acquisition (48)
-LARGE_TITLES = {26, 40, 42, 45, 48}
+# Very large titles that need subchapter-level fetching to avoid timeouts
+VERY_LARGE_TITLES = {40}  # EPA - 39 volumes, ~800MB total
+# Large titles: Tax (26), Health (42, 45), Acquisition (48)
+LARGE_TITLES = {26, 42, 45, 48}
 # Medium titles: Agriculture (7), Banks (12), Aviation (14), Commodities (17),
 #               Food/Drug (21), Labor (29), Transportation (49)
 MEDIUM_TITLES = {7, 12, 14, 17, 21, 29, 49}
@@ -147,7 +151,23 @@ def handler(event, context):
         return result.__dict__
 
     try:
-        # Extract sections
+        # Extract sections - check for tmp_dir marker from subchapter fetching
+        if xml_content.startswith(b"__TMP_DIR__:"):
+            tmp_dir = xml_content.decode().split(":", 1)[1]
+            # For very large titles, stream directly to S3
+            sections_count, s3_key = extract_and_upload_from_tmp_dir(
+                tmp_dir, title, year, S3_BUCKET, s3
+            )
+            duration = time.time() - start_time
+            print(f"Wrote {sections_count} sections to s3://{S3_BUCKET}/{s3_key} in {duration:.1f}s")
+            result = FetchResult(
+                title=title, year=year, success=True,
+                source=source, sections_count=sections_count,
+                duration=duration, s3_key=s3_key
+            )
+            return result.__dict__
+
+        # Normal path for smaller titles
         sections = extract_sections(xml_content, title, year)
 
         # Write to S3 as gzipped JSON (80%+ smaller)
@@ -268,11 +288,217 @@ def fetch_from_ecfr(title: int, date_str: str = None) -> tuple[Optional[bytes], 
     if not date_str:
         return None, []
 
+    # For very large titles, fetch by subchapter to avoid timeouts
+    if title in VERY_LARGE_TITLES:
+        return fetch_from_ecfr_by_subchapter(title, date_str)
+
     url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml"
     timeout = get_timeout_for_title(title)
     print(f"  Fetching from eCFR (timeout={timeout}s)...")
 
     return fetch_with_retry(url, timeout=timeout)
+
+
+def fetch_from_ecfr_by_subchapter(title: int, date_str: str) -> tuple[Optional[bytes], list[FetchError]]:
+    """
+    Fetch a very large title by fetching each subchapter separately.
+    Uses /tmp storage to avoid memory issues with 800+ MB titles.
+    Returns a special marker that tells the handler to use the temp files.
+    """
+    all_errors = []
+    tmp_dir = f"/tmp/title_{title}_{date_str.replace('-', '')}"
+
+    # Clean up any previous attempt
+    if os.path.exists(tmp_dir):
+        shutil.rmtree(tmp_dir)
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    # First, get the title structure to find all subchapters
+    structure_url = f"{ECFR_BASE_URL}/versioner/v1/structure/{date_str}/title-{title}.json"
+    print(f"  Fetching title {title} structure...")
+
+    try:
+        req = urllib.request.Request(structure_url, headers={
+            'User-Agent': 'eCFR-Lambda/1.0',
+            'Accept': 'application/json'
+        })
+        with urllib.request.urlopen(req, timeout=30) as response:
+            structure = json.loads(response.read())
+    except Exception as e:
+        all_errors.append(FetchError(
+            title=title, year=0, source="ecfr",
+            error_type="structure_error",
+            message=f"Failed to get structure: {e}",
+            attempt=0
+        ))
+        return None, all_errors
+
+    # Extract all subchapters from the structure
+    def get_subchapters(node):
+        results = []
+        for child in node.get('children', []):
+            if child.get('type') == 'subchapter':
+                results.append(child.get('identifier', ''))
+            else:
+                results.extend(get_subchapters(child))
+        return results
+
+    subchapters = get_subchapters(structure)
+    if not subchapters:
+        # No subchapters found, fall back to chapters
+        for child in structure.get('children', []):
+            if child.get('type') == 'chapter':
+                subchapters.append(f"chapter_{child.get('identifier', '')}")
+
+    print(f"  Found {len(subchapters)} subchapters, fetching to /tmp...")
+
+    # Fetch each subchapter and save to /tmp
+    successful_files = []
+    timeout = 120  # 2 minutes per subchapter
+
+    for i, subchapter in enumerate(subchapters):
+        if subchapter.startswith('chapter_'):
+            chapter_id = subchapter.replace('chapter_', '')
+            url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml?chapter={chapter_id}"
+            filename = f"chapter_{chapter_id}.xml"
+        else:
+            url = f"{ECFR_BASE_URL}/versioner/v1/full/{date_str}/title-{title}.xml?subchapter={subchapter}"
+            filename = f"subchapter_{subchapter}.xml"
+
+        filepath = os.path.join(tmp_dir, filename)
+        content, errors = fetch_with_retry(url, retries=2, timeout=timeout)
+        all_errors.extend(errors)
+
+        if content:
+            # Write to /tmp file immediately, free memory
+            with open(filepath, 'wb') as f:
+                f.write(content)
+            size_mb = len(content) / 1024 / 1024
+            successful_files.append(filepath)
+            print(f"    [{i+1}/{len(subchapters)}] {subchapter}: {size_mb:.1f} MB -> {filename}")
+            del content  # Free memory
+        else:
+            print(f"    [{i+1}/{len(subchapters)}] {subchapter}: FAILED")
+
+    if not successful_files:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return None, all_errors
+
+    # Return marker with tmp_dir path - handler will process files
+    print(f"  Saved {len(successful_files)} subchapters to {tmp_dir}")
+    return f"__TMP_DIR__:{tmp_dir}".encode(), all_errors
+
+
+def extract_and_upload_from_tmp_dir(tmp_dir: str, title: int, year: int, bucket: str, s3_client) -> tuple:
+    """
+    Extract sections from XML files and upload directly to S3.
+    Streams sections to a gzipped file to minimize memory usage.
+    Returns (sections_count, s3_key).
+    """
+    xml_files = sorted(glob.glob(os.path.join(tmp_dir, "*.xml")))
+    print(f"  Extracting sections from {len(xml_files)} files...")
+
+    # Write sections to a gzipped JSON file
+    output_path = os.path.join(tmp_dir, "sections.json.gz")
+    total_sections = 0
+
+    with gzip.open(output_path, 'wt', encoding='utf-8') as gz:
+        gz.write('[\n')  # Start JSON array
+        first = True
+
+        for i, filepath in enumerate(xml_files):
+            # Read and process one XML file at a time
+            with open(filepath, 'rb') as f:
+                xml_content = f.read()
+
+            sections = extract_sections(xml_content, title, year)
+
+            # Write sections to gzipped file
+            for section in sections:
+                if not first:
+                    gz.write(',\n')
+                first = False
+                gz.write(json.dumps(section, ensure_ascii=False))
+                total_sections += 1
+
+            # Free memory and delete XML file
+            del xml_content
+            del sections
+            os.remove(filepath)
+
+            if (i + 1) % 5 == 0:
+                print(f"    Processed {i+1}/{len(xml_files)} files ({total_sections} sections)")
+
+        gz.write('\n]')  # End JSON array
+
+    # Upload to S3
+    s3_key = f"sections/{year}/title-{title}.json.gz"
+    print(f"  Uploading {os.path.getsize(output_path)/1024/1024:.1f} MB to s3://{bucket}/{s3_key}")
+
+    with open(output_path, 'rb') as f:
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=f,
+            ContentType='application/gzip'
+        )
+
+    # Clean up
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return total_sections, s3_key
+
+
+def extract_sections_from_tmp_dir(tmp_dir: str, title: int, year: int) -> list:
+    """
+    Extract sections from XML files in a temp directory, one at a time.
+    Writes sections to JSON files incrementally to minimize memory usage.
+    """
+    xml_files = sorted(glob.glob(os.path.join(tmp_dir, "*.xml")))
+    print(f"  Extracting sections from {len(xml_files)} files...")
+
+    sections_dir = os.path.join(tmp_dir, "sections")
+    os.makedirs(sections_dir, exist_ok=True)
+
+    total_sections = 0
+
+    for i, filepath in enumerate(xml_files):
+        # Read and process one XML file at a time
+        with open(filepath, 'rb') as f:
+            xml_content = f.read()
+
+        sections = extract_sections(xml_content, title, year)
+        total_sections += len(sections)
+
+        # Write sections to JSON file immediately
+        if sections:
+            json_path = os.path.join(sections_dir, f"part_{i:03d}.json")
+            with open(json_path, 'w') as f:
+                json.dump(sections, f)
+
+        # Free memory and delete XML file
+        del xml_content
+        del sections
+        os.remove(filepath)
+
+        if (i + 1) % 5 == 0:
+            print(f"    Processed {i+1}/{len(xml_files)} files ({total_sections} sections)")
+
+    # Now combine all section JSON files
+    print(f"  Combining {total_sections} sections from temp files...")
+    all_sections = []
+    json_files = sorted(glob.glob(os.path.join(sections_dir, "*.json")))
+
+    for json_path in json_files:
+        with open(json_path, 'r') as f:
+            sections = json.load(f)
+            all_sections.extend(sections)
+        os.remove(json_path)
+
+    # Clean up tmp directory
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return all_sections
 
 
 def fetch_from_govinfo(title: int, year: int, use_content_api: bool = False) -> tuple[Optional[bytes], list[FetchError]]:
