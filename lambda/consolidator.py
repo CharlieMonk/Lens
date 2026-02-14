@@ -169,6 +169,12 @@ def main():
     timings['list_s3'] = time.time() - t0
     print(f"  {len(all_keys)} files - {timings['list_s3']:.1f}s")
 
+    # Step 3b: Delete all existing sections (to avoid duplicate primary keys)
+    print("\n  Clearing existing sections...")
+    db._execute("DELETE FROM sections")
+    db._execute("DELETE FROM texts")
+    print("  Done")
+
     # Step 4: Enable bulk mode and process files
     print("\n[4/6] Reading S3 and inserting (streaming)...")
     db.begin_bulk_transaction()

@@ -10,6 +10,7 @@ import os
 import glob
 import gzip
 import hashlib
+import re
 import shutil
 import boto3
 import urllib.request
@@ -669,14 +670,28 @@ def extract_sections_with_hierarchy(element: ET.Element, title: int, year: int,
 
 
 def extract_sections_ecfr_div(element: ET.Element, title: int, year: int,
-                              sections: list, chapter: str = "", part: str = ""):
-    """Extract sections from eCFR DIV format with chapter/part hierarchy.
+                              sections: list, subtitle: str = "", chapter: str = "",
+                              subchapter: str = "", part: str = ""):
+    """Extract sections from eCFR DIV format with full hierarchy.
 
     eCFR uses DIV elements with TYPE attribute:
+    - DIV2 TYPE="SUBTITLE" for subtitles
     - DIV3 TYPE="CHAPTER" for chapters
+    - DIV4 TYPE="SUBCHAP" for subchapters
     - DIV5 TYPE="PART" for parts
     - DIV8 TYPE="SECTION" for sections
     """
+    # Check for subtitle (DIV2)
+    if element.tag == 'DIV2' and element.get('TYPE') == 'SUBTITLE':
+        head = element.find('HEAD')
+        if head is not None and head.text:
+            # Parse "SUBTITLE A—NAME" -> "A"
+            head_text = head.text.strip()
+            if head_text.upper().startswith('SUBTITLE '):
+                sub_part = head_text[9:].split('—')[0].split('-')[0].strip()
+                if sub_part:
+                    subtitle = sub_part
+
     # Check for chapter (DIV3)
     if element.tag == 'DIV3' and element.get('TYPE') == 'CHAPTER':
         head = element.find('HEAD')
@@ -687,6 +702,17 @@ def extract_sections_ecfr_div(element: ET.Element, title: int, year: int,
                 chapter_part = head_text[8:].split('—')[0].split('-')[0].strip()
                 if chapter_part:
                     chapter = chapter_part
+
+    # Check for subchapter (DIV4)
+    if element.tag == 'DIV4' and element.get('TYPE') == 'SUBCHAP':
+        head = element.find('HEAD')
+        if head is not None and head.text:
+            # Parse "SUBCHAPTER A—NAME" -> "A"
+            head_text = head.text.strip()
+            if head_text.upper().startswith('SUBCHAPTER '):
+                subch_part = head_text[11:].split('—')[0].split('-')[0].strip()
+                if subch_part:
+                    subchapter = subch_part
 
     # Check for part (DIV5)
     if element.tag == 'DIV5' and element.get('TYPE') == 'PART':
@@ -701,24 +727,36 @@ def extract_sections_ecfr_div(element: ET.Element, title: int, year: int,
 
     # Check for section (DIV8)
     if element.tag == 'DIV8' and element.get('TYPE') == 'SECTION':
-        section_data = parse_div8_section_with_context(element, title, year, chapter, part)
+        section_data = parse_div8_section_with_context(element, title, year, subtitle, chapter, subchapter, part)
         if section_data:
             sections.append(section_data)
         return  # Don't recurse into section
 
     # Recurse into children
     for child in element:
-        extract_sections_ecfr_div(child, title, year, sections, chapter, part)
+        extract_sections_ecfr_div(child, title, year, sections, subtitle, chapter, subchapter, part)
 
 
 def parse_div8_section_with_context(element: ET.Element, title: int, year: int,
-                                     chapter: str, part: str) -> Optional[dict]:
-    """Parse a DIV8 SECTION element with chapter/part context."""
+                                     subtitle: str, chapter: str,
+                                     subchapter: str, part: str) -> Optional[dict]:
+    """Parse a DIV8 SECTION element with full hierarchy context."""
     head = element.find('HEAD')
     if head is None or not head.text:
         return None
 
-    section_num = head.text.strip()
+    head_text = head.text.strip()
+
+    # Parse HEAD format: "§ 1.0-1   Internal Revenue Code..."
+    # Section number is everything up to 2+ spaces, heading is the rest
+    match = re.match(r'(§\s*\S+)\s{2,}(.+)', head_text)
+    if match:
+        section_num = match.group(1).strip()
+        heading = match.group(2).strip()
+    else:
+        # Fallback: use the whole text as section num if no heading pattern found
+        section_num = head_text
+        heading = ""
 
     # Get full text
     text_parts = []
@@ -733,10 +771,12 @@ def parse_div8_section_with_context(element: ET.Element, title: int, year: int,
     return {
         'title': title,
         'year': year,
+        'subtitle': subtitle,
         'chapter': chapter,
+        'subchapter': subchapter,
         'part': part,
         'section': section_num,
-        'heading': section_num,
+        'heading': heading,
         'text': text,
         'text_hash': _hash_text(text) if text else '',
         'word_count': word_count
@@ -792,35 +832,8 @@ def parse_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
 
 
 def parse_div8_section(element: ET.Element, title: int, year: int) -> Optional[dict]:
-    """Parse a DIV8 SECTION element (eCFR format)."""
-    # Get section number from HEAD
-    head = element.find('HEAD')
-    if head is None or not head.text:
-        return None
-
-    section_num = head.text.strip()
-
-    # Get full text
-    text_parts = []
-    for child in element:
-        if child.tag != 'HEAD':
-            text = ET.tostring(child, encoding='unicode', method='text')
-            text_parts.append(text.strip())
-
-    text = ' '.join(text_parts)
-    word_count = len(text.split())
-
-    return {
-        'title': title,
-        'year': year,
-        'chapter': '',
-        'part': '',
-        'section': section_num,
-        'heading': section_num,
-        'text': text,
-        'text_hash': _hash_text(text) if text else '',
-        'word_count': word_count
-    }
+    """Parse a DIV8 SECTION element (eCFR format, no hierarchy)."""
+    return parse_div8_section_with_context(element, title, year, "", "", "", "")
 
 
 def extract_sections_regex(xml_content: bytes, title: int, year: int) -> list:
